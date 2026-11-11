@@ -1,9 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { loadGame } = require('../helpers/load-game.cjs');
+const { loadVeteran } = require('../helpers/load-veteran.cjs');
 
-const A = loadGame();
+const A = loadVeteran();
 const R = A.Random;
 
 test('seed=0 可用且确定', () => {

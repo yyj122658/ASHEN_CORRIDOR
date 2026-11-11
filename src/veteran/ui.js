@@ -226,13 +226,14 @@
       ? `最深 ${state.bestDepth} 层 · ${state.gold} 金币 · ${state.roster.length} 位老兵`
       : '培养并保护你的老兵 · 可逆装配 · 遭遇可无限重试';
     return `<div class="v-title">
+      <div class="v-title-bg">${V.Art.v1Tag('scene.camp', 'title-bg-img')}</div>
       <div class="v-title-glow"></div>
       <div class="v-title-frame">
         <div class="v-crest">✦</div>
-        <h1 class="v-title-main">老兵回路</h1>
-        <div class="v-title-sub">V E T E R A N &nbsp; C I R C U I T</div>
+        <h1 class="v-title-main">灰烬回廊</h1>
+        <div class="v-title-sub">A S H E N &nbsp; C O R R I D O R</div>
         <div class="v-rule"></div>
-        <p class="v-quote">“人比铁脆。所以要把铁穿在身上。”</p>
+        <p class="v-quote">“它每天夜里都会重新长出墙。”</p>
         ${btn(hasSave ? '继 续 远 征' : '开 始 一 次 远 征', 'titleStart', { cls: 'v-cta' })}
         <div class="v-title-meta">${esc(meta)}</div>
         <div class="v-title-tools">
@@ -245,7 +246,7 @@
           ${btn('确认导入', 'importConfirm', { cls: 'gold xs' })}
         </div>` : ''}
       </div>
-      <div class="v-title-hint">旧版《灰烬回廊》入口仍在 index.html，两者存档互不影响</div>
+      <div class="v-title-hint">活着撤离，东西才入仓。死在回廊里，什么也带不回来。</div>
     </div>`;
   }
 
@@ -254,7 +255,7 @@
   function campScreen(state, ui) {
     const party = state.team.filter(Boolean);
     return `
-    ${V.Art.sceneBanner('veteran.scene.workshop', 'scene-camp', '灰烬前哨',
+    ${V.Art.sceneBanner('scene.camp', 'scene-camp', '灰烬前哨',
     `${state.roster.length} 位老兵 · 金币 ${state.gold} · 遗物 ${state.shards}`)}
     <div class="camp-cols">
       <div class="camp-col">
@@ -263,6 +264,7 @@
         return `<div class="vet-slot ${u ? '' : 'empty'}">
           <div class="vet-slot-no">${slot + 1}</div>
           ${u ? `
+            ${V.Art.portraitTag(u.skinId, 'vet-slot-portrait')}
             <div class="vet-name">${esc(u.name)}</div>
             <div class="vet-body">${esc(D().body(u.bodyPreset).name)}</div>
             <div class="vet-weapon">${esc(partName(state, u.weaponId))}</div>
@@ -324,7 +326,7 @@
     const u = uid ? state.roster.find((x) => x.id === uid) : null;
     return `<div class="vet-slot ${u ? '' : 'empty'}">
       <div class="vet-slot-no">${slot + 1}</div>
-      ${u ? `<div class="vet-name">${esc(u.name)}</div><div class="vet-weapon">${esc(partName(state, u.weaponId))}</div>`
+      ${u ? V.Art.portraitTag(u.skinId, 'vet-slot-portrait') + `<div class="vet-name">${esc(u.name)}</div><div class="vet-weapon">${esc(partName(state, u.weaponId))}</div>`
     : '<div class="vet-empty">空位</div>'}
       <div class="row tight">${btn('换上', 'teamPick', { cls: 'ghost xs', data: { id: String(slot) } })}
       ${u ? btn('换下', 'teamClear', { cls: 'ghost xs', data: { id: String(slot) } }) : ''}</div>
@@ -348,6 +350,7 @@
     const h = V.Roster.history(state, u.id);
     const weapons = state.stash.filter((id) => state.itemsById[id].kind === 'weapon');
     return `<div class="u-detail mt3">
+      ${V.Art.portraitTag(u.skinId, 'unit-portrait')}
       <div class="u-detail-head"><b>${esc(u.name)}</b>
         <span class="muted small">${esc(D().body(u.bodyPreset).name)} · 压力 ${u.stress} · 逻辑槽 ${u.logicSlots}</span></div>
       <div class="stat-row">
@@ -500,6 +503,7 @@
       <div class="row mb3"><span class="muted small">金币 ${state.gold}</span>
         <div class="spacer"></div>${btn('刷新（12 金）', 'refreshShop', { cls: 'ghost sm', disabled: state.gold < 12 })}</div>
       <div class="grid-3">${offers.length ? offers.map((o) => `<div class="recruit-card ${o.sold ? 'sold' : ''}">
+        ${V.Art.portraitTag(o.skinId, 'recruit-portrait')}
         <div class="recruit-name">${esc(o.name)}</div>
         <div class="muted small">${esc(D().body(o.bodyPreset).name)} · ${esc(D().weapon(o.weaponId).name)}</div>
         <div class="muted tiny mt1">${esc(D().body(o.bodyPreset).desc)}</div>
@@ -606,6 +610,7 @@
     return `
     <div class="grid-2">
       ${panel('敌方', `<div class="enemy-list">${bp.units.map((u) => `<div class="enemy-row">
+        ${u.isBoss ? V.Art.bossTag(u.enemyType, 'enemy-boss-img') : ''}
         <span class="enemy-name ${u.isBoss ? 'boss' : ''}">${esc(u.name)}</span>
         <span class="muted tiny">${u.hp} 生命 · ${u.atk} 攻击 · ${u.def} 防御 · ${u.spd} 速度</span>
         ${u.isBoss ? tag('首领', 'tag-boss') : ''}
@@ -618,7 +623,7 @@
     const u = uid ? state.roster.find((x) => x.id === uid) : null;
     return `<div class="vet-slot ${u ? '' : 'empty'}">
       <div class="vet-slot-no">${slot + 1}</div>
-      ${u ? `<div class="vet-name">${esc(u.name)}</div><div class="vet-weapon">${esc(partName(state, u.weaponId))}</div>` : '<div class="vet-empty">空位</div>'}
+      ${u ? V.Art.portraitTag(u.skinId, 'vet-slot-portrait') + `<div class="vet-name">${esc(u.name)}</div><div class="vet-weapon">${esc(partName(state, u.weaponId))}</div>` : '<div class="vet-empty">空位</div>'}
       <div class="row tight">${btn('换位', 'prepPick', { cls: 'ghost xs', data: { id: String(slot) } })}</div>
     </div>`;
   }).join('')}</div>
@@ -860,7 +865,8 @@
   function settlementScreen(state) {
     const s = state.settlement;
     if (!s) return panel('结算', '<p class="muted">没有结算。</p>');
-    return panel(s.title, `
+    return `${V.Art.sceneBanner('scene.camp', 'scene-settlement', s.title, s.eligible ? '合格撤离' : '不算合格撤离')}
+    ${panel(s.title, `
       <div class="story">${esc({
     extract: '身后的门关上了。你们活了下来，东西还在。',
     clear: '那扇门后面的东西终于不动了。',
@@ -877,7 +883,7 @@
       ${s.items.length ? `<div class="part-list mt2">${s.items.map((id) => `<div class="part-item static">
         <span class="part-name">${esc(partName(state, id))}</span><span class="part-meta">${esc(partMeta(state, id))}</span></div>`).join('')}</div>` : ''}
       <div class="row mt3">${btn('回营地', 'settleClose', { cls: 'gold' })}</div>
-    `);
+    `)}`;
   }
 
   /* ------------------------------ 汇总 ------------------------------ */
@@ -912,7 +918,7 @@
 
   function hud(state, ui) {
     if (ui.screen === 'title') return '';
-    return `<span class="hud-brand">老兵回路</span>
+    return `<span class="hud-brand">灰烬回廊</span>
       <span class="hud-sep"></span>
       <span class="hud-item">金币 <b class="gold">${state.gold}</b></span>
       <span class="hud-item">遗物 <b>${state.shards}</b></span>

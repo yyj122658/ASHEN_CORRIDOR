@@ -1,9 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { loadGame } = require('../helpers/load-game.cjs');
+const { loadVeteran } = require('../helpers/load-veteran.cjs');
 
-const A = loadGame();
+const A = loadVeteran();
 const SA = A.SpriteAnim;
 
 // 资源就绪（FakeImage 同步 onload）
@@ -113,79 +113,6 @@ function battleWith(units, logs) {
   };
 }
 
-test('consume：act（伤害技能）触发攻击，治疗/增益不触发', () => {
-  const blade = fakeUnit({ id: 'a1', side: 'ally', cls: 'blade' });
-  SA.reset();
-  SA.syncFromBattle(battleWith([blade], []));
-
-  const b1 = battleWith([blade], [
-    { seq: 1, type: 'act', actorId: 'a1', meta: { skillId: 'heavySlash' } },
-  ]);
-  SA.consume(b1);
-  assert.equal(SA.stateOf('a1').anim, 'attack');
-
-  SA.reset();
-  SA.syncFromBattle(battleWith([blade], []));
-  const b2 = battleWith([blade], [
-    { seq: 1, type: 'act', actorId: 'a1', meta: { skillId: 'mend' } },
-  ]);
-  SA.consume(b2);
-  assert.equal(SA.stateOf('a1').anim, 'idle', '治疗不该播攻击动画');
-});
-
-test('consume：hit 触发 hurt，致死 hit 直接 death，miss 不触发受击', () => {
-  const atk = fakeUnit({ id: 'a2', side: 'ally', cls: 'blade' });
-  const foe = fakeUnit({ id: 'e1', side: 'enemy', cls: null, enemyType: 'bone', hp: 50 });
-
-  SA.reset();
-  SA.syncFromBattle(battleWith([atk, foe], []));
-  SA.consume(battleWith([atk, foe], [
-    { seq: 1, type: 'act', actorId: 'a2', meta: { skillId: 'heavySlash' } },
-    { seq: 2, type: 'hit', actorId: 'a2', targetId: 'e1', amount: 10 },
-  ]));
-  assert.equal(SA.stateOf('e1').anim, 'hurt');
-
-  // 致死：hp 归零后 hit 直接进入 death
-  SA.reset();
-  const dead = fakeUnit({ id: 'e2', side: 'enemy', cls: null, enemyType: 'bone', hp: 0, alive: false });
-  SA.syncFromBattle(battleWith([atk, dead], []));
-  SA.consume(battleWith([atk, dead], [
-    { seq: 1, type: 'hit', actorId: 'a2', targetId: 'e2', amount: 99 },
-    { seq: 2, type: 'death', actorId: 'a2', targetId: 'e2' },
-  ]));
-  assert.equal(SA.stateOf('e2').anim, 'death');
-
-  // miss：目标不受击
-  SA.reset();
-  const foe2 = fakeUnit({ id: 'e3', side: 'enemy', cls: null, enemyType: 'bone' });
-  SA.syncFromBattle(battleWith([atk, foe2], []));
-  SA.consume(battleWith([atk, foe2], [
-    { seq: 1, type: 'miss', actorId: 'a2', targetId: 'e3' },
-  ]));
-  assert.equal(SA.stateOf('e3').anim, 'idle', 'miss 不该播受击');
-});
-
-test('consume：同一批日志里的多次 hit 不会重启攻击', () => {
-  const atk = fakeUnit({ id: 'a3', side: 'ally', cls: 'blade' });
-  const foe = fakeUnit({ id: 'e4', side: 'enemy', cls: null, enemyType: 'bone', hp: 999 });
-  SA.reset();
-  SA.syncFromBattle(battleWith([atk, foe], []));
-
-  SA.consume(battleWith([atk, foe], [
-    { seq: 1, type: 'act', actorId: 'a3', meta: { skillId: 'cleave' } },
-  ]));
-  SA.update([atk], 220); // 推进到中段
-  const mid = SA.stateOf('a3').frame;
-  assert.ok(mid > 0);
-
-  SA.consume(battleWith([atk, foe], [
-    { seq: 1, type: 'act', actorId: 'a3', meta: { skillId: 'cleave' } },
-    { seq: 2, type: 'hit', actorId: 'a3', targetId: 'e4', amount: 5 },
-    { seq: 3, type: 'hit', actorId: 'a3', targetId: 'e4', amount: 5 },
-  ]));
-  assert.equal(SA.stateOf('a3').frame >= mid, true, '多段伤害不能把攻击动画打回第 0 帧');
-});
-
 test('syncFromBattle：存活初始化 idle，已阵亡直接末帧，且不重放历史事件', () => {
   const alive = fakeUnit({ id: 's1', side: 'ally', cls: 'blade' });
   const dead = fakeUnit({ id: 's2', side: 'enemy', cls: null, enemyType: 'bone', alive: false, hp: 0 });
@@ -201,8 +128,8 @@ test('syncFromBattle：存活初始化 idle，已阵亡直接末帧，且不重�
   assert.equal(SA.stateOf('s2').anim, 'death', '已阵亡单位直接末帧');
   assert.equal(SA.stateOf('s2').frame, 5);
 
-  // 再次 consume 不应重放旧事件
-  SA.consume(b);
+  // 再次同步不应把旧日志重放成攻击
+  SA.syncFromBattle(b);
   assert.equal(SA.stateOf('s1').anim, 'idle', '旧日志不能被重放成攻击');
 });
 

@@ -459,3 +459,58 @@ img.art-broken, .art-broken { display: none !important; }
 
 /* 横幅没有主标题时，副标题上移居中 */
 .v-banner:not(:has(.v-banner-title)) .v-banner-sub { bottom: 20px; }
+
+/* ---------------- v1 美术接入（营地场景 / 立绘 / 首领） ---------------- */
+.v-art.art-broken { display: none; }
+
+/* 标题页：营地场景压暗，保证标题与按钮可读 */
+.v-title-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+.v-title-bg .title-bg-img {
+  width: 100%; height: 100%; object-fit: cover; object-position: 65% 50%;
+  opacity: .72; filter: saturate(.85) brightness(.86);
+}
+.v-title-bg::after {
+  content: ''; position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 56% 46% at 50% 44%, rgba(9, 7, 13, .30), rgba(9, 7, 13, .82) 78%),
+    linear-gradient(180deg, rgba(9, 7, 13, .55), rgba(9, 7, 13, .9));
+}
+
+/* 老兵卡立绘 */
+.v-slot-portrait, .vet-slot-portrait {
+  display: block; width: 46px; height: 46px; margin: 0 auto 6px;
+  object-fit: cover; object-position: 50% 28%;
+  border: 1px solid var(--border); background: linear-gradient(180deg, #1C1728, #12101B);
+  filter: saturate(.95);
+}
+.vet-slot.empty .vet-slot-portrait { display: none; }
+
+/* 招募台立绘 */
+.recruit-portrait {
+  display: block; width: 100%; height: 92px; margin-bottom: 8px;
+  object-fit: cover; object-position: 50% 22%;
+  border: 1px solid var(--border-soft); background: #12101B;
+}
+
+/* 首领肖像 */
+.enemy-boss-img {
+  width: 40px; height: 40px; object-fit: cover; object-position: 50% 26%;
+  border: 1px solid var(--border); flex: 0 0 auto;
+}
+
+/* 结算横幅里的场景图高度与营地一致 */
+.scene-settlement { height: 116px; }
+
+@media (max-width: 480px) {
+  .v-slot-portrait, .vet-slot-portrait { width: 38px; height: 38px; }
+  .recruit-portrait { height: 74px; }
+}
+
+/* 单位详情大头像 */
+.u-detail { position: relative; }
+.unit-portrait {
+  float: left; width: 58px; height: 58px; margin: 0 10px 6px 0;
+  object-fit: cover; object-position: 50% 25%;
+  border: 1px solid var(--border); background: #12101B;
+}
+.u-detail::after { content: ''; display: block; clear: both; }

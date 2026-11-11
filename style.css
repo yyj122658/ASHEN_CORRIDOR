@@ -1,5 +1,0 @@
-/* 样式入口：按层导入，避免旧覆盖冲突。
-   旧版的全部覆盖规则已移除，实际样式见 styles/ 下三个分层文件。 */
-@import url("styles/tokens.css");
-@import url("styles/layout.css");
-@import url("styles/components.css");

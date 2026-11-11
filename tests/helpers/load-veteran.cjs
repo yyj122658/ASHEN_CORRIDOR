@@ -1,6 +1,6 @@
 'use strict';
-/* 老兵回路版的 Node VM 沙箱：执行真实脚本，测试不重新实现领域逻辑。
-   只加载新模式需要的经典脚本；不启动旧 A.App，不碰旧存档。 */
+/* 灰烬回廊的 Node VM 沙箱：执行真实脚本，测试不重新实现领域逻辑。
+   加载单入口所需的全部经典脚本（纯工具 + 玩法模块）。 */
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -9,10 +9,9 @@ const ROOT = path.resolve(__dirname, '..', '..');
 
 const ORDER = [
   /* 复用的纯工具 */
-  'src/data/catalog.js',
   'src/core/random.js',
   'src/core/state.js',
-  /* 新模式 */
+  /* 玩法模块 */
   'src/veteran/data.js',
   'src/veteran/state.js',
   'src/veteran/circuit.js',
@@ -23,6 +22,9 @@ const ORDER = [
   'src/veteran/expedition.js',
   'src/veteran/roster.js',
   'src/veteran/storage.js',
+  /* 表现层资源（无 DOM 依赖，供动画测试使用） */
+  'assets/art/battle-v1/atlas-data.js',
+  'src/ui/sprite-anim.js',
 ];
 
 function loadVeteran(overrides) {
@@ -34,6 +36,13 @@ function loadVeteran(overrides) {
     JSON,
   };
   vm.createContext(sandbox);
+  // sprite-anim 用 window 读取 atlas、用 Image 加载图集；在 VM 里给出最小实现
+  sandbox.window = sandbox;
+  sandbox.Image = class FakeImage {
+    constructor() { this.naturalWidth = 512; this.naturalHeight = 512; this.complete = true; }
+    set src(v) { this._src = v; if (typeof this.onload === 'function') this.onload(); }
+    get src() { return this._src; }
+  };
 
   const loaded = [];
   for (const rel of ORDER) {
