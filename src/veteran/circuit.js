@@ -92,12 +92,39 @@
         archetype: conf.archetype,
         target: conf.target,
       });
+      /* 能量经济住在功法里：四个具名点由装备的功法给，板面不再决定。
+         没有功法 → 没有终端 → 板面只是一块带槽位的金属。 */
+      const terminals = {};
+      if (unit.manuscript && V.Manuscript) {
+        const oriented = V.Manuscript.orient(
+          V.Manuscript.normalize(unit.manuscript),
+          unit.manuscript.rotation || 0,
+          !!unit.manuscript.mirrorY,
+        );
+        const ox = unit.manuscript.x || 0;
+        const oy = unit.manuscript.y || 0;
+        const LABEL = { clock: '时钟', damage: '受击', main: '攻势', support: '守势' };
+        Object.keys((oriented && oriented.io) || {}).forEach((id) => {
+          const p = oriented.io[id];
+          const isIn = id === 'clock' || id === 'damage';
+          terminals[id] = {
+            id,
+            cell: [p.cell[0] + ox, p.cell[1] + oy],
+            dir: p.dir,
+            role: isIn ? 'in' : 'out',
+            kind: isIn ? 'input' : 'output',
+            name: LABEL[id] || id,
+            fromManuscript: true,
+          };
+        });
+      }
       return {
         cells: new Set(gen.cells.map((c) => c[0] + ',' + c[1])),
-        terminals: V.PlateGen.terminals(gen.cells),
+        terminals,
         cellsList: gen.cells,
         size: V.PlateGen.SIZE,
         generated: true,
+        manuscript: !!unit.manuscript,
       };
     }
     const size = D().DESIGN.gridSize;
@@ -108,7 +135,10 @@
         if (!blocked.has(x + ',' + y)) cells.add(x + ',' + y);
       }
     }
-    return { cells, terminals: D().TERMINALS, size, generated: false };
+    return {
+      cells, cellsList: [...cells].map((k) => k.split(',').map(Number)),
+      terminals: D().TERMINALS, size, generated: false,
+    };
   }
 
   /**
@@ -121,6 +151,23 @@
     if (!unit) return { ok: false, errors: ['找不到角色'], occupied: [], load: 0, reachableOutputs: [] };
     const body = D().body(unit.bodyPreset);
     const plate = plateOf(unit);
+
+    /* 功法自己占格：构件不许压上去 */
+    const msCells = new Set();
+    if (plate.generated && unit.manuscript && V.Manuscript) {
+      const or = V.Manuscript.orient(
+        V.Manuscript.normalize(unit.manuscript),
+        unit.manuscript.rotation || 0,
+        !!unit.manuscript.mirrorY,
+      );
+      const ox = unit.manuscript.x || 0;
+      const oy = unit.manuscript.y || 0;
+      if (V.Manuscript.fits(or, plate.cellsList, ox, oy)) {
+        or.cells.forEach((c) => msCells.add((c[0] + ox) + ',' + (c[1] + oy)));
+      } else {
+        errors.push(`功法「${unit.manuscript.name || unit.manuscript.id}」没有完整落在板面上`);
+      }
+    }
 
     const list = placements || [];
     const seenItems = new Set();
@@ -160,6 +207,9 @@
             : `${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 是屏蔽格`);
           return;
         }
+        if (msCells.has(key)) {
+          errors.push(`${tpl.name}（${item.id}）压在了功法上（${c.x},${c.y}）`);
+        }
         if (cellOwner.has(key)) {
           const other = cellOwner.get(key);
           if (other !== item.id) errors.push(`构件 ${other} 与 ${item.id} 在 (${c.x},${c.y}) 重叠`);
@@ -173,6 +223,11 @@
       built.push({ itemId: item.id, templateId: item.templateId, tpl, x: p.x, y: p.y, rotation: p.rotation || 0, mirrorY: !!p.mirrorY, cells, ports });
     });
 
+    /* 功法也吃负荷：多修一套就少放构件，这是唯一的平衡阀 */
+    if (unit.manuscript) {
+      const msLoad = Number(unit.manuscript.load) || 0;
+      load += msLoad;
+    }
     if (load > body.loadCap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${body.loadCap}`);
 
     /* 主手本身不计负荷，但必须存在且是主手 */
@@ -450,11 +505,10 @@
   function saveLoadout(st, unitId, placements) {
     const unit = st.roster.find((u) => u.id === unitId);
     if (!unit) return { ok: false, errors: ['找不到角色'] };
+    /* 只校验几何与负荷：不连通也能存盘。
+       连通与否是玩法结果，不是保存条件——半成品板面必须能随时存下来。 */
     const p = preview(st, unitId, placements);
     if (!p.ok) return { ok: false, errors: p.errors };
-    if (!p.reachableOutputs.length) {
-      return { ok: false, errors: ['没有任何输出连通：至少要让 clock 或 damage 接到主手或保护'] };
-    }
     const next = V.State.clone(st);
     const u2 = next.roster.find((u) => u.id === unitId);
     u2.board.placements = (placements || []).map((x) => ({

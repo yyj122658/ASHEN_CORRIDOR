@@ -92,6 +92,9 @@
     next.itemsById[weapon.id] = weapon;
     unit.weaponId = weapon.id;
     ST().equipPreset(next, unit, 'basic');
+    /* 招募出来的人也带一套入门功法：没有功法就没有能量路由 */
+    V.State.equipManuscript(next, unit, 'corridor5');
+    if (!unit.manuscript) V.State.equipManuscript(next, unit, 'ember12');
     next.roster.push(unit);
 
     /* 有空位就自动上场 */

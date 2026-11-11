@@ -1,5 +1,5 @@
 'use strict';
-/* 老兵回路版界面：全部页面 + 4x4 板面 SVG。只读 state，动作交给 app.dispatch。 */
+/* 老兵回路版界面：全部页面 + 异形生命金属/功法膜/回路板面 SVG。只读 state，动作交给 app.dispatch。 */
 (function (A) {
   'use strict';
   const V = (A.Veteran ||= {});
@@ -38,10 +38,7 @@
   /* ------------------------------ 板面 SVG ------------------------------ */
 
   const CELL = 60;
-  const GX = 46;
-  const GY = 26;
-  const CW = GX * 2 + CELL * 4;
-  const CH_BOARD = GY * 2 + CELL * 4;
+  let svgUid = 0;
 
   const TEMPLATE_COLOR = {
     straight: '#263445', elbow: '#2B354C', splitter: '#3A2A4E',
@@ -54,20 +51,131 @@
 
   const DIR_VEC = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
 
-  function cellXY(x, y) { return [GX + x * CELL, GY + y * CELL]; }
-  function cellCenter(x, y) { return [GX + x * CELL + CELL / 2, GY + y * CELL + CELL / 2]; }
+  /* 功法膜纹路片段显式映射：文件名并非罗盘顺序，禁止自行推导 */
+  const VEIN_ORDER = ['N', 'E', 'S', 'W'];
+  const FRAG_FILE = {
+    N: 'n', E: 'e', S: 's', W: 'w',
+    NS: 'ns', EW: 'ew', NE: 'ne', ES: 'es', SW: 'sw', NW: 'wn',
+    NES: 'nes', ESW: 'esw', NSW: 'swn', NEW: 'wne', NESW: 'nesw',
+  };
 
-  function portPoint(pt) {
-    const [cx, cy] = cellXY(pt.cell[0], pt.cell[1]);
-    const [dx, dy] = DIR_VEC[pt.dir];
-    return [cx + CELL / 2 + dx * (CELL / 2 - 2), cy + CELL / 2 + dy * (CELL / 2 - 2)];
+  function veinFileName(dirs) {
+    if (!dirs || !dirs.length) return '';
+    const k = dirs.slice().sort((a, b) => VEIN_ORDER.indexOf(a) - VEIN_ORDER.indexOf(b)).join('');
+    return FRAG_FILE[k] || '';
   }
 
-  function terminalPoint(t, outward) {
-    const [cx, cy] = cellXY(t.cell[0], t.cell[1]);
-    const [dx, dy] = DIR_VEC[t.dir];
-    const d = outward ? CELL / 2 + 14 : CELL / 2 - 2;
-    return [cx + CELL / 2 + dx * d, cy + CELL / 2 + dy * d];
+  /* 工坊可预览的功法膜谱图（全部通过 V.Manuscript 判定，不改领域逻辑） */
+  const WORKSHOP_MANUSCRIPTS = [
+    {
+      id: 'ash12',
+      name: '余烬十二脉',
+      desc: '4×3 古老回流拓片。要求 12 格同向导通，覆盖 40%/75%/100% 依次共鸣。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [3, 2]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
+        '0,1': ['W'], '1,1': ['E'], '2,1': ['N'], '3,1': ['N'],
+        '0,2': ['W'], '1,2': ['E'], '2,2': ['S'], '3,2': ['S'],
+      },
+      entry: [0, 0],
+      exits: [[3, 2]],
+      tiers: [{ at: 40, id: 't1', name: '一阶 · 初鸣' }, { at: 75, id: 't2', name: '二阶 · 共振' }, { at: 100, id: 't3', name: '三阶 · 圆满' }],
+    },
+    {
+      id: 'corridor5',
+      name: '直贯五脉',
+      desc: '窄型 5 格拓片，适配狭窄骨架与基础直弯配组。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [3, 1]],
+      veins: { '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,1': ['E'] },
+      entry: [0, 0],
+      exits: [[3, 1]],
+      tiers: [{ at: 40, id: 't1', name: '一阶 · 初鸣' }, { at: 80, id: 't2', name: '二阶 · 共振' }, { at: 100, id: 't3', name: '三阶 · 贯通' }],
+    },
+    {
+      id: 'wide14',
+      name: '重铸阔卷',
+      desc: '5×3 重型拓片，仅厚实宽幅板面可完整容纳。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [4, 2]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'], '4,0': ['S'],
+        '0,1': ['N'], '1,1': ['W'], '2,1': ['E'], '3,1': ['W'], '4,1': ['N', 'S'],
+        '1,2': ['W'], '2,2': ['E'], '3,2': ['W'], '4,2': ['N'],
+      },
+      entry: [0, 0],
+      exits: [[4, 2]],
+      tiers: [{ at: 35, id: 't1', name: '一阶 · 余温' }, { at: 70, id: 't2', name: '二阶 · 灼脉' }, { at: 100, id: 't3', name: '三阶 · 圆满' }],
+    },
+  ];
+
+  function plateCellsList(plate) {
+    if (plate.cellsList && plate.cellsList.length) return plate.cellsList;
+    return [...plate.cells].map((k) => k.split(',').map(Number));
+  }
+
+  /** 通过 V.Manuscript 计算当前工坊角色的功法膜适配、覆盖率与贯通状态。 */
+  function resolveManuscript(unit, plate, ui, layout) {
+    if (!V.Manuscript || !plate) return null;
+    const uui = ui || {};
+    if (uui.wsMsId === 'none' && !(unit && unit.manuscript)) return { disabled: true, id: 'none' };
+    const raw = (unit && unit.manuscript)
+      || WORKSHOP_MANUSCRIPTS.find((m) => m.id === uui.wsMsId)
+      || WORKSHOP_MANUSCRIPTS[0];
+    if (!raw) return null;
+    const base = V.Manuscript.normalize(raw);
+    if (!base) return null;
+
+    const cellsList = plateCellsList(plate);
+    const rot = (((uui.wsMsRot || 0) % 4) + 4) % 4;
+    const mir = !!uui.wsMsMir;
+    const oriented = V.Manuscript.orient(base, rot, mir);
+    const validSpots = V.Manuscript.placements(oriented, cellsList);
+
+    const manual = uui.wsMsOx != null && uui.wsMsOy != null;
+    const spotIdx = validSpots.length ? (((uui.wsMsSpotIdx || 0) % validSpots.length) + validSpots.length) % validSpots.length : 0;
+    const ox = manual ? Number(uui.wsMsOx) : (validSpots.length ? validSpots[spotIdx][0] : 0);
+    const oy = manual ? Number(uui.wsMsOy) : (validSpots.length ? validSpots[spotIdx][1] : 0);
+    const fits = V.Manuscript.fits(oriented, cellsList, ox, oy);
+
+    let anyFits = validSpots.length > 0;
+    if (!anyFits) {
+      for (let m = 0; m < 2 && !anyFits; m++) {
+        for (let r = 0; r < 4 && !anyFits; r++) {
+          if (V.Manuscript.placements(V.Manuscript.orient(base, r, !!m), cellsList).length) anyFits = true;
+        }
+      }
+    }
+
+    let reason = '';
+    if (!fits) {
+      if (!anyFits) {
+        reason = `摆不下：当前板面形状或孔洞缺少足够连续空位容纳「${base.name}」`;
+      } else if (!validSpots.length) {
+        reason = `当前朝向（旋${rot * 90}°${mir ? '·翻' : ''}）在此板面上无处落脚，请旋转、翻转或重置位置`;
+      } else {
+        reason = `当前落点 (${ox},${oy}) 超出板面有效金属格，请移回板内或重置落点`;
+      }
+    }
+
+    const idx = V.Manuscript.pieceIndex(layout || { built: [] });
+    const cov = V.Manuscript.coverage(oriented, ox, oy, idx);
+    const rt = V.Manuscript.route(oriented, ox, oy, idx);
+    return {
+      disabled: false,
+      id: raw.id,
+      spec: raw,
+      oriented,
+      ox,
+      oy,
+      fits,
+      anyFits,
+      validSpots,
+      spotIdx,
+      rot,
+      mir,
+      cov,
+      rt,
+      reason,
+    };
   }
 
   /** 计算视觉连通集合：区分完整通电（到输出极）与仅输入已到达。 */
@@ -126,16 +234,185 @@
     return path;
   }
 
-  /** 绘制连成整块的一体化多格金属底座与外轮廓。 */
-  function renderUnifiedBody(absCells, fill, edgeStroke, isSelected, isError) {
+  /** 沿网格边界生成不规则锯齿金属轮廓：只向格子外空隙生长，厚度 >=0.35 格，绝不侵犯可用格。 */
+  function traceJaggedLoops(cellSet, cellsList, seedVal) {
+    const has = (x, y) => cellSet.has(x + ',' + y);
+    const noise = (a, b, c) => {
+      let h = ((seedVal >>> 0) ^ Math.imul(a + 37, 374761393) ^ Math.imul(b + 53, 668265263) ^ Math.imul(c + 19, 1442695041)) >>> 0;
+      h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+      return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+    };
+
+    const rawEdges = [];
+    cellsList.forEach(([x, y]) => {
+      if (!has(x, y - 1)) rawEdges.push({ x0: x, y0: y, x1: x + 1, y1: y, dir: 0, nx: 0, ny: -1, ex: x, ey: y - 1 });
+      if (!has(x + 1, y)) rawEdges.push({ x0: x + 1, y0: y, x1: x + 1, y1: y + 1, dir: 1, nx: 1, ny: 0, ex: x + 1, ey: y });
+      if (!has(x, y + 1)) rawEdges.push({ x0: x + 1, y0: y + 1, x1: x, y1: y + 1, dir: 2, nx: 0, ny: 1, ex: x, ey: y + 1 });
+      if (!has(x - 1, y)) rawEdges.push({ x0: x, y0: y + 1, x1: x, y1: y, dir: 3, nx: -1, ny: 0, ex: x - 1, ey: y });
+    });
+
+    const byStart = new Map();
+    rawEdges.forEach((e, idx) => {
+      e.id = idx;
+      e.used = false;
+      const k = e.x0 + ',' + e.y0;
+      if (!byStart.has(k)) byStart.set(k, []);
+      byStart.get(k).push(e);
+    });
+
+    const loops = [];
+    for (let i = 0; i < rawEdges.length; i++) {
+      if (rawEdges[i].used) continue;
+      const loop = [];
+      let cur = rawEdges[i];
+      while (cur && !cur.used) {
+        cur.used = true;
+        loop.push(cur);
+        const list = (byStart.get(cur.x1 + ',' + cur.y1) || []).filter((n) => !n.used);
+        if (!list.length) break;
+        if (list.length === 1) { cur = list[0]; continue; }
+        /* 多岔口（对角相接）优先右转绕实心块，防止自交 */
+        const pref = [(cur.dir + 1) % 4, cur.dir, (cur.dir + 3) % 4];
+        let picked = list[0];
+        for (let p = 0; p < pref.length; p++) {
+          const hit = list.find((n) => n.dir === pref[p]);
+          if (hit) { picked = hit; break; }
+        }
+        cur = picked;
+      }
+      if (loop.length >= 4) loops.push(loop);
+    }
+
+    const polyLoops = [];
+    loops.forEach((edges) => {
+      const m = edges.length;
+      const props = edges.map((e, idx) => {
+        const tx = e.x1 - e.x0;
+        const ty = e.y1 - e.y0;
+        const tight = has(e.ex + e.nx, e.ey + e.ny)
+          || has(e.ex + e.nx + tx, e.ey + e.ny + ty)
+          || has(e.ex + e.nx - tx, e.ey + e.ny - ty)
+          || has(e.ex + tx, e.ey + ty)
+          || has(e.ex - tx, e.ey - ty);
+        const minD = tight ? 0.37 : 0.39;
+        const maxD = tight ? 0.43 : 0.55;
+        return {
+          tight, minD, maxD,
+          dA: minD + noise(e.x0, e.y0, idx + 1) * (maxD - minD),
+          dB: minD + noise(e.x1, e.y1, idx + 7) * (maxD - minD),
+        };
+      });
+
+      const pts = [];
+      for (let i = 0; i < m; i++) {
+        const prev = edges[(i - 1 + m) % m];
+        const curr = edges[i];
+        const pp = props[(i - 1 + m) % m];
+        const cp = props[i];
+        const turn = (curr.dir - prev.dir + 4) % 4;
+        const vx = curr.x0;
+        const vy = curr.y0;
+
+        if (turn === 0) {
+          const d = Math.min(Math.max(0.37, (pp.dB + cp.dA) / 2), pp.tight || cp.tight ? 0.43 : 0.53);
+          pts.push([vx + d * curr.nx, vy + d * curr.ny]);
+        } else if (turn === 1) {
+          /* 外凸 90 度：先查外斜角格是否被其它实心分支占住，占住则贴墙角绕过 */
+          const diagX = curr.ex + prev.nx;
+          const diagY = curr.ey + prev.ny;
+          if (has(diagX, diagY)) {
+            pts.push([vx + 0.37 * prev.nx, vy + 0.37 * prev.ny]);
+            pts.push([vx + 0.37 * curr.nx, vy + 0.37 * curr.ny]);
+          } else {
+            const dP = Math.max(0.39, pp.dB);
+            const dC = Math.max(0.39, cp.dA);
+            const cInset = Math.max(0.365, dC * 0.94);
+            const pInset = Math.max(0.365, dP * 0.94);
+            pts.push([vx + dP * prev.nx + cInset * curr.nx, vy + dP * prev.ny + cInset * curr.ny]);
+            pts.push([vx + pInset * prev.nx + dC * curr.nx, vy + pInset * prev.ny + dC * curr.ny]);
+          }
+        } else if (turn === 3) {
+          /* 内凹 90 度或孔洞拐角：安全缩进空角格内，永不越界 */
+          const dc = 0.37 + noise(vx, vy, i + 23) * 0.04;
+          pts.push([vx + dc * (prev.nx + curr.nx), vy + dc * (prev.ny + curr.ny)]);
+        } else {
+          pts.push([vx + Math.max(0.37, cp.dA) * curr.nx, vy + Math.max(0.37, cp.dA) * curr.ny]);
+        }
+
+        /* 每格边内插锯齿顶点：首尾遇内凹角时自动让出内壁厚 ≥0.37 格 */
+        const nextEdge = edges[(i + 1) % m];
+        const nextTurn = (nextEdge.dir - curr.dir + 4) % 4;
+        const tStart = turn === 3 ? 0.44 : 0.30;
+        const tEnd = nextTurn === 3 ? 0.56 : 0.70;
+        const tSamples = tEnd - tStart >= 0.22 ? [tStart, tEnd] : [(tStart + tEnd) * 0.5];
+        const dx = curr.x1 - curr.x0;
+        const dy = curr.y1 - curr.y0;
+        tSamples.forEach((t, ti) => {
+          const d = cp.minD + noise(curr.x0 + ti * 3, curr.y0 + ti * 5, i + 31) * (cp.maxD - cp.minD);
+          pts.push([curr.x0 + dx * t + d * curr.nx, curr.y0 + dy * t + d * curr.ny]);
+        });
+      }
+      if (pts.length >= 3) polyLoops.push(pts.map(([px, py]) => [px * CELL, py * CELL]));
+    });
+    return polyLoops;
+  }
+
+  /** 按当前板面（异形 / 经典）算出精确像素包围盒与底材多边形。 */
+  function computeBoardGeo(plate, seedVal) {
+    const cellsList = plateCellsList(plate);
+    const termOut = plate.generated ? 34 : 14;
+    const rawTermLoc = (t) => {
+      const [dx, dy] = DIR_VEC[t.dir];
+      const cx = t.cell[0] * CELL + CELL / 2;
+      const cy = t.cell[1] * CELL + CELL / 2;
+      return [cx + dx * (CELL / 2 + termOut), cy + dy * (CELL / 2 + termOut)];
+    };
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const grow = (x, y) => {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    };
+
+    let metalLoops = null;
+    if (plate.generated) {
+      metalLoops = traceJaggedLoops(plate.cells, cellsList, seedVal);
+      metalLoops.forEach((loop) => loop.forEach(([x, y]) => grow(x, y)));
+    } else {
+      const size = plate.size || 4;
+      grow(-6, -6);
+      grow(size * CELL + 6, size * CELL + 6);
+    }
+
+    Object.values(plate.terminals || {}).forEach((t) => {
+      const [tx, ty] = rawTermLoc(t);
+      if (t.dir === 'W') { grow(tx - 40, ty - 14); grow(tx + 6, ty + 14); }
+      else if (t.dir === 'E') { grow(tx - 6, ty - 14); grow(tx + 40, ty + 14); }
+      else if (t.dir === 'N') { grow(tx - 24, ty - 24); grow(tx + 24, ty + 6); }
+      else { grow(tx - 24, ty - 6); grow(tx + 24, ty + 24); }
+    });
+
+    const pad = 12;
+    const gx = Math.ceil(pad - minX);
+    const gy = Math.ceil(pad - minY);
+    const cw = Math.ceil(maxX + gx + pad);
+    const ch = Math.ceil(maxY + gy + pad);
+    const slabPath = metalLoops ? metalLoops.map((loop) => 'M' + loop.map(([x, y]) => `${(x + gx).toFixed(1)} ${(y + gy).toFixed(1)}`).join(' L') + ' Z').join(' ') : '';
+    return { gx, gy, cw, ch, termOut, slabPath, cellsList };
+  }
+
+  /** 绘制连成整块的一体化多格金属底座与外轮廓（实心金框兜底）。 */
+  function renderUnifiedBody(absCells, fill, edgeStroke, isSelected, isError, gx, gy, cls) {
     const PAD = 4;
     const set = new Set(absCells.map((c) => c.x + ',' + c.y));
     const has = (x, y) => set.has(x + ',' + y);
     const out = [];
+    const xy = (x, y) => [gx + x * CELL, gy + y * CELL];
 
-    /* 主体块与邻格桥接 */
     absCells.forEach((c) => {
-      const [px, py] = cellXY(c.x, c.y);
+      const [px, py] = xy(c.x, c.y);
       const w = CELL - PAD * 2;
       out.push(`<rect class="part-cell" x="${px + PAD}" y="${py + PAD}" width="${w}" height="${w}" rx="2" fill="${fill}"/>`);
       if (has(c.x + 1, c.y)) {
@@ -149,11 +426,10 @@
       }
     });
 
-    /* 连续金属外镶边（只在无相邻同构件格的外侧绘制） */
     const edges = [];
     const hiEdges = [];
     absCells.forEach((c) => {
-      const [px, py] = cellXY(c.x, c.y);
+      const [px, py] = xy(c.x, c.y);
       const x0 = px + PAD;
       const y0 = py + PAD;
       const x1 = px + CELL - PAD;
@@ -183,34 +459,58 @@
     });
 
     const stroke = isError ? '#D36A65' : isSelected ? '#F2CF7E' : edgeStroke;
-    const sw = isSelected || isError ? 2 : 1.4;
-    out.push(`<path class="part-outline" d="${edges.join(' ')}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="square"/>`);
-    out.push(`<path class="part-bevel" d="${hiEdges.join(' ')}" fill="none" stroke="rgba(255,244,214,0.16)" stroke-width="1"/>`);
+    const sw = isSelected || isError ? 2.2 : 1.7;
+    const clsAttr = cls ? ` class="${cls}"` : '';
+    out.push(`<path${clsAttr} d="${edges.join(' ')}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="square"/>`);
+    out.push(`<path d="${hiEdges.join(' ')}" fill="none" stroke="rgba(255,244,214,0.22)" stroke-width="1"/>`);
     return out.join('');
   }
 
   /**
    * boardSvg(state, unitId, placements, opts)
-   * opts: {interactive, pickId, locked}
+   * 四层 Z 序：底材（锯齿金属） → 功法膜（半透明片段） → 构件纹章（实心金框） → 高亮/通电/交互。
+   * opts: {interactive, pickId, locked, ms}
    */
   function boardSvg(state, unitId, placements, opts) {
     const o = opts || {};
     const unit = state.roster.find((u) => u.id === unitId);
     const body = D().body(unit ? unit.bodyPreset : 'sturdy');
-    const blocked = new Set((body.blocked || []).map(([x, y]) => x + ',' + y));
-    const L = V.Circuit.layout(state, placements);
+    const plate = V.Circuit.plateOf(unit || { bodyPreset: 'sturdy', plateSeed: 1 });
+    const terminals = plate.terminals || D().TERMINALS;
+    const geo = computeBoardGeo(plate, unit && unit.plateSeed != null ? unit.plateSeed : 1);
+    const gx = geo.gx;
+    const gy = geo.gy;
+    const cellsList = geo.cellsList;
+    const blocked = new Set(!plate.generated && body && body.blocked ? body.blocked.map(([x, y]) => x + ',' + y) : []);
+
+    const cellXY = (x, y) => [gx + x * CELL, gy + y * CELL];
+    const cellCenter = (x, y) => [gx + x * CELL + CELL / 2, gy + y * CELL + CELL / 2];
+    const portPoint = (pt) => {
+      const [cx, cy] = cellXY(pt.cell[0], pt.cell[1]);
+      const [dx, dy] = DIR_VEC[pt.dir];
+      return [cx + CELL / 2 + dx * (CELL / 2 - 2), cy + CELL / 2 + dy * (CELL / 2 - 2)];
+    };
+    const terminalPoint = (t, outward) => {
+      const [cx, cy] = cellXY(t.cell[0], t.cell[1]);
+      const [dx, dy] = DIR_VEC[t.dir];
+      const d = outward ? CELL / 2 + geo.termOut : CELL / 2 - 2;
+      return [cx + CELL / 2 + dx * d, cy + CELL / 2 + dy * d];
+    };
+
+    const L = V.Circuit.layout(state, placements, terminals);
     const cellsUsed = new Set(L.cells.map((c) => c.x + ',' + c.y));
     const flow = traceVisualFlow(L);
     const locked = o.locked instanceof Set ? o.locked : new Set(o.locked || []);
+    const fid = 'b_' + (++svgUid);
 
-    /* 识别碰撞/越界/屏蔽格，直接标红到格上 */
+    /* 识别碰撞/不在板面上，标红到格上 */
     const cellOwners = new Map();
     const errorCells = new Set();
     const errorItems = new Set();
     L.built.forEach((b) => {
       b.abs.forEach((c) => {
         const k = c.x + ',' + c.y;
-        if (c.x < 0 || c.y < 0 || c.x >= 4 || c.y >= 4 || blocked.has(k)) {
+        if (!plate.cells.has(k)) {
           errorCells.add(k);
           errorItems.add(b.item.id);
         }
@@ -225,82 +525,124 @@
     });
 
     const parts = [];
-    parts.push(`<svg class="board" viewBox="0 0 ${CW} ${CH_BOARD}"
-      data-cell="${CELL}" data-gx="${GX}" data-gy="${GY}" data-n="4"
+    parts.push(`<svg class="board${o.pickId ? ' has-pick' : ''}" viewBox="0 0 ${geo.cw} ${geo.ch}"
+      data-cell="${CELL}" data-gx="${gx}" data-gy="${gy}" data-n="${plate.size}"
       xmlns="http://www.w3.org/2000/svg" role="img" aria-label="生命金属回路板面">`);
     parts.push(`<defs>
-      <filter id="glowGold" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      <pattern id="${fid}_metal" width="256" height="256" patternUnits="userSpaceOnUse">
+        <rect width="256" height="256" fill="#211A2D"/>
+        <image href="assets/art/rune-set-v2/living-metal.png" x="0" y="0" width="256" height="256" preserveAspectRatio="none"/>
+      </pattern>
+      <pattern id="${fid}_mem" width="256" height="256" patternUnits="userSpaceOnUse">
+        <rect width="256" height="256" fill="rgba(40,34,62,0.22)"/>
+        <image href="assets/art/inscription-v1/membrane-texture.png" x="0" y="0" width="256" height="256" preserveAspectRatio="none"/>
+      </pattern>
+      <filter id="${fid}_ms_on" x="-30%" y="-30%" width="160%" height="160%">
+        <feFlood flood-color="#F2CF7E" result="c"/>
+        <feComposite in="c" in2="SourceGraphic" operator="in" result="ink"/>
+        <feGaussianBlur in="ink" stdDeviation="1.8" result="halo"/>
+        <feMerge><feMergeNode in="halo"/><feMergeNode in="ink"/></feMerge>
       </filter>
-      <pattern id="blockedPat" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <filter id="${fid}_ms_off" x="-20%" y="-20%" width="140%" height="140%">
+        <feFlood flood-color="#8B84A8" result="c"/>
+        <feComposite in="c" in2="SourceGraphic" operator="in"/>
+      </filter>
+      <pattern id="${fid}_blk" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
         <line x1="0" y1="0" x2="0" y2="10" stroke="rgba(180,95,88,0.22)" stroke-width="2"/>
       </pattern>
-      <pattern id="errPat" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <pattern id="${fid}_err" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
         <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(211,106,101,0.45)" stroke-width="2"/>
       </pattern>
     </defs>`);
-    parts.push(`<rect class="board-bg" x="0" y="0" width="${CW}" height="${CH_BOARD}" rx="4"/>`);
-    /* 4x4 金属盘框 */
-    parts.push(`<rect class="board-frame" x="${GX - 2}" y="${GY - 2}" width="${CELL * 4 + 4}" height="${CELL * 4 + 4}" rx="2"/>`);
 
-    /* 屏蔽格（铁封锁槽） */
-    for (let y = 0; y < 4; y++) {
-      for (let x = 0; x < 4; x++) {
+    /* === 第 1 层：底材（异形锯齿金属 / 经典 4x4 退化路径） === */
+    parts.push('<g class="layer-base" pointer-events="none">');
+    parts.push(`<rect class="board-bg" x="0" y="0" width="${geo.cw}" height="${geo.ch}" rx="4"/>`);
+    if (plate.generated) {
+      parts.push(`<path class="plate-metal-slab" d="${geo.slabPath}" fill="url(#${fid}_metal)" fill-rule="nonzero"/>`);
+      parts.push(`<path class="plate-metal-bevel" d="${geo.slabPath}"/>`);
+      const rimEdges = [];
+      cellsList.forEach(([x, y]) => {
         const [px, py] = cellXY(x, y);
-        if (blocked.has(x + ',' + y)) {
+        parts.push(`<rect class="plate-cell-bed" x="${px + 0.5}" y="${py + 0.5}" width="${CELL - 1}" height="${CELL - 1}"/>`);
+        if (!plate.cells.has(x + ',' + (y - 1))) rimEdges.push(`M${px} ${py} h${CELL}`);
+        if (!plate.cells.has(x + ',' + (y + 1))) rimEdges.push(`M${px} ${py + CELL} h${CELL}`);
+        if (!plate.cells.has((x - 1) + ',' + y)) rimEdges.push(`M${px} ${py} v${CELL}`);
+        if (!plate.cells.has((x + 1) + ',' + y)) rimEdges.push(`M${px + CELL} ${py} v${CELL}`);
+      });
+      parts.push(`<path class="plate-edge-rim" d="${rimEdges.join(' ')}"/>`);
+    } else {
+      const n = plate.size;
+      parts.push(`<rect class="board-frame" x="${gx - 2}" y="${gy - 2}" width="${CELL * n + 4}" height="${CELL * n + 4}" rx="2"/>`);
+      for (let y = 0; y < n; y++) {
+        for (let x = 0; x < n; x++) {
+          if (!blocked.has(x + ',' + y)) continue;
+          const [px, py] = cellXY(x, y);
           parts.push(`<rect class="cell-blocked" x="${px + 1}" y="${py + 1}" width="${CELL - 2}" height="${CELL - 2}"/>
-            <rect x="${px + 1}" y="${py + 1}" width="${CELL - 2}" height="${CELL - 2}" fill="url(#blockedPat)"/>
+            <rect x="${px + 1}" y="${py + 1}" width="${CELL - 2}" height="${CELL - 2}" fill="url(#${fid}_blk)"/>
             <circle cx="${px + CELL / 2}" cy="${py + CELL / 2}" r="7" fill="rgba(16,12,18,0.85)" stroke="rgba(180,95,88,0.45)" stroke-width="1.2"/>
             <path d="M${px + CELL / 2 - 3} ${py + CELL / 2 - 3} l6 6 M${px + CELL / 2 + 3} ${py + CELL / 2 - 3} l-6 6" stroke="rgba(211,106,101,0.6)" stroke-width="1.4"/>`);
         }
       }
+      for (let i = 0; i <= n; i++) {
+        parts.push(`<line class="grid" x1="${gx + i * CELL}" y1="${gy}" x2="${gx + i * CELL}" y2="${gy + n * CELL}"/>`);
+        parts.push(`<line class="grid" x1="${gx}" y1="${gy + i * CELL}" x2="${gx + n * CELL}" y2="${gy + i * CELL}"/>`);
+      }
     }
+    parts.push('</g>');
 
-    /* 网格 */
-    for (let i = 0; i <= 4; i++) {
-      parts.push(`<line class="grid" x1="${GX + i * CELL}" y1="${GY}" x2="${GX + i * CELL}" y2="${GY + 4 * CELL}"/>`);
-      parts.push(`<line class="grid" x1="${GX}" y1="${GY + i * CELL}" x2="${GX + 4 * CELL}" y2="${GY + i * CELL}"/>`);
+    /* === 第 2 层：功法膜（半透明底膜 + 单色片段 feFlood 染色） === */
+    parts.push('<g class="layer-manuscript" pointer-events="none">');
+    const ms = o.ms;
+    if (ms && !ms.disabled && ms.oriented && ms.fits) {
+      const aligned = new Set(ms.cov.alignedCells || []);
+      const entryKey = (ms.oriented.entry[0] + ms.ox) + ',' + (ms.oriented.entry[1] + ms.oy);
+      const exitKeys = new Set((ms.oriented.exits || []).map((c) => (c[0] + ms.ox) + ',' + (c[1] + ms.oy)));
+      ms.oriented.cells.forEach(([lx, ly]) => {
+        const ax = lx + ms.ox;
+        const ay = ly + ms.oy;
+        const ak = ax + ',' + ay;
+        const [px, py] = cellXY(ax, ay);
+        const on = aligned.has(ak);
+        parts.push(`<rect x="${px + 1.5}" y="${py + 1.5}" width="${CELL - 3}" height="${CELL - 3}" fill="url(#${fid}_mem)" opacity="${on ? '0.78' : '0.42'}"/>`);
+        parts.push(`<rect class="${on ? 'ms-cell-on' : 'ms-cell-off'}" x="${px + 2}" y="${py + 2}" width="${CELL - 4}" height="${CELL - 4}" rx="2"/>`);
+
+        const dirs = ms.oriented.veins[lx + ',' + ly] || [];
+        const file = veinFileName(dirs);
+        if (file) {
+          parts.push(`<image href="assets/art/inscription-v1/${file}.png" x="${px}" y="${py}" width="${CELL}" height="${CELL}" preserveAspectRatio="none" filter="url(#${fid}_ms_${on ? 'on' : 'off'})" opacity="${on ? '0.94' : '0.42'}"/>`);
+        }
+        if (ak === entryKey) {
+          parts.push(`<circle class="ms-io-mark" cx="${px + 9}" cy="${py + 9}" r="3.2"/>`);
+        } else if (exitKeys.has(ak)) {
+          parts.push(`<polygon class="ms-io-mark exit" points="${px + CELL - 9},${py + CELL - 13} ${px + CELL - 5},${py + CELL - 9} ${px + CELL - 9},${py + CELL - 5} ${px + CELL - 13},${py + CELL - 9}"/>`);
+        }
+      });
     }
+    parts.push('</g>');
 
-    /* 端子（金属插口 + 通电指示） */
-    Object.values(D().TERMINALS).forEach((t) => {
-      const [x1, y1] = portPointPortLike(t);
-      const [x2, y2] = terminalPoint(t, true);
-      const isIn = t.role === 'in';
-      const active = isIn ? flow.fwd.has('T:' + t.id) : (flow.fwd.has('T:' + t.id) && flow.rev.has('T:' + t.id));
-      const litCls = active ? (isIn ? 'term-lit-in' : 'term-lit-out') : 'term-dim';
-      parts.push(`<line class="link ${isIn ? 'link-in' : 'link-out'} ${active ? 'term-wire-lit' : ''}" x1="${x2}" y1="${y2}" x2="${x1}" y2="${y1}"/>`);
-      parts.push(`<rect class="terminal ${isIn ? 'terminal-in' : 'terminal-out'} ${litCls}"
-        x="${x2 - 4}" y="${y2 - 4}" width="8" height="8" rx="1"/>`);
-      const lx = x2 + (t.dir === 'W' ? -6 : 6);
-      const ly = y2 + (t.cell[1] === 0 ? -7 : 13);
-      const anchor = t.dir === 'W' ? 'end' : 'start';
-      parts.push(`<text class="terminal-label ${active ? 'lit' : ''}" x="${lx}" y="${ly}" text-anchor="${anchor}">${esc(t.name)}</text>`);
-    });
-
-    /* 构件（一体化金属符文片 + 正交能量流） */
+    /* === 第 3 层：构件纹章（实心金框 + 纹理实图） === */
     const placementById = new Map((placements || []).map((p) => [p.itemId, p]));
+    const overlayFlows = [];
+    const builtData = [];
+    parts.push('<g class="layer-runes">');
     L.built.forEach((b) => {
       const pl = placementById.get(b.item.id) || { x: 0, y: 0 };
       const fill = TEMPLATE_COLOR[b.tpl.id] || '#2C2A3A';
-      const edge = TEMPLATE_EDGE[b.tpl.id] || '#7E7466';
       const isSelected = o.pickId === b.item.id;
       const isErr = errorItems.has(b.item.id);
       const isLocked = locked.has(b.item.id);
 
       const inPorts = b.aps.filter((p) => p.role === 'in');
       const outPorts = b.aps.filter((p) => p.role === 'out');
-      const partLive = b.aps.some((p) => {
-        const k = b.item.id + ':' + p.id;
-        return flow.fwd.has(k) && flow.rev.has(k);
-      });
+      const partLive = b.aps.some((p) => flow.fwd.has(b.item.id + ':' + p.id) && flow.rev.has(b.item.id + ':' + p.id));
       const partCharged = b.aps.some((p) => flow.fwd.has(b.item.id + ':' + p.id));
+      const goldFrame = partLive ? '#E6BF6B' : partCharged ? '#C9A75E' : '#A48549';
 
       parts.push(`<g class="part-group ${isSelected ? 'selected' : ''} ${partLive ? 'live' : partCharged ? 'charged' : 'dormant'} ${isLocked ? 'locked' : ''}"
-        data-act="wsGrab" data-id="${b.item.id}" data-px="${pl.x}" data-py="${pl.y}">`);
-
-      /* 底层 SVG 兜底（无图或图片被拦截时保持完整可辨识几何与刻槽） */
-      parts.push(renderUnifiedBody(b.abs, fill, edge, isSelected, isErr));
+        data-act="wsGrab" data-id="${b.item.id}" data-px="${pl.x}" data-py="${pl.y}">
+        <title>${esc(b.tpl.name)} · 点击选中 · 拖拽移动 · 右键/滚轮旋转${isLocked ? '' : ' · 双击卸下'}</title>`);
+      parts.push(renderUnifiedBody(b.abs, fill, goldFrame, isSelected, isErr, gx, gy, 'part-outline'));
 
       const tracePaths = [];
       inPorts.forEach((ip) => {
@@ -309,16 +651,12 @@
           const ok = b.item.id + ':' + op.id;
           const isLinkLive = flow.fwd.has(ik) && flow.rev.has(ok) && flow.fwd.has(ok) && flow.rev.has(ik);
           const isLinkCharged = flow.fwd.has(ik) && flow.fwd.has(ok);
-          const pts = [];
-          pts.push(portPoint(ip));
-          const chain = orthoCellPath(b.abs, ip.cell, op.cell);
-          chain.forEach(([cx, cy]) => pts.push(cellCenter(cx, cy)));
+          const pts = [portPoint(ip)];
+          orthoCellPath(b.abs, ip.cell, op.cell).forEach(([cx, cy]) => pts.push(cellCenter(cx, cy)));
           pts.push(portPoint(op));
-          const d = 'M' + pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
-          tracePaths.push({ d, isLinkLive, isLinkCharged, chain });
+          tracePaths.push({ d: 'M' + pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L'), isLinkLive, isLinkCharged });
         });
       });
-
       tracePaths.forEach((tp) => {
         parts.push(`<path class="rune-groove" d="${tp.d}"/>`);
         const cls = tp.isLinkLive ? 'rune-flow live' : tp.isLinkCharged ? 'rune-flow charged' : 'rune-flow dormant';
@@ -330,17 +668,12 @@
       const c0 = cellCenter(b.abs[0].x, b.abs[0].y);
       const flowCol = partLive ? '#F2CF7E' : partCharged ? '#7FBBC8' : '#7A6F63';
       if (b.tpl.capacitor) {
-        parts.push(`<polygon points="${avgX},${avgY - 12} ${avgX + 12},${avgY} ${avgX},${avgY + 12} ${avgX - 12},${avgY}"
-          fill="#1B1326" stroke="${flowCol}" stroke-width="1.6"/>
+        parts.push(`<polygon points="${avgX},${avgY - 12} ${avgX + 12},${avgY} ${avgX},${avgY + 12} ${avgX - 12},${avgY}" fill="#1B1326" stroke="${flowCol}" stroke-width="1.6"/>
           <circle cx="${avgX}" cy="${avgY}" r="3.5" fill="${partLive ? '#AD8AC7' : flowCol}"/>`);
       } else if (b.tpl.split) {
-        const junc = b.abs.find((c) => {
-          const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => b.abs.some((o) => o.x === c.x + dx && o.y === c.y + dy));
-          return nb.length >= 3;
-        }) || b.abs[0];
+        const junc = b.abs.find((c) => [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => b.abs.some((o2) => o2.x === c.x + dx && o2.y === c.y + dy)).length >= 3) || b.abs[0];
         const [jx, jy] = cellCenter(junc.x, junc.y);
-        parts.push(`<polygon points="${jx},${jy - 7} ${jx + 7},${jy} ${jx},${jy + 7} ${jx - 7},${jy}"
-          fill="#241833" stroke="${flowCol}" stroke-width="1.5"/>`);
+        parts.push(`<polygon points="${jx},${jy - 7} ${jx + 7},${jy} ${jx},${jy + 7} ${jx - 7},${jy}" fill="#241833" stroke="${flowCol}" stroke-width="1.5"/>`);
       } else if (b.tpl.gate) {
         const mx = (portPoint(inPorts[0])[0] + portPoint(outPorts[0])[0]) / 2;
         const my = (portPoint(inPorts[0])[1] + portPoint(outPorts[0])[1]) / 2;
@@ -349,16 +682,13 @@
       } else if (b.tpl.ember) {
         const mx = (portPoint(inPorts[0])[0] + portPoint(outPorts[0])[0]) / 2;
         const my = (portPoint(inPorts[0])[1] + portPoint(outPorts[0])[1]) / 2;
-        parts.push(`<polygon points="${mx},${my - 7} ${mx + 5},${my} ${mx},${my + 7} ${mx - 5},${my}"
-          fill="#2B140C" stroke="#D87843" stroke-width="1.5"/>`);
+        parts.push(`<polygon points="${mx},${my - 7} ${mx + 5},${my} ${mx},${my + 7} ${mx - 5},${my}" fill="#2B140C" stroke="#D87843" stroke-width="1.5"/>`);
       } else {
-        parts.push(`<polygon points="${c0[0]},${c0[1] - 4} ${c0[0] + 4},${c0[1]} ${c0[0]},${c0[1] + 4} ${c0[0] - 4},${c0[1]}"
-          fill="#15121E" stroke="${flowCol}" stroke-width="1.1"/>`);
+        parts.push(`<polygon points="${c0[0]},${c0[1] - 4} ${c0[0] + 4},${c0[1]} ${c0[0]},${c0[1] + 4} ${c0[0] - 4},${c0[1]}" fill="#15121E" stroke="${flowCol}" stroke-width="1.1"/>`);
       }
 
-      /* 生命金属纹章实图（与单元格 1:1 对齐；加载时自然覆盖兜底） */
-      const bx0 = GX + Math.min.apply(null, b.abs.map((c) => c.x)) * CELL;
-      const by0 = GY + Math.min.apply(null, b.abs.map((c) => c.y)) * CELL;
+      const bx0 = gx + Math.min.apply(null, b.abs.map((c) => c.x)) * CELL;
+      const by0 = gy + Math.min.apply(null, b.abs.map((c) => c.y)) * CELL;
       const runeTag = V.RuneArt && V.RuneArt.image
         ? V.RuneArt.image(b.tpl.id, {
           x: bx0, y: by0, cell: CELL,
@@ -368,57 +698,42 @@
         : '';
       if (runeTag) parts.push(runeTag);
 
-      /* 顶层能量动态提示（通电流动脉冲 / 蓝线未接输出提示） */
-      tracePaths.forEach((tp) => {
-        if (tp.isLinkLive) {
-          parts.push(`<path class="rune-pulse" d="${tp.d}"/>`);
-        } else if (tp.isLinkCharged && runeTag) {
-          parts.push(`<path class="rune-flow charged overlay" d="${tp.d}"/>`);
-        }
-      });
-
-      /* 选中金框高亮 */
-      if (isSelected) {
-        parts.push(renderUnifiedBody(b.abs, 'none', '#F2CF7E', true, isErr));
-      }
-
-      /* 端口方向插座标记 */
-      b.aps.forEach((p) => {
-        const [px, py] = portPoint(p);
-        const cls = p.role === 'in' ? 'port-in' : 'port-out';
-        const pk = b.item.id + ':' + p.id;
-        const lit = flow.fwd.has(pk) && flow.rev.has(pk) ? 'lit' : flow.fwd.has(pk) ? 'charged' : '';
-        parts.push(`<circle class="${cls} ${lit}" cx="${px}" cy="${py}" r="3.6"/>`);
-      });
-
-      /* 构件名称标签：放在最靠下的占格底部，带描边防止被能量线遮挡 */
       const labelCell = b.abs.slice().sort((a, c) => c.y - a.y || a.x - c.x)[0];
       const [lx, ly] = cellXY(labelCell.x, labelCell.y);
       parts.push(`<text class="part-label" x="${lx + CELL / 2}" y="${ly + CELL - 8}" text-anchor="middle">${esc(b.tpl.name)}</text>`);
       if (isLocked) {
         parts.push(`<text class="part-lock" x="${lx + CELL - 9}" y="${ly + 14}" text-anchor="end">锁</text>`);
       }
-
-      /* 精确逐格命中层（不遮挡 L/T 形空白位） */
       b.abs.forEach((c) => {
         const [hx, hy] = cellXY(c.x, c.y);
         parts.push(`<rect class="part-hit" x="${hx}" y="${hy}" width="${CELL}" height="${CELL}" fill="transparent"/>`);
       });
       parts.push('</g>');
-    });
 
-    /* 外部跨格连接线（端口↔端口 / 端子↔端口） */
-    const seen = new Set();
-    const points = new Map();
-    L.ports.forEach((p) => points.set(p.itemId + ':' + p.id, portPoint(p)));
-    Object.values(D().TERMINALS).forEach((t) => points.set('T:' + t.id, portPointPortLike(t)));
+      tracePaths.forEach((tp) => {
+        if (tp.isLinkLive) overlayFlows.push(`<path class="rune-pulse" d="${tp.d}"/>`);
+        else if (tp.isLinkCharged && runeTag) overlayFlows.push(`<path class="rune-flow charged overlay" d="${tp.d}"/>`);
+      });
+      builtData.push({ b, isSelected, isErr });
+    });
+    parts.push('</g>');
+
+    /* === 第 4 层：高亮 / 通电动画 / 端子 / 错误标红 / 交互命中 === */
+    parts.push('<g class="layer-highlights">');
+    parts.push('<g class="layer-fx" pointer-events="none">');
+    overlayFlows.forEach((fHtml) => parts.push(fHtml));
+
+    const seenEdge = new Set();
+    const portPoints = new Map();
+    L.ports.forEach((p) => portPoints.set(p.itemId + ':' + p.id, portPoint(p)));
+    Object.values(terminals).forEach((t) => portPoints.set('T:' + t.id, portPoint(t)));
     L.edges.forEach((e) => {
       if (e.internal) return;
       const k = e.from + '>' + e.to;
-      if (seen.has(k)) return;
-      seen.add(k);
-      const a = points.get(e.from);
-      const b = points.get(e.to);
+      if (seenEdge.has(k)) return;
+      seenEdge.add(k);
+      const a = portPoints.get(e.from);
+      const b = portPoints.get(e.to);
       if (!a || !b) return;
       const isLive = flow.fwd.has(e.from) && flow.fwd.has(e.to) && flow.rev.has(e.from) && flow.rev.has(e.to);
       const isCharged = flow.fwd.has(e.from) && flow.fwd.has(e.to);
@@ -427,26 +742,64 @@
       if (isLive) parts.push(`<circle class="link-spark" cx="${(a[0] + b[0]) / 2}" cy="${(a[1] + b[1]) / 2}" r="2.2"/>`);
     });
 
-    /* 冲突/错误高亮格 */
-    errorCells.forEach((k) => {
-      const [ex, ey] = k.split(',').map(Number);
-      if (ex < 0 || ey < 0 || ex >= 4 || ey >= 4) return;
-      const [px, py] = cellXY(ex, ey);
-      parts.push(`<rect class="cell-err" x="${px + 2}" y="${py + 2}" width="${CELL - 4}" height="${CELL - 4}" fill="url(#errPat)" pointer-events="none"/>`);
+    builtData.forEach(({ b, isSelected, isErr }) => {
+      if (isSelected) parts.push(renderUnifiedBody(b.abs, 'none', '#F2CF7E', true, isErr, gx, gy, 'part-unified-frame'));
+      b.aps.forEach((p) => {
+        const [px, py] = portPoint(p);
+        const cls = p.role === 'in' ? 'port-in' : 'port-out';
+        const pk = b.item.id + ':' + p.id;
+        const lit = flow.fwd.has(pk) && flow.rev.has(pk) ? 'lit' : flow.fwd.has(pk) ? 'charged' : '';
+        parts.push(`<circle class="${cls} ${lit}" cx="${px}" cy="${py}" r="3.6"/>`);
+      });
     });
 
-    /* 空格命中层 */
+    /* 终端（画在 plate.terminals 所指板面边界外沿） */
+    Object.values(terminals).forEach((t) => {
+      const [x1, y1] = portPoint(t);
+      const [x2, y2] = terminalPoint(t, true);
+      const isIn = t.role === 'in';
+      const active = isIn ? flow.fwd.has('T:' + t.id) : (flow.fwd.has('T:' + t.id) && flow.rev.has('T:' + t.id));
+      const litCls = active ? (isIn ? 'term-lit-in' : 'term-lit-out') : 'term-dim';
+      parts.push(`<line class="link ${isIn ? 'link-in' : 'link-out'} ${active ? 'term-wire-lit' : ''}" x1="${x2}" y1="${y2}" x2="${x1}" y2="${y1}"/>`);
+      parts.push(`<rect class="terminal ${isIn ? 'terminal-in' : 'terminal-out'} ${litCls}" data-term="${t.id}" x="${x2 - 4}" y="${y2 - 4}" width="8" height="8" rx="1"/>`);
+      let lx = x2;
+      let ly = y2 + 3;
+      let anchor = 'middle';
+      if (t.dir === 'W') { lx = x2 - 8; anchor = 'end'; }
+      else if (t.dir === 'E') { lx = x2 + 8; anchor = 'start'; }
+      else if (t.dir === 'N') { ly = y2 - 9; }
+      else { ly = y2 + 15; }
+      parts.push(`<text class="terminal-label ${active ? 'lit' : ''}" x="${lx}" y="${ly}" text-anchor="${anchor}">${esc(t.name)}</text>`);
+    });
+
+    /* 冲突/不在板面红框 */
+    errorCells.forEach((k) => {
+      const [ex, ey] = k.split(',').map(Number);
+      if (ex < 0 || ey < 0 || ex >= plate.size || ey >= plate.size) return;
+      const [px, py] = cellXY(ex, ey);
+      parts.push(`<rect class="cell-err" x="${px + 2}" y="${py + 2}" width="${CELL - 4}" height="${CELL - 4}" fill="url(#${fid}_err)"/>`);
+    });
+    parts.push('</g>');
+
     if (o.interactive) {
-      for (let y = 0; y < 4; y++) {
-        for (let x = 0; x < 4; x++) {
-          if (cellsUsed.has(x + ',' + y)) continue;
+      if (plate.generated) {
+        cellsList.forEach(([x, y]) => {
+          if (cellsUsed.has(x + ',' + y)) return;
           const [px, py] = cellXY(x, y);
-          parts.push(`<rect class="hit" x="${px}" y="${py}" width="${CELL}" height="${CELL}"
-            data-act="wsCell" data-id="${x},${y}" role="button" tabindex="0">
-            <title>格 (${x},${y})${blocked.has(x + ',' + y) ? ' 屏蔽格（不可放置）' : ' 点击放置选中构件'}</title></rect>`);
+          parts.push(`<rect class="hit" x="${px}" y="${py}" width="${CELL}" height="${CELL}" data-act="wsCell" data-id="${x},${y}" role="button" tabindex="0"><title>格 (${x},${y}) 点击放置选中构件</title></rect>`);
+        });
+      } else {
+        for (let y = 0; y < plate.size; y++) {
+          for (let x = 0; x < plate.size; x++) {
+            if (cellsUsed.has(x + ',' + y)) continue;
+            const [px, py] = cellXY(x, y);
+            parts.push(`<rect class="hit" x="${px}" y="${py}" width="${CELL}" height="${CELL}" data-act="wsCell" data-id="${x},${y}" role="button" tabindex="0"><title>格 (${x},${y})${blocked.has(x + ',' + y) ? ' 屏蔽格（不可放置）' : ' 点击放置选中构件'}</title></rect>`);
+          }
         }
       }
     }
+    parts.push('<g class="drop-ghost" pointer-events="none" style="display:none"></g>');
+    parts.push('</g>');
 
     parts.push('</svg>');
     return parts.join('');
@@ -478,11 +831,6 @@
       return `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.9" fill="${pt.role === 'in' ? '#7FBBC8' : '#F2CF7E'}" stroke="#0B0910" stroke-width="0.6"/>`;
     }).join('');
     return `<svg class="mini-shape" viewBox="0 0 ${size} ${size}" aria-hidden="true">${cells}${runeImg}${ports}</svg>`;
-  }
-
-  function portPointPortLike(t) {
-    /* 端子在网格外侧，端口在格内边缘：用同一套坐标算 */
-    return portPoint({ cell: t.cell, dir: t.dir });
   }
 
   /* ------------------------------ 通用片段 ------------------------------ */
@@ -788,14 +1136,75 @@
 
   /* ------------------------------ 工坊 ------------------------------ */
 
+  function draftSignature(list) {
+    return (list || []).map((p) => `${p.itemId}:${p.x},${p.y},${p.rotation || 0},${p.mirrorY ? 1 : 0}`).sort().join('|');
+  }
+
+  /** 渲染功法膜覆盖率与贯通状态面板（分母永远是膜格数，摆不下时灰掉并给出明确原因）。 */
+  function manuscriptPanelBody(plate, ms) {
+    const picker = `<div class="row wrap tight mb2">
+      ${WORKSHOP_MANUSCRIPTS.map((m) => btn(m.name, 'wsMsPick', {
+        cls: ms && !ms.disabled && ms.id === m.id ? 'gold xs' : 'ghost xs',
+        data: { id: m.id },
+      })).join('')}
+      ${btn('无', 'wsMsPick', { cls: ms && ms.disabled ? 'gold xs' : 'ghost xs', data: { id: 'none' } })}
+    </div>`;
+
+    if (!ms || ms.disabled) {
+      return `${picker}<div class="tiny muted">已关闭功法膜预览，仅显示生命金属底材与电路。</div>`;
+    }
+
+    const unfit = !ms.fits;
+    const tierName = ms.cov.tier ? ms.cov.tier.name : '未达台阶';
+    const pctText = `${ms.cov.aligned}/${ms.cov.total} = ${ms.cov.pct}%`;
+    const cellsList = plateCellsList(plate);
+    const altFit = unfit && V.Manuscript
+      ? WORKSHOP_MANUSCRIPTS.find((m) => m.id !== ms.id && V.Manuscript.placements(V.Manuscript.normalize(m), cellsList).length > 0)
+      : null;
+
+    return `<div class="ms-panel ${unfit ? 'ms-unfit' : ''}" data-ms-fits="${ms.fits ? '1' : '0'}">
+      ${picker}
+      <div class="row wrap tight">
+        <span class="small"><b class="${unfit ? 'danger' : 'gold'}">${esc(ms.spec.name)}</b> <span class="tiny muted">· 膜 ${ms.cov.total} 格</span></span>
+        <div class="spacer"></div>
+        <span class="tag ${unfit ? '' : ms.cov.tier ? 'tag-weapon' : ''}" data-ms-tier>${esc(unfit ? '无法覆盖' : tierName)}</span>
+      </div>
+      <div class="mt2">
+        <div class="row tiny muted">
+          <span>覆盖率（分母为膜格数）</span>
+          <div class="spacer"></div>
+          <span class="${unfit ? 'muted' : 'gold'}" data-ms-cov>${esc(pctText)}</span>
+        </div>
+        ${bar(ms.cov.aligned, ms.cov.total, ms.cov.pct >= 100 ? 'energy' : 'hp')}
+      </div>
+      <div class="ms-tier-row tiny muted">
+        <span class="tag ${ms.rt.ok ? 'tag-circuit' : ''}" data-ms-route>贯通：${ms.rt.ok ? '已贯通' : '未贯通'}</span>
+        <span>台阶：${ms.spec.tiers.map((t) => `${t.at}%`).join(' / ')}</span>
+      </div>
+      <div class="row wrap tight mt2">
+        ${btn('旋膜 ⟳', 'wsMsRotate', { cls: 'ghost xs' })}
+        ${btn('翻膜 ⇅', 'wsMsFlip', { cls: 'ghost xs' })}
+        ${btn(`换落点 (${ms.validSpots.length ? `${ms.spotIdx + 1}/${ms.validSpots.length}` : '0'})`, 'wsMsShift', { cls: 'ghost xs', disabled: ms.validSpots.length <= 1 })}
+      </div>
+      ${unfit ? `<div class="ms-reason" data-ms-reason><div>${esc(ms.reason)}</div>${altFit ? btn(`切到可放的「${altFit.name}」`, 'wsMsPick', { cls: 'ghost xs mt1', data: { id: altFit.id } }) : ''}</div>` : ''}
+    </div>`;
+  }
+
   function workshopScreen(state, ui) {
     const unit = state.roster.find((u) => u.id === ui.wsUnit) || state.roster[0];
     const draft = ui.wsDraft || (unit ? unit.board.placements : []);
     const pv = unit ? V.Circuit.preview(state, unit.id, draft) : { ok: false, errors: ['没有角色'], occupied: [], load: 0, reachableOutputs: [] };
     const body = unit ? D().body(unit.bodyPreset) : null;
+    const plate = V.Circuit.plateOf(unit || { bodyPreset: 'sturdy', plateSeed: 1 });
+    const cellsList = plateCellsList(plate);
+    const an = plate.generated && V.PlateGen ? V.PlateGen.analyze(cellsList) : null;
+    const layout = V.Circuit.layout(state, draft, plate.terminals);
+    const ms = resolveManuscript(unit, plate, ui, layout);
+
     const locked = new Set(ui.wsLocked || []);
     const draftIds = new Set(draft.map((p) => p.itemId));
     const originIds = unit ? unit.board.placements.map((p) => p.itemId) : [];
+    const isDirty = unit && ui.wsMode !== 'inscribe' && draftSignature(draft) !== draftSignature(unit.board.placements);
 
     /* 构件库：仓库里的闲置回路 + （工坊模式下）本角色原板卸下来暂未放置的构件 */
     const stashCircuits = state.stash.filter((id) => state.itemsById[id] && state.itemsById[id].kind === 'circuit');
@@ -808,7 +1217,7 @@
     const loadCap = body ? body.loadCap : 1;
     const loadOver = body && pv.load > body.loadCap;
 
-    const surface = V.Art.imgTag('veteran.surface.board', 'board-surface-img');
+    const surface = !plate.generated ? V.Art.imgTag('veteran.surface.board', 'board-surface-img') : '';
     return `
     ${V.Art.sceneBanner('veteran.scene.workshop', 'scene-workshop', '工坊', '可逆装配 · 停摆的构件不伪造连通')}
     <div class="ws-layout">
@@ -817,11 +1226,13 @@
     cls: u.id === unit.id ? 'gold xs' : 'ghost xs', data: { id: u.id },
   })).join('')}</div>
         ${unit ? `<div class="mt2 small muted">底盘：<b class="text-hi">${esc(body.name)}</b> · 负荷上限 ${body.loadCap}</div>
-        <div class="tiny muted mt1">屏蔽格：${body.blocked.map((b) => `(${b[0]},${b[1]})`).join(' ')}</div>` : ''}`)}
+        ${plate.generated && an
+      ? `<div class="tiny muted mt1">板面：${an.count} 格 · ${an.width}×${an.height}${an.holes ? ` · ${an.holes} 孔` : ''} · 最长连 ${an.longestRun}</div>`
+      : `<div class="tiny muted mt1">屏蔽格：${body.blocked.map((b) => `(${b[0]},${b[1]})`).join(' ')}</div>`}` : ''}`)}
         ${panel('校验', `<div class="row wrap">
             <span class="${pv.ok ? 'success' : 'danger'} small"><b>${pv.ok ? '板面合法' : '板面有问题'}</b></span>
             <div class="spacer"></div>
-            <span class="tiny muted">占格 ${pv.occupied.length}/16</span>
+            <span class="tiny muted">占格 ${pv.occupied.length}/${cellsList.length}</span>
           </div>
           <div class="mt2">
             <div class="row tiny muted"><span>负荷</span><div class="spacer"></div><span class="${loadOver ? 'danger' : ''}">${pv.load} / ${body ? body.loadCap : '?'}</span></div>
@@ -834,54 +1245,60 @@
           </div>
           ${(!pv.ok && pv.errors.length) || (ui.wsErrors && ui.wsErrors.length)
     ? `<div class="err-box mt2">${(ui.wsErrors && ui.wsErrors.length ? ui.wsErrors : pv.errors).slice(0, 4).map((e) => `<div>${esc(e)}</div>`).join('')}</div>` : ''}
-          ${pv.ok && !pv.reachableOutputs.length ? '<div class="err-box mt2">没有任何输出连通，保存会被拒绝。</div>' : ''}`)}
-        ${panel('通道图例', `<div class="ws-legend tiny muted">
-          <div><i class="leg-dot live"></i> 金线：输入极已连通至输出极</div>
-          <div><i class="leg-dot charged"></i> 蓝线：能量已流入，尚未接通输出</div>
-          <div><i class="leg-dot dormant"></i> 灰线：未通电 / 休眠段</div>
-          <div class="mt1">快捷键：<b>R</b> 旋转 · <b>F</b> 翻转 · <b>右键</b>快转 · <b>Del</b> 卸下</div>
-        </div>`)}
+          ${pv.ok && !pv.reachableOutputs.length ? '<div class="mt2 tiny muted">还没有接通任何输出——可以先存下来，回头在工坊里接。</div>' : ''}`)}
+        ${panel('功法膜覆盖率', manuscriptPanelBody(plate, ms))}
       </aside>
 
       <div class="ws-board">
         <div class="board-stack">
           ${surface ? `<div class="board-surface">${surface}</div>` : ''}
-          ${boardSvg(state, unit.id, draft, { interactive: true, pickId: ui.wsPick, locked })}
+          ${boardSvg(state, unit.id, draft, { interactive: true, pickId: ui.wsPick, locked, ms })}
         </div>
         ${pickedTpl ? `<div class="ws-focus mt2">
           <div class="row wrap tight">
+            ${V.RuneArt && V.RuneArt.thumb ? V.RuneArt.thumb(pickedTpl.id, 'ws-focus-thumb') : ''}
             <span class="gold small">${esc(pickedTpl.name)}</span>
             <span class="tag">${pickedTpl.cells.length} 格</span>
             <span class="tag">负荷 ${pickedTpl.load}</span>
-            <span class="tiny muted">${pickedPlaced ? `位于 (${pickedPlaced.x},${pickedPlaced.y})` : '待放置（点击板面空格或拖拽）'} · 旋${pickedPlaced ? pickedPlaced.rotation : ui.wsRot}${(pickedPlaced ? pickedPlaced.mirrorY : ui.wsMirror) ? ' 翻' : ''}</span>
+            <span class="tiny muted">${pickedPlaced ? `位于 (${pickedPlaced.x},${pickedPlaced.y}) · 拖动移位 / 滚轮·右键旋转 / 双击卸下` : '悬停板面看落点 · 点击或拖拽放置 · 滚轮/R旋转'} · 旋${pickedPlaced ? pickedPlaced.rotation : ui.wsRot}${(pickedPlaced ? pickedPlaced.mirrorY : ui.wsMirror) ? ' 翻' : ''}</span>
           </div>
           <div class="tiny muted mt1">${esc(pickedTpl.desc)}</div>
-        </div>` : `<div class="ws-focus muted tiny mt2">点击或拖拽右侧构件到 4×4 板面；选中板上构件可按 R 旋转、F 翻转、拖出板外卸下。</div>`}
-        <div class="row wrap mt2">
+        </div>` : `<div class="ws-focus muted tiny mt2">点选或拖拽右侧构件到${plate.generated ? '异形金属' : ' 4×4 '}板面；双击右侧可直接装上，双击板上可直接卸下，滚轮或右键随时旋转。</div>`}
+        <div class="row wrap tight mt2">
           ${btn('旋转 ⟳ (R)', 'wsRotate', { cls: 'ghost sm', disabled: !ui.wsPick })}
           ${btn('翻转 ⇅ (F)', 'wsFlip', { cls: 'ghost sm', disabled: !ui.wsPick })}
+          ${ui.wsPick ? btn('取消选中 (Esc)', 'wsCancelPick', { cls: 'ghost sm' }) : ''}
           ${btn('撤销', 'wsUndo', { cls: 'ghost sm', disabled: !(ui.wsHist && ui.wsHist.length) })}
           ${btn('重做', 'wsRedo', { cls: 'ghost sm', disabled: !(ui.wsRedo && ui.wsRedo.length) })}
+          ${btn('清空', 'wsClear', { cls: 'ghost sm danger', disabled: !draft.some((p) => !locked.has(p.itemId)) })}
           <div class="spacer"></div>
-          ${ui.wsMode === 'inscribe' ? '' : btn('保存板面', 'wsSave', { cls: 'gold sm' })}
+          ${ui.wsMode === 'inscribe' ? '' : btn(isDirty ? '保存板面 *' : '保存板面', 'wsSave', { cls: isDirty ? 'gold sm dirty' : 'gold sm' })}
         </div>
-        ${ui.wsMode === 'inscribe' ? '' : `<div class="row wrap mt2">
-          <span class="tiny muted">快捷预设：</span>
+        ${ui.wsMode === 'inscribe' ? '' : `<div class="row wrap tight mt2">
+          <span class="tiny muted">辅助布线：</span>
+          ${btn('自动接通', 'wsAutoConnect', { cls: 'ghost xs' })}
           ${btn('基础直供', 'wsPreset', { cls: 'ghost xs', data: { id: 'basic' } })}
           ${btn('蓄能回路', 'wsPreset', { cls: 'ghost xs', data: { id: 'charge' } })}
+          ${isDirty ? btn('还原已存', 'wsRevert', { cls: 'ghost xs' }) : ''}
         </div>`}
+        <div class="ws-hint-strip">
+          <span><i class="leg-dot live"></i>金线：已接通</span>
+          <span><i class="leg-dot charged"></i>蓝线：未通输出</span>
+          <span><i class="leg-dot dormant"></i>灰线：休眠</span>
+          <span class="muted"><b>滚轮/右键/R</b> 旋转 · <b>F</b> 翻转 · <b>双击</b> 装/卸 · <b>Del</b> 卸下 · <b>Esc</b> 取消选</span>
+        </div>
       </div>
 
       <aside class="ws-right">
         ${panel(`构件库（${poolIds.length}）`, `
-          <div class="muted tiny mb2">拖到板面上直接放置，或点选后点击空格。${ui.wsMode === 'inscribe' ? '原构件不能删除。' : ''}</div>
+          <div class="muted tiny mb2">拖到板面、点选悬停预览放置，或双击快速装上。${ui.wsMode === 'inscribe' ? '原构件不能删除。' : ''}</div>
           <div class="part-list">${poolIds.length ? poolIds.map((id) => {
     const it = state.itemsById[id];
     const t = D().template(it.templateId);
     const isPicked = ui.wsPick === id;
     const rot = isPicked ? ui.wsRot : 0;
     const mir = isPicked ? ui.wsMirror : false;
-    return `<button class="part-item ${isPicked ? 'on' : ''}" data-act="wsPick" data-id="${id}"
+    return `<button class="part-item ${isPicked ? 'on' : ''}" data-act="wsPick" data-id="${id}" data-stash="1"
       ${locked.has(id) ? 'disabled' : ''}>
       <span class="part-shape-box">${miniShapeSvg(t.id, rot, mir)}</span>
       <span class="part-text">
@@ -895,15 +1312,15 @@
     const it = state.itemsById[p.itemId];
     if (!it) return '';
     const t = D().template(it.templateId);
-    return `<div class="part-item static ${ui.wsPick === p.itemId ? 'on' : ''}">
+    const isLocked = locked.has(p.itemId) || ui.wsMode === 'inscribe';
+    return `<div class="part-item ${ui.wsPick === p.itemId ? 'on' : ''}" data-act="wsPick" data-id="${p.itemId}">
       <span class="part-shape-box">${miniShapeSvg(t.id, p.rotation, p.mirrorY)}</span>
       <span class="part-text">
         <span class="part-name">${esc(t.name)}</span>
         <span class="part-meta">(${p.x},${p.y}) · 旋${p.rotation}${p.mirrorY ? ' 翻' : ''} · 负荷${t.load}</span>
       </span>
       <span class="row tight">
-        ${btn('选', 'wsPick', { cls: 'ghost xs', data: { id: p.itemId } })}
-        ${locked.has(p.itemId) || ui.wsMode === 'inscribe' ? '' : btn('移', 'wsRemove', { cls: 'ghost xs danger', data: { id: p.itemId } })}
+        ${isLocked ? '' : btn('移', 'wsRemove', { cls: 'ghost xs danger', data: { id: p.itemId } })}
       </span>
     </div>`;
   }).join('') : '<div class="muted small">板面空着</div>'}</div>`)}
@@ -1472,5 +1889,9 @@
     };
   }
 
-  V.UI = { screen, hud, nav, modalHtml, boardSvg, miniShapeSvg, esc, btn, bar, partName, partMeta, logClass, battleBar, ruleText, partShape };
+  V.UI = {
+    screen, hud, nav, modalHtml, boardSvg, miniShapeSvg, esc, btn, bar,
+    partName, partMeta, logClass, battleBar, ruleText, partShape,
+    MANUSCRIPTS: WORKSHOP_MANUSCRIPTS, resolveManuscript, plateCellsList,
+  };
 })(globalThis.Ashen ||= {});

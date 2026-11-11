@@ -30,19 +30,28 @@ test('同一单位重复取板面结果一致（seed 稳定，可存档）', () 
   assert.equal(a, b);
 });
 
-test('四个终端都落在板面上，方向朝外', () => {
+test('能量点由功法给：四个具名点都落在功法格上', () => {
   const st = V.State.create(9001);
   st.roster.forEach((u) => {
+    assert.ok(u.manuscript, `${u.name} 应该带一套入门功法`);
     const plate = V.Circuit.plateOf(u);
     const t = plate.terminals;
+    assert.deepEqual(Object.keys(t).sort(), ['clock', 'damage', 'main', 'support']);
     Object.keys(t).forEach((id) => {
       assert.ok(plate.cells.has(key(t[id].cell)), `${u.name} 的 ${id} 不在板面上`);
+      assert.equal(t[id].fromManuscript, true);
     });
-    assert.equal(t.main.dir, 'E');
-    assert.equal(t.clock.dir, 'W');
-    assert.equal(t.damage.dir, 'S');
-    assert.equal(t.support.dir, 'N');
+    assert.equal(t.clock.role, 'in');
+    assert.equal(t.main.role, 'out');
   });
+});
+
+test('没有功法就没有能量点：板面只剩槽位', () => {
+  const st = V.State.create(9001);
+  const u = st.roster[0];
+  const bare = Object.assign({}, u, { manuscript: null });
+  const plate = V.Circuit.plateOf(bare);
+  assert.deepEqual(Object.keys(plate.terminals), []);
 });
 
 test('板面外的位置报「不在板面上」，不再说屏蔽格', () => {

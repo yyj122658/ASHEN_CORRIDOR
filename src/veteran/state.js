@@ -112,6 +112,29 @@
 
   /* ------------------------------ 默认档 ------------------------------ */
 
+  /**
+   * 装上一套功法：放在板面上第一个能容纳它的位置。
+   * 功法是占格的「管道」，摆不下就先空着（玩家自己找位置）。
+   */
+  function equipManuscript(st, unit, msId) {
+    const spec = D().manuscript(msId);
+    if (!spec || !A.Veteran.Manuscript) return unit;
+    const base = A.Veteran.Manuscript.normalize(spec);
+    if (!base) return unit;
+    const plate = A.Veteran.Circuit.plateOf(unit);
+    for (let r = 0; r < 4; r++) {
+      const oriented = A.Veteran.Manuscript.orient(base, r, false);
+      const spots = A.Veteran.Manuscript.placements(oriented, plate.cellsList);
+      if (spots.length) {
+        unit.manuscript = Object.assign({}, spec, {
+          x: spots[0][0], y: spots[0][1], rotation: r, mirrorY: false,
+        });
+        return unit;
+      }
+    }
+    return unit;
+  }
+
   /** FNV-1a：把字符串稳定映射成 uint32，用来派生板面 seed。 */
   function hashSeed(text) {
     let h = 0x811C9DC5;
@@ -148,6 +171,7 @@
       affliction: null,
       weaponId: null,
       board: { placements: [] },
+      manuscript: null,
       gambits: D().defaultGambits(),
       logicSlots: D().DESIGN.logicSlots,
       history: { eligibleRunIds: [], records: [] },
@@ -238,6 +262,11 @@
       st.itemsById[weapon.id] = weapon;
       unit.weaponId = weapon.id;
       equipPreset(st, unit, 'basic');
+      /* 经典模式不带功法：老存档与单测沿用旧负荷与旧终端 */
+      if (st.plateMode === 'plate') {
+        equipManuscript(st, unit, 'corridor5');
+        if (!unit.manuscript) equipManuscript(st, unit, 'ember12');
+      }
       st.roster.push(unit);
     });
 
@@ -322,16 +351,34 @@
       if (u.weaponId && !w) err(`${u.id} 的主手不存在：${u.weaponId}`);
       if (w && w.kind !== 'weapon') err(`${u.id} 的 weaponId 不是主手`);
       if (w && !D().WEAPONS[w.templateId]) err(`${u.id} 的主手类型未知：${w.templateId}`);
+      const maxCoord = (V.Circuit && typeof V.Circuit.plateOf === 'function'
+        ? V.Circuit.plateOf(u).size
+        : (st.plateMode === 'classic' ? D().DESIGN.gridSize : (V.PlateGen ? V.PlateGen.SIZE : D().DESIGN.gridSize))) - 1;
       (u.board && u.board.placements || []).forEach((p) => {
         const it = st.itemsById[p.itemId];
         if (!it) return err(`${u.id} 的板面引用了不存在的构件 ${p.itemId}`);
         if (it.kind !== 'circuit') err(`${u.id} 的板面放了非回路构件 ${p.itemId}`);
-        if (!isInt(p.x) || !isInt(p.y) || p.x < 0 || p.y < 0 || p.x > 3 || p.y > 3) {
+        if (!isInt(p.x) || !isInt(p.y) || p.x < 0 || p.y < 0 || p.x > maxCoord || p.y > maxCoord) {
           err(`${u.id} 的构件 ${p.itemId} 坐标越界`);
         }
         if (![0, 1, 2, 3].includes(p.rotation)) err(`${u.id} 的构件 ${p.itemId} 旋转值非法`);
       });
     });
+
+    /* 功法：必须整块落在板面上（占格由 preview 统一查） */
+    if (V.Manuscript && V.Circuit && typeof V.Circuit.plateOf === 'function') {
+      (st.roster || []).forEach((u) => {
+        if (!u.manuscript) return;
+        const plate = V.Circuit.plateOf(u);
+        const or = V.Manuscript.orient(
+          V.Manuscript.normalize(u.manuscript),
+          u.manuscript.rotation || 0, !!u.manuscript.mirrorY,
+        );
+        if (!V.Manuscript.fits(or, plate.cellsList, u.manuscript.x || 0, u.manuscript.y || 0)) {
+          err(`${u.name || u.id} 的功法没有完整落在板面上`);
+        }
+      });
+    }
 
     /* 几何与负荷：委托回路编译器（含屏蔽格、重叠、越界、超负荷、闭环） */
     if (V.Circuit && typeof V.Circuit.preview === 'function') {
@@ -374,7 +421,7 @@
   }
 
   V.State = {
-    VERSION, RULESET, SAVE_KEY, DEFAULT_SEED, MAX_FLOOR,
+    VERSION, RULESET, SAVE_KEY, DEFAULT_SEED, MAX_FLOOR, equipManuscript,
     clone, ok, fail, takeId, addLog,
     create, makeUnit, makePart, equipPreset, partCells, partLoad,
     validate, itemLocations, itemLocation, ownItemIds, itemById, unitById,

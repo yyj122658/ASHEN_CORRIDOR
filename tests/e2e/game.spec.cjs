@@ -89,41 +89,124 @@ async function launch() {
   ok('A4 进入营地', (await snap()).screen === 'camp');
   ok('A5 四位老兵', await ev(() => window.Ashen.Veteran.App.state.roster.length === 4));
 
-  /* ---------- B 工坊 ---------- */
+  /* ---------- B 工坊（异形金属板面 + 功法膜） ---------- */
   await click('[data-act="go"][data-v="workshop"]');
-  ok('B1 打开工坊', (await snap()).screen === 'workshop');
-  ok('B2 渲染 4x4 板面', await ev(() => !!document.querySelector('svg.board')));
+  ok('B1 异形板面能打开工坊', (await snap()).screen === 'workshop');
+  ok('B2 渲染 7×7 异形金属板面', await ev(() => {
+    const svg = document.querySelector('svg.board');
+    if (!svg || svg.dataset.n !== '7') return false;
+    const slab = svg.querySelector('.plate-metal-slab');
+    const noBlockedText = !document.body.innerText.includes('屏蔽格：');
+    return !!slab && noBlockedText;
+  }));
   ok('B3 默认板面合法', await ev(() => document.body.innerText.includes('板面合法')));
 
   const partId = await ev(() => {
     const st = window.Ashen.Veteran.App.state;
     return st.stash.find((id) => st.itemsById[id].kind === 'circuit') || null;
   });
-  if (partId) {
+  const firstHitCell = await ev(() => {
+    const h = document.querySelector('svg.board .hit');
+    return h ? h.dataset.id : null;
+  });
+  if (partId && firstHitCell) {
     await click(`[data-act="wsPick"][data-id="${partId}"]`);
-    await click('[data-act="wsCell"][data-id="0,0"]');
-    ok('B4 点选可放置', (await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length)) === 3);
+    await click(`[data-act="wsCell"][data-id="${firstHitCell}"]`);
+    ok('B4 异形板面能放下构件', (await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length)) === 3);
     await click('[data-act="wsUndo"]');
     ok('B5 撤销', (await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length)) === 2);
     await click('[data-act="wsRedo"]');
     ok('B6 重做', (await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length)) === 3);
     await click('[data-act="wsUndo"]');
   } else {
-    ok('B4 跳过（仓库没有多余回路）', true);
+    ok('B4 跳过（仓库没有多余回路或无空格）', true);
     ok('B5 跳过', true);
     ok('B6 跳过', true);
   }
 
+  /* B7：放到板面外空格报「不在板面上」，而非屏蔽格 */
   await ev(() => {
     const A = window.Ashen.Veteran;
-    A.App.ui.wsPick = A.App.state.stash.find((id) => A.App.state.itemsById[id].kind === 'circuit');
+    const st = A.App.state;
+    const u = st.roster.find((x) => x.id === A.App.ui.wsUnit) || st.roster[0];
+    const plate = A.Circuit.plateOf(u);
+    let outside = null;
+    for (let y = 0; y < plate.size && !outside; y++) {
+      for (let x = 0; x < plate.size && !outside; x++) {
+        if (!plate.cells.has(x + ',' + y)) outside = x + ',' + y;
+      }
+    }
+    const cid = st.stash.find((id) => st.itemsById[id].kind === 'circuit');
+    if (cid && outside) {
+      A.App.ui.wsPick = cid;
+      A.App.dispatch({ type: 'wsCell', id: outside });
+    }
   });
-  await click('[data-act="wsCell"][data-id="2,3"]');
-  ok('B7 屏蔽格给出具体原因', await ev(() => {
+  await wait(160);
+  ok('B7 板外坐标给出「不在板面上」原因', await ev(() => {
     const box = document.querySelector('.err-box');
-    return !!box && box.innerText.includes('屏蔽格');
+    return !!box && box.innerText.includes('不在板面上') && !box.innerText.includes('屏蔽格');
   }));
   await click('[data-act="wsUndo"]');
+
+  /* 新增：覆盖率面板分母为膜格数、显示当前台阶、摆不下时灰掉并说明原因 */
+  ok('B10 覆盖率面板数值与分母正确', await ev(() => {
+    const panel = document.querySelector('.ms-panel');
+    const covEl = document.querySelector('[data-ms-cov]');
+    const tierEl = document.querySelector('[data-ms-tier]');
+    if (!panel || !covEl || !tierEl) return false;
+    return covEl.textContent.includes('/12') && tierEl.textContent.trim().length > 0;
+  }));
+  await ev(() => {
+    const A = window.Ashen.Veteran;
+    const st = A.App.state;
+    const u = st.roster.find((x) => x.id === A.App.ui.wsUnit) || st.roster[0];
+    const plate = A.Circuit.plateOf(u);
+    const ms = A.UI.resolveManuscript(u, plate, A.App.ui, { built: [] });
+    const straightId = st.stash.find((id) => st.itemsById[id].templateId === 'straight');
+    if (ms && ms.fits && straightId) {
+      A.App.dispatch({ type: 'wsPick', id: straightId });
+      A.App.dispatch({ type: 'wsCell', id: ms.ox + ',' + ms.oy });
+    }
+  });
+  await wait(160);
+  ok('B10b 放置对齐构件后覆盖率上升（分母仍为膜格数）', await ev(() => {
+    const covEl = document.querySelector('[data-ms-cov]');
+    return !!covEl && covEl.textContent.includes('2/12 = 17%');
+  }));
+  await click('[data-act="wsUndo"]');
+  await click('[data-act="wsUnit"][data-id="u5"]');
+  ok('B10c 膜摆不下时灰掉并给出明确原因', await ev(() => {
+    const panel = document.querySelector('.ms-panel.ms-unfit');
+    const reason = document.querySelector('[data-ms-reason]');
+    return !!panel && !!reason && reason.innerText.includes('摆不下');
+  }));
+  await click('[data-act="wsUnit"][data-id="u1"]');
+
+  /* 新增：四个终端画在板面边界上 */
+  ok('B11 终端画在板面边界上且方向朝外', await ev(() => {
+    const A = window.Ashen.Veteran;
+    const st = A.App.state;
+    const u = st.roster.find((x) => x.id === A.App.ui.wsUnit) || st.roster[0];
+    const plate = A.Circuit.plateOf(u);
+    const svg = document.querySelector('svg.board');
+    if (!svg || !plate || !plate.terminals) return false;
+    const vb = svg.viewBox.baseVal;
+    const gx = Number(svg.dataset.gx);
+    const gy = Number(svg.dataset.gy);
+    const cell = Number(svg.dataset.cell);
+    const vec = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+    return Object.values(plate.terminals).every((t) => {
+      const el = svg.querySelector(`[data-term="${t.id}"]`);
+      if (!el || !plate.cells.has(t.cell[0] + ',' + t.cell[1])) return false;
+      const cx = gx + t.cell[0] * cell + cell / 2;
+      const cy = gy + t.cell[1] * cell + cell / 2;
+      const tx = Number(el.getAttribute('x')) + 4;
+      const ty = Number(el.getAttribute('y')) + 4;
+      const dot = (tx - cx) * vec[t.dir][0] + (ty - cy) * vec[t.dir][1];
+      return dot > cell / 2 && tx >= 0 && ty >= 0 && tx <= vb.width && ty <= vb.height;
+    });
+  }));
 
   /* ---------- B8~B9 拖拽装配 ---------- */
   const dragGeo = await ev(() => {
@@ -166,24 +249,75 @@ async function launch() {
       const p = window.Ashen.Veteran.App.ui.wsDraft.find((x) => x.itemId === id);
       return p ? p.x + ',' + p.y : null;
     }, dragGeo.part.id);
-    ok('B8 拖动已有构件能换位置', !!after && after !== before, `${before} -> ${after}`);
+    const legalAfter = await ev(() => document.body.innerText.includes('板面合法'));
+    ok('B8 拖动已有构件智能吸附至合法位置', !!after && after !== before && legalAfter, `${before} -> ${after}`);
   } else {
     ok('B8 跳过（没有可拖的构件或空格）', true);
   }
 
-  if (dragGeo && dragGeo.item && dragGeo.hit) {
+  const stashDropGeo = await ev(() => {
+    const A = window.Ashen.Veteran;
+    const svg = document.querySelector('svg.board');
+    const itemEl = document.querySelector('.part-item[data-stash="1"]');
+    if (!svg || !itemEl) return null;
+    const itemId = itemEl.dataset.id;
+    const st = A.App.state;
+    const u = st.roster.find((x) => x.id === A.App.ui.wsUnit) || st.roster[0];
+    const plate = A.Circuit.plateOf(u);
+    let spot = null;
+    for (const [x, y] of plate.cellsList) {
+      const pv = A.Circuit.preview(st, u.id, [...(A.App.ui.wsDraft || []), { itemId, x, y, rotation: 0, mirrorY: false }]);
+      if (pv.ok) { spot = [x, y]; break; }
+    }
+    if (!spot) return null;
+    const ctm = svg.getScreenCTM();
+    const pt = svg.createSVGPoint();
+    pt.x = +svg.dataset.gx + spot[0] * +svg.dataset.cell + +svg.dataset.cell / 2;
+    pt.y = +svg.dataset.gy + spot[1] * +svg.dataset.cell + +svg.dataset.cell / 2;
+    const sp = pt.matrixTransform(ctm);
+    const r = itemEl.getBoundingClientRect();
+    return { item: { id: itemId, x: r.x + r.width / 2, y: r.y + r.height / 2 }, hit: { x: sp.x, y: sp.y } };
+  });
+
+  if (stashDropGeo) {
     const n0 = await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length);
-    await page.mouse.move(dragGeo.item.x, dragGeo.item.y);
+    await page.mouse.move(stashDropGeo.item.x, stashDropGeo.item.y);
     await page.mouse.down();
-    await page.mouse.move(dragGeo.hit.x, dragGeo.hit.y, { steps: 8 });
+    await page.mouse.move(stashDropGeo.hit.x, stashDropGeo.hit.y, { steps: 8 });
     await page.mouse.up();
     await wait(300);
     const n1 = await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length);
     ok('B9 从构件库拖到板面能放置', n1 === n0 + 1, `${n0} -> ${n1}`);
     await click('[data-act="wsUndo"]');
+
+    /* 新增操作逻辑验证：悬停预落点+端口虚影、Esc 取消选中、双击快速装卸 */
+    await page.mouse.click(stashDropGeo.item.x, stashDropGeo.item.y);
+    await wait(120);
+    await page.mouse.move(stashDropGeo.hit.x, stashDropGeo.hit.y, { steps: 4 });
+    await wait(120);
+    const hoverOk = await ev(() => {
+      const g = document.querySelector('svg.board .drop-ghost');
+      return !!g && g.style.display !== 'none' && !!g.querySelector('.drop-ghost-port-svg');
+    });
+    ok('B12 选中构件悬停显示预落点虚影与端口', hoverOk);
+    await page.keyboard.press('Escape');
+    await wait(100);
+    const clearedPick = await ev(() => window.Ashen.Veteran.App.ui.wsPick === null);
+    ok('B12b Esc 取消选中并清除虚影', clearedPick);
+
+    const nBeforeDbl = await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length);
+    await page.mouse.dblclick(stashDropGeo.item.x, stashDropGeo.item.y);
+    await wait(220);
+    const nAfterDbl = await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length);
+    ok('B13 双击构件库可快速装上并支持撤销', nAfterDbl === nBeforeDbl + 1, `${nBeforeDbl} -> ${nAfterDbl}`);
+    await click('[data-act="wsUndo"]');
   } else {
-    ok('B9 跳过（构件库为空）', true);
+    ok('B9 跳过（构件库为空或无合法空位）', true);
+    ok('B12 跳过', true);
+    ok('B12b 跳过', true);
+    ok('B13 跳过', true);
   }
+  await click('[data-act="wsUndo"]');
 
   /* ---------- C 出征与战斗 ---------- */
   await click('[data-act="go"][data-v="camp"]');
@@ -302,7 +436,7 @@ async function launch() {
   });
   ok('E1 进入营火', campOk.ok && (await snap()).screen === 'campNode', JSON.stringify(campOk));
 
-  await click('[data-act="inscribeStart"]');
+  await click('[data-act="inscribeStart"][data-id="u13"]');
   ok('E2 进入烙印编辑', (await ev(() => window.Ashen.Veteran.App.ui.wsMode)) === 'inscribe');
   await click('[data-act="wsAutoLayout"]');
   await wait(200);
@@ -315,10 +449,10 @@ async function launch() {
 
   await click('[data-act="wsInscribe"]');
   await wait(300);
-  ok('E4 烙印后压力 +40', (await ev(() => window.Ashen.Veteran.App.state.run.party[0].stress)) === 40);
+  ok('E4 烙印后压力 +40', (await ev(() => window.Ashen.Veteran.App.state.run.party[3].stress)) === 40);
   ok('E5 烙印后生命上限 ×0.8', await ev(() => {
     const A = window.Ashen.Veteran;
-    return A.Roster.stats(A.App.state, A.App.state.roster[0]).maxHp === 128;
+    return A.Roster.stats(A.App.state, A.App.state.roster[3]).maxHp === 112;
   }));
 
   await click('[data-act="finishNode"]');

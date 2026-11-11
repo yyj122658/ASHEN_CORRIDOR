@@ -43,12 +43,20 @@
       veins[key(x - minX, y - minY)] = (spec.veins[k] || []).slice();
     });
 
+    /* 四个具名能量点跟着格子一起平移 */
+    const io = {};
+    Object.keys(spec.io || {}).forEach((id) => {
+      const p = spec.io[id];
+      io[id] = { cell: [p.cell[0] - minX, p.cell[1] - minY], dir: p.dir };
+    });
+
     return {
       id: spec.id,
       name: spec.name,
       tiers: (spec.tiers || []).slice().sort((a, b) => a.at - b.at),
       cells: normCells,
       veins,
+      io,
       entry: spec.entry ? shift(spec.entry) : normCells[0],
       exits: (spec.exits || [spec.entry ? shift(spec.entry) : normCells[normCells.length - 1]]).map(shift),
       desc: spec.desc || '',
@@ -66,9 +74,14 @@
     Object.keys(ms.veins).forEach((k) => { dirs[k] = ms.veins[k].slice(); });
     let entry = { x: ms.entry[0], y: ms.entry[1] };
     let exits = ms.exits.map((c) => ({ x: c[0], y: c[1] }));
+    let io = {};
+    Object.keys(ms.io || {}).forEach((id) => {
+      io[id] = { x: ms.io[id].cell[0], y: ms.io[id].cell[1], dir: ms.io[id].dir };
+    });
 
     const applyDirs = (map) => {
       Object.keys(dirs).forEach((k) => { dirs[k] = dirs[k].map((d) => map[d] || d); });
+      Object.keys(io).forEach((id) => { io[id].dir = map[io[id].dir] || io[id].dir; });
     };
     const remap = (fn) => {
       const nextDirs = {};
@@ -81,6 +94,7 @@
       dirs = nextDirs;
       entry = fn(entry);
       exits = exits.map(fn);
+      Object.keys(io).forEach((id) => { io[id] = Object.assign(fn({ x: io[id].x, y: io[id].y }), { dir: io[id].dir }); });
     };
     const normalizeBack = () => {
       const minX = Math.min.apply(null, cells.map((c) => c.x));
@@ -108,6 +122,11 @@
       tiers: ms.tiers,
       cells: cells.map((c) => [c.x, c.y]),
       veins: dirs,
+      io: (function () {
+        const out = {};
+        Object.keys(io).forEach((id) => { out[id] = { cell: [io[id].x, io[id].y], dir: io[id].dir }; });
+        return out;
+      })(),
       entry: [entry.x, entry.y],
       exits: exits.map((c) => [c.x, c.y]),
       rotation: rot,

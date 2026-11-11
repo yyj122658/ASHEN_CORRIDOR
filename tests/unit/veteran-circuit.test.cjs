@@ -158,16 +158,16 @@ test('非法板面不修改 state', () => {
   assert.equal(JSON.stringify(st), before, 'preview 不应写 state');
 });
 
-test('saveLoadout 拒绝没有输出连通的板面，接受合法的', () => {
+test('saveLoadout 允许保存不连通的半成品板面', () => {
   const st = fresh();
   const u = st.roster[0];
-  const dead = mk(st, [
+  /* 只有一块直导管、接不到任何输出：几何合法就该能存 */
+  const half = mk(st, [
     { templateId: 'straight', x: 0, y: 0 },
   ]);
-  const r1 = V.Circuit.saveLoadout(st, u.id, dead);
-  assert.ok(!r1.ok);
-  assert.ok(r1.errors.some((m) => m.includes('输出')), JSON.stringify(r1.errors));
-  assert.equal(st.roster[0].board.placements.length, 2, '失败不应改板面');
+  const r1 = V.Circuit.saveLoadout(st, u.id, half);
+  assert.ok(r1.ok, `不连通也应可保存：${JSON.stringify(r1.errors)}`);
+  assert.equal(r1.state.roster[0].board.placements.length, 1);
 
   const ok = V.Circuit.saveLoadout(st, u.id, u.board.placements);
   assert.ok(ok.ok, JSON.stringify(ok.errors));

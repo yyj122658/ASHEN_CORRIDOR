@@ -396,6 +396,78 @@
     boss: { id: 'boss', name: '回廊尽头', risk: 'deadly', icon: 'skull', artId: 'node.boss', desc: '门后面有东西。' },
   };
 
+  /* ------------------------------ 功法谱 ------------------------------ */
+  /* 功法是压在生命金属上的「管道」：自己占格、自带纹路要求与出入口。
+     有功法才谈得上能量路由；没有功法，板面只是一块带槽位的金属。
+     cells/veins/entry/exits 与 src/veteran/manuscript.js 的判定口径一致。 */
+  const MANUSCRIPTS = {
+    ember12: {
+      id: 'ember12', name: '余烬十二脉', rarity: 'common', load: 3,
+      desc: '4×3 古老回流拓片。12 格同向导通，覆盖 40/75/100 依次共鸣。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [3, 2]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
+        '0,1': ['W'], '1,1': ['E'], '2,1': ['N'], '3,1': ['N'],
+        '0,2': ['W'], '1,2': ['E'], '2,2': ['S'], '3,2': ['S'],
+      },
+      entry: [0, 0], exits: [[3, 2]],
+      /* 四个具名点：能量从这里进出。落在自己占的格上，方向与 veins 一致 */
+      io: {
+        clock: { cell: [0, 1], dir: 'W' },
+        damage: { cell: [2, 2], dir: 'S' },
+        main: { cell: [3, 0], dir: 'E' },
+        support: { cell: [3, 2], dir: 'S' },
+      },
+      tiers: [
+        { at: 40, id: 't1', name: '一阶 · 初鸣' },
+        { at: 75, id: 't2', name: '二阶 · 共振' },
+        { at: 100, id: 't3', name: '三阶 · 圆满' },
+      ],
+    },
+    corridor5: {
+      id: 'corridor5', name: '直贯五脉', rarity: 'common', load: 2,
+      desc: '窄型 5 格拓片，适配狭窄骨架。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [3, 1]],
+      veins: { '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['W'], '3,1': ['E'] },
+      entry: [0, 0], exits: [[3, 1]],
+      io: {
+        clock: { cell: [0, 0], dir: 'W' },
+        damage: { cell: [2, 0], dir: 'W' },
+        main: { cell: [3, 1], dir: 'E' },
+        support: { cell: [3, 0], dir: 'W' },
+      },
+      tiers: [
+        { at: 40, id: 't1', name: '一阶 · 初鸣' },
+        { at: 80, id: 't2', name: '二阶 · 共振' },
+        { at: 100, id: 't3', name: '三阶 · 贯通' },
+      ],
+    },
+    wide14: {
+      id: 'wide14', name: '重铸阔卷', rarity: 'rare', load: 4,
+      desc: '5×3 重型拓片，只有宽幅板面能完整容纳。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [4, 2]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'], '4,0': ['S'],
+        '0,1': ['N'], '1,1': ['W'], '2,1': ['E'], '3,1': ['W'], '4,1': ['N', 'S'],
+        '1,2': ['W'], '2,2': ['E'], '3,2': ['W'], '4,2': ['N'],
+      },
+      entry: [0, 0], exits: [[4, 2]],
+      io: {
+        clock: { cell: [0, 0], dir: 'W' },
+        damage: { cell: [4, 0], dir: 'S' },
+        main: { cell: [4, 2], dir: 'N' },
+        support: { cell: [1, 2], dir: 'W' },
+      },
+      tiers: [
+        { at: 35, id: 't1', name: '一阶 · 余温' },
+        { at: 70, id: 't2', name: '二阶 · 灼脉' },
+        { at: 100, id: 't3', name: '三阶 · 圆满' },
+      ],
+    },
+  };
+  const MANUSCRIPT_ORDER = ['ember12', 'corridor5', 'wide14'];
+  function manuscript(id) { return MANUSCRIPTS[id] || null; }
+
   /* ------------------------------ 祝福 ------------------------------ */
   const BLESSINGS = {
     edge: { id: 'edge', name: '锐利', desc: '主手伤害 +15%。', effect: { mainDmg: 0.15 } },
@@ -489,6 +561,7 @@
     TEMPLATES, TEMPLATE_ORDER, TERMINALS, PRESETS, EMBER_FIXTURE, STRAIGHT_PARK,
     CONDITIONS, THRESHOLDS, TARGETS, ACTIONS, defaultGambits,
     MODS, ENEMIES, ENEMY_ORDER, BOSS_ORDER, encounterTemplate,
+    MANUSCRIPTS, MANUSCRIPT_ORDER, manuscript,
     NODE_TYPES, BLESSINGS, BLESSING_ORDER, EVENTS, EVENT_ORDER,
     SKINS, NAMES,
     body, weapon, template, enemy, nodeType, blessing, event,
