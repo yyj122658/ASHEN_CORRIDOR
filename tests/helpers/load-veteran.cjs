@@ -23,6 +23,8 @@ const ORDER = [
   'src/veteran/roster.js',
   'src/veteran/storage.js',
   'src/veteran/rune-art.js',
+  'src/veteran/plate-gen.js',
+  'src/veteran/manuscript.js',
   /* 表现层资源（无 DOM 依赖，供动画测试使用） */
   'assets/art/battle-v1/atlas-data.js',
   'src/ui/sprite-anim.js',

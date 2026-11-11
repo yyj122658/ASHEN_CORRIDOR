@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>生命金属 · 板面生成原型</title>
+<style>
+  body { margin:0; padding:24px 26px 60px; background:#0E0C14; color:#CFC6B8;
+         font-family: ui-sans-serif, system-ui, "Microsoft YaHei", sans-serif; }
+  h1 { font-size:19px; color:#EFD082; letter-spacing:.08em; margin:0 0 6px; font-weight:600; }
+  .sub { font-size:12.5px; color:#7A7386; line-height:1.7; margin-bottom:20px; }
+  .sub code { color:#9FB4C8; }
+  .bar { display:flex; gap:10px; align-items:center; margin-bottom:22px; font-size:12.5px; color:#8E9CAC; }
+  .bar input { width:110px; background:#151220; border:1px solid #2A2438; color:#CFC6B8; padding:4px 8px; }
+  .bar button { background:#1B1728; border:1px solid #3A3350; color:#CFC6B8; padding:5px 14px; cursor:pointer; }
+  .bar button:hover { border-color:#5E7285; color:#EFD082; }
+  .grid { display:flex; flex-wrap:wrap; gap:22px; }
+  .card { }
+  .cap { font-size:12px; margin-top:6px; color:#8E9CAC; }
+  .cap b { color:#D8CFC0; font-weight:500; }
+  .cap span { color:#635C71; font-size:11px; }
+</style>
+</head>
+<body>
+<h1>生命金属 · 板面生成原型</h1>
+<div class="sub">
+  7×7 包围盒。生成顺序：<code>原型种子</code> → 边缘腐蚀 / 内侵 → 打孔洞 → 去掉孤立格与孤岛 → 锯齿描边。
+  同一个 seed 永远得到同一块铁。金色虚线段是功法膜盖住的格（要填的），其余暗格是可放可不放的富余格。
+</div>
+<div class="bar">
+  seed <input id="seed" value="23578" />
+  <button id="regen">全部重新生成</button>
+  <span>改动后直接点按钮，或者改 URL 里的 ?seed=</span>
+</div>
+<div class="grid" id="grid"></div>
+
+<script>
+const N = 7;
+const CELL = 24;
+const PAD = 10;
+const PX = N * CELL + PAD * 2;
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const MACROS = {
+  full:   () => true,
+  bar:    (x) => x >= 1 && x <= 4,
+  ring:   (x, y) => !(x >= 2 && x <= 4 && y >= 2 && y <= 4),
+  ell:    (x, y) => !(x >= 4 && y >= 4),
+  cross:  (x, y) => (x >= 2 && x <= 4) || (y >= 2 && y <= 4),
+  square: (x, y) => x >= 1 && x <= 6 && y >= 1 && y <= 6,
+};
+const ALLOW = {
+  full:   () => true,
+  bar:    (x) => x >= 1 && x <= 4,
+  ring:   (x, y) => !(x >= 2 && x <= 4 && y >= 2 && y <= 4),
+  ell:    (x, y) => !(x >= 4 && y >= 4),
+  cross:  (x, y) => (x >= 2 && x <= 4) || (y >= 2 && y <= 4),
+  square: (x, y) => x >= 1 && x <= 6 && y >= 1 && y <= 6,
+};
+const DIAG = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+
+function largestComponent(set) {
+  const seen = new Set();
+  let best = [];
+  for (const k of set) {
+    if (seen.has(k)) continue;
+    const comp = [];
+    const q = [k];
+    seen.add(k);
+    while (q.length) {
+      const cur = q.pop();
+      comp.push(cur);
+      const [x, y] = cur.split(',').map(Number);
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx, dy]) => {
+        const nk = (x + dx) + ',' + (y + dy);
+        if (set.has(nk) && !seen.has(nk)) { seen.add(nk); q.push(nk); }
+      });
+    }
+    if (comp.length > best.length) best = comp;
+  }
+  return best;
+}
+
+function generate(seed, macro, target) {
+  const rnd = mulberry32(seed >>> 0);
+  let set = new Set();
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (MACROS[macro](x, y)) set.add(x + ',' + y);
+
+  const has = (x, y) => x >= 0 && y >= 0 && x < N && y < N && set.has(x + ',' + y);
+  const ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const orth = (x, y) => ORTH.filter(([dx, dy]) => has(x + dx, y + dy)).length;
+
+  /* 1. 边缘腐蚀：按「裸露边数」判概率，越突出越容易被啃掉。
+        每删一格都验证整块仍连通（不割断细长肢体），细长形状只会掉末端。 */
+  const canCut = (x, y) => {
+    const trial = new Set(set);
+    trial.delete(x + ',' + y);
+    return largestComponent(trial).length === trial.size;
+  };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (!has(x, y)) continue;
+    const exposed = 4 - orth(x, y) + (ALLOW[macro](x, y) ? 0 : 4);
+    if (exposed === 0) continue;
+    const p = exposed >= 3 ? 0.6 : exposed === 2 ? 0.45 : 0.3;
+    if (rnd() >= p) continue;
+    if (canCut(x, y)) set.delete(x + ',' + y);
+  }
+
+  /* 1b. 咬口：挑 1~2 个边缘切进一格，做出更深的缺口 */
+  const bites = 1 + Math.floor(rnd() * 2);
+  for (let i = 0; i < bites; i++) {
+    const bx = Math.floor(rnd() * N);
+    const by = Math.floor(rnd() * N);
+    if (!has(bx, by) || orth(bx, by) > 2) continue;
+    if (canCut(bx, by)) set.delete(bx + ',' + by);
+  }
+
+  /* 2. 内侵：凹处偶尔补一格，轮廓不至于太规整 */
+  const grow = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (has(x, y)) continue;
+    if (orth(x, y) >= 2 && rnd() < 0.16) grow.push(x + ',' + y);
+  }
+  grow.forEach((k) => set.add(k));
+
+  /* 3. 孔洞：1~2 个，可能连成一条缝；不能把板面切成两块 */
+  const holes = Math.floor(rnd() * 2.6);
+  const holeCells = new Set();
+  for (let i = 0; i < holes; i++) {
+    const hx = 1 + Math.floor(rnd() * (N - 2));
+    const hy = 1 + Math.floor(rnd() * (N - 2));
+    if (orth(hx, hy) < 3) continue;
+    const trial = new Set(set);
+    const cut = [hx + ',' + hy];
+    trial.delete(hx + ',' + hy);
+    if (rnd() < 0.55) {
+      const horiz = rnd() < 0.5;
+      const k2 = (hx + (horiz ? 1 : 0)) + ',' + (hy + (horiz ? 0 : 1));
+      trial.delete(k2);
+      cut.push(k2);
+    }
+    if (largestComponent(trial).length === trial.size) {
+      set = trial;
+      cut.forEach((k) => holeCells.add(k));
+    }
+  }
+
+  /* 3b. 收束到目标格数：形状只决定气质，容量必须一致，
+         否则配队会退化成「谁大用谁」。多则啃边缘，少则补凹处。 */
+  let guard = 0;
+  while (set.size > target && guard++ < 400) {
+    const cand = [...set].filter((k) => {
+      const [x, y] = k.split(',').map(Number);
+      return orth(x, y) <= 2;
+    });
+    if (!cand.length) break;
+    const pick = cand[Math.floor(rnd() * cand.length)];
+    const [x, y] = pick.split(',').map(Number);
+    if (canCut(x, y)) set.delete(pick);
+  }
+  guard = 0;
+  while (set.size < target && guard++ < 400) {
+    const tight = [];
+    const loose = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const k = x + ',' + y;
+      if (set.has(k) || holeCells.has(k)) continue;
+      if (!ALLOW[macro](x, y)) continue;
+      const o = orth(x, y);
+      if (o >= 2) tight.push(k);
+      else if (o === 1) loose.push(k);
+    }
+    const cand = tight.length ? tight : loose;
+    if (!cand.length) break;
+    set.add(cand[Math.floor(rnd() * cand.length)]);
+  }
+
+  /* 4. 清掉孤立格，再只保留最大连通块 */
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const k of [...set]) {
+      const [x, y] = k.split(',').map(Number);
+      if (orth(x, y) === 0) { set.delete(k); changed = true; }
+    }
+  }
+  return new Set(largestComponent(set));
+}
+
+/* 锯齿描边：每条裸露的格边画一条朝外的折线 */
+function sawEdge(x1, y1, x2, y2, nx, ny, rnd) {
+  const teeth = 3 + Math.floor(rnd() * 2);
+  const amp = 1.6 + rnd() * 1.9;
+  let d = 'M' + x1 + ' ' + y1;
+  for (let i = 1; i <= teeth * 2; i++) {
+    const t = i / (teeth * 2);
+    const px = x1 + (x2 - x1) * t;
+    const py = y1 + (y2 - y1) * t;
+    const off = (i % 2 === 1 ? amp : 0.2);
+    d += 'L' + (px + nx * off).toFixed(2) + ' ' + (py + ny * off).toFixed(2);
+  }
+  return d + 'L' + x2 + ' ' + y2;
+}
+
+function render(seed, macro, filmCells, target) {
+  const rnd = mulberry32((seed * 7919 + 13) >>> 0);
+  const set = generate(seed, macro, target);
+  const has = (x, y) => set.has(x + ',' + y);
+  const X = (x) => PAD + x * CELL;
+  const Y = (y) => PAD + y * CELL;
+
+  let body = '';
+  let line = '';
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (!has(x, y)) continue;
+    body += `<rect x="${X(x)}" y="${Y(y)}" width="${CELL}" height="${CELL}" fill="#2A2338"/>`;
+  }
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (!has(x, y)) continue;
+    line += `<rect x="${X(x) + 0.5}" y="${Y(y) + 0.5}" width="${CELL - 1}" height="${CELL - 1}" fill="none" stroke="rgba(150,140,180,.16)" stroke-width="1"/>`;
+  }
+
+  let saw = '';
+  const dirs = [
+    [0, -1, X, Y, CELL, 0, 0, -1],
+    [0, 1, X, Y, CELL, 0, 0, 1],
+    [-1, 0, X, Y, CELL, 0, -1, 0],
+    [1, 0, X, Y, CELL, 0, 1, 0],
+  ];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    if (!has(x, y)) continue;
+    const x0 = X(x);
+    const y0 = Y(y);
+    if (!has(x, y - 1)) saw += `<path d="${sawEdge(x0, y0, x0 + CELL, y0, 0, -1, rnd)}"/>`;
+    if (!has(x, y + 1)) saw += `<path d="${sawEdge(x0, y0 + CELL, x0 + CELL, y0 + CELL, 0, 1, rnd)}"/>`;
+    if (!has(x - 1, y)) saw += `<path d="${sawEdge(x0, y0, x0, y0 + CELL, -1, 0, rnd)}"/>`;
+    if (!has(x + 1, y)) saw += `<path d="${sawEdge(x0 + CELL, y0, x0 + CELL, y0 + CELL, 1, 0, rnd)}"/>`;
+  }
+
+  let film = '';
+  let filmN = 0;
+  (filmCells || []).forEach(([fx, fy, w, h]) => {
+    const spot = findFilmSpot(has, w, h);
+    if (!spot) return;
+    fx = spot[0]; fy = spot[1];
+    film += `<rect x="${X(fx) + 2}" y="${Y(fy) + 2}" width="${w * CELL - 4}" height="${h * CELL - 4}"
+      fill="rgba(232,196,106,.10)" stroke="#C9A03A" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+    filmN += w * h;
+  });
+
+  return { svg: `<svg width="${PX}" height="${PX}" viewBox="0 0 ${PX} ${PX}">
+    <g>${body}</g><g>${line}</g>
+    <g fill="none" stroke="#6E8BA3" stroke-width="1.1" opacity=".85">${saw}</g>
+    ${film}
+  </svg>`, cells: set.size, filmN };
+}
+
+/* 功法膜要整块落在金属上：扫一个能放下 w×h 的位置 */
+function findFilmSpot(has, w, h) {
+  for (let y = 0; y + h <= N; y++) for (let x = 0; x + w <= N; x++) {
+    let ok = true;
+    for (let dy = 0; dy < h && ok; dy++) for (let dx = 0; dx < w && ok; dx++) if (!has(x + dx, y + dy)) ok = false;
+    if (ok) return [x, y];
+  }
+  return null;
+}
+
+/* 两档：厚实型 28 格，窄长型 22 格（窄盘靠更高的负荷补偿格数） */
+const CASES = [
+  ['full', [[2, 2, 2, 3]], '方坯', 28],
+  ['bar', [[1, 2, 2, 3]], '狭长', 22],
+  ['ring', [[1, 1, 2, 2]], '环', 28],
+  ['ell', [[1, 1, 2, 2]], 'L 角', 28],
+  ['cross', [[2, 2, 1, 3]], '厚十字', 22],
+  ['square', [[2, 2, 3, 2]], '小方', 28],
+];
+
+function draw() {
+  const base = Number(document.getElementById('seed').value) || 23578;
+  document.getElementById('grid').innerHTML = '';
+  CASES.forEach(([macro, film, name, target], i) => {
+    const seed = base + i * 37;
+    const r = render(seed, macro, film, target);
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML = r.svg + `<div class="cap"><b>${name}</b> · seed ${seed}<br>
+      <span>可用 ${r.cells}/${target} 格 · 功法 ${r.filmN} 格</span></div>`;
+    document.getElementById('grid').appendChild(el);
+  });
+}
+
+document.getElementById('regen').addEventListener('click', draw);
+const qs = new URLSearchParams(location.search);
+if (qs.get('seed')) document.getElementById('seed').value = qs.get('seed');
+draw();
+</script>
+</body>
+</html>
