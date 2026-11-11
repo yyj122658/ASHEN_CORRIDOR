@@ -1314,6 +1314,17 @@
     const o = opts || {};
     const packAll = o.packAll !== false;
     const maxLoad = o.maxLoad != null ? o.maxLoad : Infinity;
+    /* 功法膜占的格不能放构件：推荐布局必须先排除它们，否则 preview 一律报「压在功法上」 */
+    const msCells = new Set();
+    if (unit.manuscript && V.Manuscript) {
+      const or = V.Manuscript.orient(
+        V.Manuscript.normalize(unit.manuscript),
+        unit.manuscript.rotation || 0, !!unit.manuscript.mirrorY,
+      );
+      const ox = unit.manuscript.x || 0;
+      const oy = unit.manuscript.y || 0;
+      or.cells.forEach((c) => msCells.add((c[0] + ox) + ',' + (c[1] + oy)));
+    }
     const terms = Object.values(plate.terminals || {});
     const inTerms = terms.filter((t) => t.role === 'in');
     const outTerms = terms.filter((t) => t.role === 'out');
@@ -1327,6 +1338,7 @@
           for (let y = 0; y < plate.size; y++) {
             for (let x = 0; x < plate.size; x++) {
               if (!tf.cells.every((c) => plate.cells.has((c.x + x) + ',' + (c.y + y)))) continue;
+              if (tf.cells.some((c) => msCells.has((c.x + x) + ',' + (c.y + y)))) continue;
               const cellKeys = tf.cells.map((c) => (c.x + x) + ',' + (c.y + y));
               const ports = tf.ports.map((p) => ({
                 role: p.role, dir: p.dir,
@@ -1417,7 +1429,24 @@
         if (hit) return hit;
       }
     }
-    return null;
+
+    /* 退化路径：没有功法（或功法只给两个能量点）时凑不出一条从入口到出口的链，
+       但仍然应该给玩家一个「几何合法」的推荐布局，而不是直接拒绝。 */
+    const fallback = (() => {
+      const chosen = [];
+      const used = new Set();
+      for (let i = 0; i < itemIds.length; i++) {
+        const cands = candsByItem[i];
+        const pickIdx = cands.findIndex((c) => disjoint(used, c.cellKeys));
+        if (pickIdx < 0) return null;
+        const c = cands[pickIdx];
+        c.cellKeys.forEach((k) => used.add(k));
+        chosen.push(c.pl);
+      }
+      const pv = V.Circuit.preview(st, unit.id, chosen);
+      return pv.ok ? chosen : null;
+    })();
+    return fallback;
   }
 
   /** 工坊智能接通：在当前板面+仓库可用构件中寻一条最省件的连通方案（受负荷上限约束）。 */
