@@ -986,7 +986,7 @@
             ${V.Art.portraitTag(u.skinId, 'vet-slot-portrait')}
             <div class="vet-name">${esc(u.name)}</div>
             <div class="vet-body">${esc(D().body(u.bodyPreset).name)}</div>
-            <div class="vet-weapon">${esc(partName(state, u.weaponId))}</div>
+            <div class="vet-weapon">${esc(u.manuscript ? u.manuscript.name : '未修功法')}</div>
             ${hpLine(u, state)}
             <div class="vet-stress ${stressCls}">压力 ${u.stress}/100</div>
             <div class="mt1">${btn('查看', 'inspectUnit', { cls: 'ghost xs', data: { id: u.id } })}</div>
@@ -1045,7 +1045,7 @@
     const u = uid ? state.roster.find((x) => x.id === uid) : null;
     return `<div class="vet-slot ${u ? '' : 'empty'}">
       <div class="vet-slot-no">${slot + 1}号位</div>
-      ${u ? V.Art.portraitTag(u.skinId, 'vet-slot-portrait') + `<div class="vet-name">${esc(u.name)}</div><div class="vet-weapon">${esc(partName(state, u.weaponId))}</div><div class="mt1">${slotFitBadge(state, u, slot)}</div>`
+      ${u ? V.Art.portraitTag(u.skinId, 'vet-slot-portrait') + `<div class="vet-name">${esc(u.name)}</div><div class="vet-weapon">${esc(u.manuscript ? u.manuscript.name : '未修功法')}</div><div class="mt1">${slotFitBadge(state, u, slot)}</div>`
     : '<div class="vet-empty">空位</div>'}
       <div class="row tight mt2 slot-ops">
         ${slot > 0 ? btn('←', 'teamMove', { cls: 'ghost xs', data: { from: String(slot), to: String(slot - 1) } }) : ''}
@@ -1080,12 +1080,12 @@
         <span>生命 ${s.maxHp}</span><span>攻击 ${s.atk}</span><span>防御 ${s.def}</span><span>速度 ${s.spd}</span>
         <span>负荷 ${s.loadCap}</span>
       </div>
-      <div class="mt2 small">主手：<b class="gold">${esc(partName(state, u.weaponId))}</b>
-        <span class="muted">${esc(w ? D().weapon(w.templateId).main.desc : '')}</span></div>
+      <div class="mt2 small">功法：<b class="gold">${esc(u.manuscript ? u.manuscript.name : '未修功法')}</b>
+        <span class="muted">${esc(u.manuscript ? u.manuscript.desc : '去工坊装一门')}</span></div>
       ${h.attunement.traitId
     ? `<div class="small success mt1">调谐已解锁：${esc(h.attunement.traitName)} — ${esc(h.attunement.traitDesc)}</div>`
     : `<div class="small muted mt1">调谐进度 ${h.attunement.runs}/${h.attunement.need}（同一主手三次合格撤离）</div>`}
-      <div class="mt2 small">${weapons.length ? `换主手：${weapons.map((id) => btn(partName(state, id), 'equipWeapon', { cls: 'ghost xs', data: { uid: u.id, id } })).join(' ')}` : '<span class="muted">仓库里没有别的主手</span>'}</div>
+      <div class="mt2 small"><span class="muted">功法只能装备一套；换功法去工坊</span></div>
       <div class="mt2 row wrap">${btn('编辑行为指令', 'editRules', { cls: 'ghost xs', data: { id: u.id } })}
         ${btn(state.gold >= 30 ? '安抚降压（30 金）' : '安抚（缺金币）', 'comfort', { cls: 'ghost xs', data: { id: u.id }, disabled: state.gold < 30 || u.stress === 0 })}</div>
     </div>`;
@@ -1272,7 +1272,7 @@
           </div>
           <div class="row wrap tight mt2">
             <span class="tiny muted">输出：</span>
-            <span class="tag ${pv.reachableOutputs.includes('main') ? 'tag-weapon' : ''}">主手 ${pv.reachableOutputs.includes('main') ? '● 已接通' : '○ 未接通'}</span>
+            <span class="tag ${ms && ms.rt && ms.rt.ok ? 'tag-weapon' : ''}">功法 ${ms && ms.rt && ms.rt.ok ? '● 已贯通' : '○ 未贯通'}</span>
             <span class="tag ${pv.reachableOutputs.includes('support') ? 'tag-circuit' : ''}">保护 ${pv.reachableOutputs.includes('support') ? '● 已接通' : '○ 未接通'}</span>
           </div>
           ${(!pv.ok && pv.errors.length) || (ui.wsErrors && ui.wsErrors.length)
@@ -1376,7 +1376,7 @@
       <div class="grid-3">${offers.length ? offers.map((o) => `<div class="recruit-card ${o.sold ? 'sold' : ''}">
         ${V.Art.portraitTag(o.skinId, 'recruit-portrait')}
         <div class="recruit-name">${esc(o.name)}</div>
-        <div class="muted small">${esc(D().body(o.bodyPreset).name)} · ${esc(D().weapon(o.weaponId).name)}</div>
+        <div class="muted small">${esc(D().body(o.bodyPreset).name)} · 自带「星火」</div>
         <div class="muted tiny mt1">${esc(D().body(o.bodyPreset).desc)}</div>
         <div class="row mt2"><span class="gold">${o.price} 金</span>
           <div class="spacer"></div>
@@ -1506,7 +1506,7 @@
       <div class="vet-slot-no">${slot + 1}号位</div>
       ${u ? V.Art.portraitTag(u.skinId, 'vet-slot-portrait')
         + `<div class="vet-name">${esc(u.name)}</div>
-           <div class="vet-weapon">${esc(partName(state, u.weaponId))}</div>
+           <div class="vet-weapon">${esc(u.manuscript ? u.manuscript.name : '未修功法')}</div>
            <div class="tiny muted">${curHp}/${stStats.maxHp} · 压${partyEntry ? partyEntry.stress : 0}</div>
            <div class="mt1">${slotFitBadge(state, u, slot)}</div>` : '<div class="vet-empty">空位</div>'}
       <div class="row tight mt2 slot-ops">
