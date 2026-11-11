@@ -22,6 +22,7 @@ const ORDER = [
   'src/veteran/expedition.js',
   'src/veteran/roster.js',
   'src/veteran/storage.js',
+  'src/veteran/rune-art.js',
   /* 表现层资源（无 DOM 依赖，供动画测试使用） */
   'assets/art/battle-v1/atlas-data.js',
   'src/ui/sprite-anim.js',

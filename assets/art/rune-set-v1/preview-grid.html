@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>生命金属纹章 · 格距校准自检</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 28px 32px 60px; background: #0E0C14; color: #CFC6B8;
+    font-family: ui-sans-serif, system-ui, "Microsoft YaHei", sans-serif;
+  }
+  h1 { font-size: 20px; font-weight: 600; color: #EFD082; letter-spacing: .08em; margin: 0 0 6px; }
+  .sub { font-size: 12.5px; color: #7A7386; margin-bottom: 26px; line-height: 1.7; }
+  .sub code { color: #9FB4C8; }
+  h2 { font-size: 13px; color: #8E9CAC; letter-spacing: .12em; margin: 30px 0 12px; font-weight: 500; }
+  .grid { display: flex; flex-wrap: wrap; gap: 26px; }
+  .item { }
+  .frame { position: relative; padding: 0; background: #151220; border: 1px solid #2A2438; }
+  .frame .celllines { position: absolute; inset: 0; pointer-events: none; }
+  .frame img { display: block; image-rendering: auto; }
+  .cap { font-size: 12px; margin-top: 8px; }
+  .cap b { color: #D8CFC0; font-weight: 500; }
+  .cap span { color: #635C71; font-size: 11px; }
+  /* 拼装区 */
+  .board {
+    position: relative; width: 240px; height: 240px;
+    background:
+      linear-gradient(90deg, rgba(120,110,150,.16) 1px, transparent 1px) 0 0 / 60px 60px,
+      linear-gradient(rgba(120,110,150,.16) 1px, transparent 1px) 0 0 / 60px 60px,
+      #151220;
+    border: 1px solid #2A2438;
+  }
+  .board img { position: absolute; width: 60px; height: 60px; }
+  .board img.wide { width: 120px; }
+  .board img.tall { height: 120px; }
+  .board img.big { width: 120px; height: 120px; }
+  .board img.h3 { height: 180px; }
+  .dim { color: #6E667C; font-size: 11.5px; margin-top: 9px; }
+  .warn { color: #C9A03A; }
+</style>
+</head>
+<body>
+<h1>生命金属纹章 · 格距校准自检</h1>
+<div class="sub">
+  切片由 <code>scripts/prepare-runes.py</code> 生成：取 <code>alpha &ge; 64</code> 的实心包围盒（丢掉极淡外发光），
+  再按逻辑 cells 蒙版的列数/行数精确缩放到 <code>格距 160px</code>。
+  下面每格都是板面真实的 60px 尺寸，网格线用来检查边缘是否齐平。
+</div>
+
+<h2>单件与格子对齐</h2>
+<div class="grid" id="singles"></div>
+
+<h2>拼装：相邻构件能不能接上</h2>
+<div class="grid">
+  <div>
+    <div class="board" id="boardA"></div>
+    <div class="cap"><b>直导管 + 弯管 + 脉冲储能腔</b><br><span>看金色边框是否连续、有没有空隙或互相压住</span></div>
+  </div>
+  <div>
+    <div class="board" id="boardB"></div>
+    <div class="cap"><b>棱镜分流 + 直导管（旋转 90°）</b><br><span>旋转复用同一张原画，不另生成</span></div>
+  </div>
+</div>
+<div class="dim" id="notes"></div>
+
+<script>
+const CELL = 60;
+const SRC = 'grid/';
+const SET = [
+  { id: 'straight',  name: '直导管',     mask: ['XX'],              img: 'straight.png'  },
+  { id: 'elbow',     name: '弯管',       mask: ['XX', '.X'],        img: 'elbow.png'     },
+  { id: 'splitter',  name: '棱镜分流',   mask: ['.X', 'XX', '.X'],  img: 'splitter.png'  },
+  { id: 'capacitor', name: '脉冲储能腔', mask: ['XX', 'XX'],        img: 'capacitor.png' },
+  { id: 'threshold', name: '阈值闸',     mask: ['XX'],              img: 'threshold.png' },
+  { id: 'ember',     name: '余烬导管',   mask: ['XX'],              img: 'ember.png'     },
+];
+
+function cellLines(cols, rows) {
+  let s = '';
+  for (let i = 1; i < cols; i++) s += `<div style="position:absolute;left:${i * CELL}px;top:0;bottom:0;width:1px;background:rgba(150,140,180,.22)"></div>`;
+  for (let j = 1; j < rows; j++) s += `<div style="position:absolute;top:${j * CELL}px;left:0;right:0;height:1px;background:rgba(150,140,180,.22)"></div>`;
+  return s;
+}
+
+const singles = document.getElementById('singles');
+SET.forEach((s) => {
+  const cols = s.mask[0].length;
+  const rows = s.mask.length;
+  const w = cols * CELL;
+  const h = rows * CELL;
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.innerHTML = `
+    <div class="frame" style="width:${w}px;height:${h}px">
+      <img src="${SRC}${s.img}" width="${w}" height="${h}" alt="${s.name}">
+      <div class="celllines">${cellLines(cols, rows)}</div>
+    </div>
+    <div class="cap"><b>${s.name}</b> <span>${cols}×${rows} 格 · ${s.mask.join(' / ')}</span></div>`;
+  singles.appendChild(el);
+});
+
+// 拼装演示：按蒙版真实格数摆放，尺寸不允许再手工指定
+function place(board, id, ox, oy) {
+  const s = SET.find((k) => k.id === id);
+  const cols = s.mask[0].length;
+  const rows = s.mask.length;
+  const img = document.createElement('img');
+  img.src = SRC + s.img;
+  img.style.left = ox * CELL + 'px';
+  img.style.top = oy * CELL + 'px';
+  img.style.width = cols * CELL + 'px';
+  img.style.height = rows * CELL + 'px';
+  board.appendChild(img);
+}
+const a = document.getElementById('boardA');
+place(a, 'straight', 0, 0);   // 2x1 → (0,0)(1,0)
+place(a, 'elbow', 0, 1);      // 2x2 → (0,1)(1,1)(1,2)，左上角空格
+place(a, 'capacitor', 2, 0);  // 2x2 → 右侧一列
+
+const b = document.getElementById('boardB');
+place(b, 'splitter', 0, 0);   // 2x3，左列只有中间一格
+place(b, 'straight', 2, 1);   // 2x1，接在 T 形的右手边
+
+document.getElementById('notes').innerHTML =
+  '提示：单件图里金框是构件的物理边界，拼装区用来判断「相邻构件的边框会不会出现缝」。' +
+  '若出现空隙，说明该纹章的原画单格比例偏离正方形，需要在 <code>prepare-runes.py</code> 里调格距或改为蒙版裁切。';
+</script>
+</body>
+</html>
