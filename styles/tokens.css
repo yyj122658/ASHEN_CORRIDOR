@@ -12,12 +12,17 @@
   --text-dim: #7E7466;
 
   --accent: #D9AD65;
+  --accent-bright: #F2CF7E;
   --accent-dim: #8A6F32;
   --ember: #D87843;
   --danger: #D36A65;
   --success: #8DB69B;
   --ice: #7FBBC8;
   --shadow: #AD8AC7;
+
+  --metal-edge: #6E593F;
+  --metal-hi: rgba(239, 208, 130, 0.22);
+  --metal-shade: rgba(5, 4, 9, 0.65);
 
   --q0: #8A8A8A;
   --q1: #B0A597;
