@@ -8,6 +8,16 @@
   /* ------------------------------ 全局参数 ------------------------------ */
   const DESIGN = {
     gridSize: 4,
+    /* 时间轴：一步 0.24s，战斗按秒推进 */
+    stepSeconds: 0.24,
+    autoAttack: { interval: 0.5, mult: 0.35 },
+    energyBase: { regen: 1.0, max: 20 },
+    energyPerHit: 0,
+    baseSpeed: 10,
+    /* 敌人仍走旧的行动逻辑，伤害按平A 的新量级统一缩放，避免一边倒 */
+    enemyDamageScale: 0.2,
+    /* 我方平A 归一化后，敌人血池要相应拉长，否则一场只有 10 秒 */
+    enemyHpScale: 2.2,
     baseHit: 0.94,
     baseCrit: 0.10,
     baseDodge: 0.05,
@@ -436,7 +446,7 @@
       energy: { regen: 1.0, max: 20 },
       positions: [0, 1, 2],
       skills: [{
-        id: 'pierce', name: '一线穿心', cost: 8, castTime: 0.6, cooldown: 5,
+        id: 'pierce', name: '一线穿心', cost: 6, castTime: 0.6, cooldown: 4,
         cond: {}, target: 'frontFoe', effect: { mult: 1.8, pierce: 2 },
       }],
       tiers: [

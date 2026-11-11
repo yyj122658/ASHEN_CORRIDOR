@@ -57,7 +57,7 @@
       const hpMult = opts.boss
         ? (opts.hpMult || 1)
         : ((tpl.bossId ? sc.bossMinionHpMult : sc.minionHpMult) * (opts.hpMult || 1));
-      const hp = Math.round(meta.hp * scaleHp * hpMult);
+      const hp = Math.round(meta.hp * scaleHp * hpMult * (D().DESIGN.enemyHpScale || 1));
       const atk = Math.round(meta.atk * scaleAtk * (opts.atkMult || 1));
       units.push({
         enemyType: meta.id,
@@ -120,6 +120,22 @@
       id: 'a_' + unit.id,
       sourceUnitId: unit.id,
       ms,
+      /* 时间轴与能量：参数全部来自功法，没有功法就用基准值 */
+      atkTimer: 0,
+      energy: (ms && ms.effects && ms.effects.startEnergy) || 0,
+      energyMax: (ms && ms.spec && ms.spec.energy && ms.spec.energy.max) || D().DESIGN.energyBase.max,
+      regen: (ms && ms.spec && ms.spec.energy && ms.spec.energy.regen) || D().DESIGN.energyBase.regen,
+      onHitEnergy: (ms && ms.spec && ms.spec.energy && ms.spec.energy.onHit) || 0,
+      onAttackEnergy: (ms && ms.spec && ms.spec.energy && ms.spec.energy.onAttack) || 0,
+      attackInterval: D().DESIGN.autoAttack.interval
+        * ((ms && ms.spec && ms.spec.attack && ms.spec.attack.intervalScale) || 1),
+      attackMult: D().DESIGN.autoAttack.mult
+        * ((ms && ms.spec && ms.spec.attack && ms.spec.attack.mult) || 1),
+      routedAtkBonus: (ms && ms.spec && ms.spec.attack && ms.spec.attack.routedBonus) || 0,
+      skillList: (ms && ms.spec && ms.spec.skills) || [],
+      cds: {},
+      atkSinceSkill: 0,
+      pendingSkill: null,
       side: 'ally',
       slot: partyEntry.slot,
       skinId: unit.skinId,
@@ -139,6 +155,14 @@
       dodge: D().DESIGN.baseDodge,
       alive: hp > 0,
       gauge: 0,
+      atkTimer: 0,
+      energy: 0,
+      casting: null,
+      castTimer: 0,
+      atkTimer: 0,
+      energy: 0,
+      casting: null,
+      castTimer: 0,
       skipActions: 0,
       shield: 0,
       buffs: [],
@@ -269,6 +293,10 @@
    * 返回 {dealt, absorbed, died}
    */
   function applyDamage(b, src, tgt, amount, opts) {
+    /* 敌人伤害按新时间轴缩放：不然我方平A 归一化后必然一边倒 */
+    if (src && src.side === 'enemy') {
+      amount *= (D().DESIGN.enemyDamageScale == null ? 1 : D().DESIGN.enemyDamageScale);
+    }
     const o = opts || {};
     let dmg = Math.max(1, Math.round(amount));
 
@@ -616,39 +644,135 @@
     return { dealtDamage: false, action: 'guard' };
   }
 
+  /* ------------------------------ 时间轴 ------------------------------ */
+
+  /** 选目标：沿用战前指令的目标偏好（frontFoe / lowestHpFoe / ...） */
+  function gambitTarget(b, actor) {
+    let targetId = null;
+    try {
+      const ctx = {
+        self: { id: actor.id, slot: actor.slot, hp: actor.hp, maxHp: actor.maxHp, alive: actor.alive },
+        allies: b.allies.map((u) => ({ id: u.id, slot: u.slot, hp: u.hp, maxHp: u.maxHp, alive: u.alive !== false })),
+        enemies: b.enemies.map((u) => ({
+          id: u.id, slot: u.slot, hp: u.hp, maxHp: u.maxHp,
+          alive: u.alive !== false, charging: !!u.charging,
+        })),
+        energy: { main: Math.floor(actor.energy || 0), support: 0 },
+        weaponId: actor.weaponId || null,
+      };
+      const d = V.Tactics.evaluate(ctx, actor.gambits);
+      targetId = d && d.targetIds && d.targetIds[0];
+    } catch (e) { /* 指令异常不影响战斗，退回默认目标 */ }
+    return targetId;
+  }
+
+  function pickTarget(b, actor, kind) {
+    const foes = alive(actor.side === 'ally' ? b.enemies : b.allies);
+    if (!foes.length) return null;
+    if (kind === 'lowestHpFoe') return foes.slice().sort((x, y) => hpPct(x) - hpPct(y) || x.slot - y.slot)[0];
+    if (kind === 'self') return actor;
+    if (kind === 'ally') {
+      const mates = alive(b.allies).slice().sort((x, y) => hpPct(x) - hpPct(y) || x.slot - y.slot);
+      return mates[0] || actor;
+    }
+    return frontOf(actor.side === 'ally' ? b.enemies : b.allies);
+  }
+
+  /** 条件判定：只做有限几种，便于 UI 解释 */
+  function condOk(b, actor, cond) {
+    if (!cond) return true;
+    if (cond.routed || cond.routed === false) {
+      const routed = !!(actor.ms && actor.ms.routed);
+      if (routed !== !!cond.routed) return false;
+    }
+    if (cond.foeHpBelow != null) {
+      const t = frontOf(b.enemies);
+      if (!t || hpPct(t) >= cond.foeHpBelow) return false;
+    }
+    if (cond.energyAbove != null && (actor.energy || 0) < cond.energyAbove) return false;
+    if (cond.attackCount != null && (actor.atkSinceSkill || 0) < cond.attackCount) return false;
+    return true;
+  }
+
+  function readySkill(b, actor) {
+    const list = actor.skillList || [];
+    for (let i = 0; i < list.length; i++) {
+      const sk = list[i];
+      if (((actor.cds || {})[sk.id] || 0) > 0) continue;
+      if ((actor.energy || 0) < (sk.cost || 0)) continue;
+      if (!condOk(b, actor, sk.cond)) continue;
+      return sk;
+    }
+    return null;
+  }
+
+  function startCast(b, actor, sk) {
+    actor.casting = sk.id;
+    actor.castTimer = sk.castTime || 0.6;
+    actor.cds = actor.cds || {};
+    actor.cds[sk.id] = sk.cooldown || 4;
+    actor.energy = Math.max(0, (actor.energy || 0) - (sk.cost || 0));
+    actor.atkSinceSkill = 0;
+    actor.pendingSkill = sk;
+    log(b, {
+      type: 'cast', actorId: actor.id,
+      text: `${actor.name} 起手「${sk.name}」`,
+    });
+  }
+
+  function finishCast(b, actor) {
+    const sk = actor.pendingSkill;
+    actor.pendingSkill = null;
+    actor.casting = null;
+    if (!sk) return;
+    const tgt = pickTarget(b, actor, sk.target);
+    if (!tgt) return;
+    const eff = sk.effect || {};
+    const label = `「${sk.name}」`;
+    if (eff.heal) {
+      const amount = actor.atk * eff.heal * (1 + (b.healBonus || 0));
+      healUnit(b, actor, tgt, amount);
+    } else {
+      doBasicAttack(b, actor, tgt.id, { mult: eff.mult || 1.4, label });
+    }
+    if (eff.shield) {
+      const gained = addShield(actor, Math.round(actor.maxHp * eff.shield));
+      log(b, { type: 'shield', actorId: actor.id, targetId: actor.id, amount: gained, text: `${actor.name} 获得 ${gained} 护盾` });
+    }
+    if (eff.dot && tgt.alive !== false) {
+      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * (eff.dot.dmgMult || 0.2))), d: eff.dot.turns || 2 });
+    }
+    if (eff.buffAttack && actor.alive !== false) {
+      actor.buffs.push({ k: 'atkUp', v: (eff.buffAttack.mult || 1.5) - 1, d: eff.buffAttack.seconds || 3 });
+    }
+  }
+
+  /** 平A：不耗能量、按间隔自动打出 */
+  function doAutoAttack(b, actor) {
+    const bonus = (actor.routedAtkBonus && actor.ms && actor.ms.routed) ? actor.routedAtkBonus : 0;
+    const targetId = gambitTarget(b, actor);
+    const res = doBasicAttack(b, actor, targetId, {
+      mult: (actor.attackMult || D().DESIGN.autoAttack.mult) * (1 + bonus),
+      label: '平A',
+    });
+    actor.atkSinceSkill = (actor.atkSinceSkill || 0) + 1;
+    if (actor.onAttackEnergy) {
+      actor.energy = Math.min(actor.energyMax || 20, (actor.energy || 0) + actor.onAttackEnergy);
+    }
+    return res;
+  }
+
   /* ------------------------------ 我方行动 ------------------------------ */
 
   function allyTurn(b, actor) {
-    routeEnergy(b, actor);
-
-    const ctx = {
-      self: { id: actor.id, slot: actor.slot, hp: actor.hp, maxHp: actor.maxHp, alive: actor.alive },
-      allies: b.allies.map((u) => ({ id: u.id, slot: u.slot, hp: u.hp, maxHp: u.maxHp, alive: u.alive !== false })),
-      enemies: b.enemies.map((u) => ({
-        id: u.id, slot: u.slot, hp: u.hp, maxHp: u.maxHp,
-        alive: u.alive !== false, charging: !!u.charging,
-      })),
-      energy: {
-        main: V.Circuit.outputTokens(actor.runtime, 'main').length,
-        support: V.Circuit.outputTokens(actor.runtime, 'support').length,
-      },
-      weaponId: actor.weaponId,
-    };
-
-    const decision = V.Tactics.evaluate(ctx, actor.gambits);
-    /* 只在“所有指令都不可用、退回基础攻击”时解释原因；
-       正常出手不需要把 skip 理由挂在角色头上。 */
-    actor.lastBlockReason = decision.action === 'basic' ? V.Tactics.explain(decision) : '';
-
-    const targetId = decision.targetIds[0] || null;
-    let res = { dealtDamage: false, action: decision.action };
-
-    if (decision.action === 'main') res = doMain(b, actor, targetId);
-    else if (decision.action === 'support') res = doSupport(b, actor, targetId);
-    else if (decision.action === 'guard') res = doGuard(b, actor);
-    else res = doBasicAttack(b, actor, targetId, { label: '基础攻击' });
-
-    return { res, action: res.action };
+    /* 时间轴上没有「这回合做什么」的选择：能放技能就放，否则平A */
+    const sk = readySkill(b, actor);
+    if (sk) {
+      startCast(b, actor, sk);
+      return { res: { dealtDamage: false, action: 'cast' }, action: 'cast' };
+    }
+    const res = doAutoAttack(b, actor);
+    return { res: { dealtDamage: res.dealtDamage, action: 'attack' }, action: 'attack' };
   }
 
   /* ------------------------------ 敌方行动 ------------------------------ */
@@ -820,23 +944,40 @@
       if (endCheck(b)) return ST().ok(next, [{ type: 'round', meta: { round: b.round } }, { type: 'over' }]);
     }
 
-    /* 冷却 */
-    [...b.allies, ...b.enemies].forEach((u) => {
-      Object.keys(u.cds || {}).forEach((k) => {
-        if (u.cds[k] > 0) u.cds[k] -= 1;
-      });
-    });
+    /* ---- 时间推进：冷却按秒走，能量自然恢复，施法到点结算 ---- */
+    const dt = D().DESIGN.stepSeconds;
+    const baseSpd = D().DESIGN.baseSpeed || 10;
 
-    /* 行动条推进 */
-    const actors = [];
     [...b.allies, ...b.enemies].forEach((u) => {
       if (u.alive === false) return;
-      u.gauge = (u.gauge || 0) + effSpd(u);
-      if (u.gauge >= D().DESIGN.gaugeThreshold) actors.push(u);
+      Object.keys(u.cds || {}).forEach((k) => {
+        if (u.cds[k] > 0) u.cds[k] = Math.max(0, u.cds[k] - dt);
+      });
+      const regen = u.regen == null ? D().DESIGN.energyBase.regen : u.regen;
+      const emax = u.energyMax == null ? D().DESIGN.energyBase.max : u.energyMax;
+      u.energy = Math.min(emax, (u.energy || 0) + regen * dt);
+
+      if (u.casting) {
+        u.castTimer -= dt;
+        if (u.castTimer <= 0) finishCast(b, u);
+      } else {
+        u.atkTimer = (u.atkTimer || 0) + dt * ((effSpd(u) || baseSpd) / baseSpd);
+      }
+    });
+
+    /* ---- 到点的单位出手（平A 或起手技能）---- */
+    const actors = [];
+    [...b.allies, ...b.enemies].forEach((u) => {
+      if (u.alive === false || u.casting) return;
+      const iv = u.attackInterval == null ? D().DESIGN.autoAttack.interval : u.attackInterval;
+      if (u.atkTimer >= iv) {
+        u.atkTimer -= iv;
+        actors.push(u);
+      }
     });
 
     /* 稳定排序：gauge 高者先，其次我方先，再按 slot，再按 ID */
-    actors.sort((x, y) => (y.gauge - x.gauge)
+    actors.sort((x, y) => (y.atkTimer - x.atkTimer)
       || (x.side === y.side ? 0 : x.side === 'ally' ? -1 : 1)
       || (x.slot - y.slot)
       || String(x.id).localeCompare(String(y.id)));
@@ -854,18 +995,21 @@
       /* 眩晕：跳过的行动不产生 clock，也不消耗待处理 damage */
       if (actor.skipActions > 0) {
         actor.skipActions -= 1;
-        actor.gauge = Math.max(0, actor.gauge - D().DESIGN.gaugeThreshold);
         log(b, { type: 'skip', actorId: actor.id, text: `${actor.name} 被压住，跳过一次行动` });
         continue;
       }
 
-      actor.gauge = Math.max(0, actor.gauge - D().DESIGN.gaugeThreshold);
       if (!beginAction(b, actor)) continue;
 
       let rootAction;
       if (actor.side === 'ally') {
         const r = allyTurn(b, actor);
-        rootAction = { actorId: actor.id, side: 'ally', action: r.action, dealtDamage: r.res.dealtDamage };
+        /* 起手技能没有立即伤害，但换位/援护仍按一次出手结算 */
+        rootAction = {
+          actorId: actor.id, side: 'ally',
+          action: r.action === 'cast' ? 'attack' : r.action,
+          dealtDamage: !!r.res.dealtDamage,
+        };
       } else {
         const action = enemyTurn(b, actor);
         rootAction = { actorId: actor.id, side: 'enemy', action, dealtDamage: action === 'main' || action === 'basic' };

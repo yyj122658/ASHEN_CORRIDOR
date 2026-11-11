@@ -553,6 +553,7 @@
     }
     return {
       ok: true,
+      spec: unit.manuscript,
       pct: cov.pct,
       aligned: cov.aligned,
       total: cov.total,
