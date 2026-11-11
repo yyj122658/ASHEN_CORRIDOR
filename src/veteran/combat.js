@@ -121,14 +121,20 @@
       /* 时间轴与能量：参数全部来自功法，没有功法就用基准值 */
       atkTimer: 0,
       energy: (ms && ms.effects && ms.effects.startEnergy) || 0,
-      energyMax: (ms && ms.spec && ms.spec.energy && ms.spec.energy.max) || D().DESIGN.energyBase.max,
-      regen: (ms && ms.spec && ms.spec.energy && ms.spec.energy.regen) || D().DESIGN.energyBase.regen,
+      energyMax: ((ms && ms.spec && ms.spec.energy && ms.spec.energy.max) || D().DESIGN.energyBase.max)
+        + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.max) || 0),
+      regen: ((ms && ms.spec && ms.spec.energy && ms.spec.energy.regen) || D().DESIGN.energyBase.regen)
+        + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.regen) || 0),
+      lowHpRegen: (ms && ms.effects && ms.effects.boost && ms.effects.boost.lowHpRegen) || 0,
+      skillCostCut: (ms && ms.effects && ms.effects.boost && ms.effects.boost.skillCostCut) || 0,
+      skillMult: 1 + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.skillMult) || 0),
       onHitEnergy: (ms && ms.spec && ms.spec.energy && ms.spec.energy.onHit) || 0,
       onAttackEnergy: (ms && ms.spec && ms.spec.energy && ms.spec.energy.onAttack) || 0,
       attackInterval: D().DESIGN.autoAttack.interval
         * ((ms && ms.spec && ms.spec.attack && ms.spec.attack.intervalScale) || 1),
       attackMult: D().DESIGN.autoAttack.mult
-        * ((ms && ms.spec && ms.spec.attack && ms.spec.attack.mult) || 1),
+        * ((ms && ms.spec && ms.spec.attack && ms.spec.attack.mult) || 1)
+        * (1 + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.attackMult) || 0)),
       routedAtkBonus: (ms && ms.spec && ms.spec.attack && ms.spec.attack.routedBonus) || 0,
       skillList: (ms && ms.spec && ms.spec.skills) || [],
       cds: {},
@@ -511,7 +517,7 @@
     for (let i = 0; i < list.length; i++) {
       const sk = list[i];
       if (((actor.cds || {})[sk.id] || 0) > 0) continue;
-      if ((actor.energy || 0) < (sk.cost || 0)) continue;
+      if ((actor.energy || 0) < Math.max(1, (sk.cost || 0) - (actor.skillCostCut || 0))) continue;
       if (!condOk(b, actor, sk.cond)) continue;
       return sk;
     }
@@ -523,7 +529,7 @@
     actor.castTimer = sk.castTime || 0.6;
     actor.cds = actor.cds || {};
     actor.cds[sk.id] = sk.cooldown || 4;
-    actor.energy = Math.max(0, (actor.energy || 0) - (sk.cost || 0));
+    actor.energy = Math.max(0, (actor.energy || 0) - Math.max(1, (sk.cost || 0) - (actor.skillCostCut || 0)));
     actor.atkSinceSkill = 0;
     actor.pendingSkill = sk;
     log(b, {
@@ -545,7 +551,7 @@
       const amount = actor.atk * eff.heal * (1 + (b.healBonus || 0));
       healUnit(b, actor, tgt, amount);
     } else {
-      doBasicAttack(b, actor, tgt.id, { mult: eff.mult || 1.4, label });
+      doBasicAttack(b, actor, tgt.id, { mult: (eff.mult || 1.4) * (actor.skillMult || 1), label });
     }
     if (eff.shield) {
       const gained = addShield(actor, Math.round(actor.maxHp * eff.shield));
@@ -765,7 +771,8 @@
       Object.keys(u.cds || {}).forEach((k) => {
         if (u.cds[k] > 0) u.cds[k] = Math.max(0, u.cds[k] - dt);
       });
-      const regen = u.regen == null ? D().DESIGN.energyBase.regen : u.regen;
+      let regen = u.regen == null ? D().DESIGN.energyBase.regen : u.regen;
+      if (u.lowHpRegen && hpPct(u) < 0.5) regen += u.lowHpRegen;
       const emax = u.energyMax == null ? D().DESIGN.energyBase.max : u.energyMax;
       u.energy = Math.min(emax, (u.energy || 0) + regen * dt);
 

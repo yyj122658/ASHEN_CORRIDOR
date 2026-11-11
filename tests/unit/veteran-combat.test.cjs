@@ -23,19 +23,6 @@ test('五种主手按身位与能量规则出手', () => {
   assert.equal(V.Tactics.mainCost('shortBlade', 2), 2);
 });
 
-test('身体与外观不限制主手：换底盘仍能用同一把主手', () => {
-  const { A, V, st } = boot(102);
-  let s = startRun(A, st, 102);
-  const unit = s.roster[0];
-  const before = V.Tactics.mainAllowed(V.State.itemById(s, unit.weaponId).templateId, 0);
-  const bodies = ['agile', 'conduit', 'sturdy'];
-  bodies.forEach((b) => {
-    s.roster[0].bodyPreset = b;
-    const after = V.Tactics.mainAllowed(V.State.itemById(s, s.roster[0].weaponId).templateId, 0);
-    assert.equal(after, before, `${b} 不应改变主手可用性`);
-  });
-});
-
 test('受击脉冲只在真实 HP 伤害时记录，护盾/自伤/DOT 不刷', () => {
   const { A, V } = boot(104);
   let s = startRun(A, s0(V), 104);

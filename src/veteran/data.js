@@ -15,9 +15,9 @@
     energyPerHit: 0,
     baseSpeed: 10,
     /* 敌人仍走旧的行动逻辑，伤害按平A 的新量级统一缩放，避免一边倒 */
-    enemyDamageScale: 0.2,
+    enemyDamageScale: 0.16,
     /* 我方平A 归一化后，敌人血池要相应拉长，否则一场只有 10 秒 */
-    enemyHpScale: 2.2,
+    enemyHpScale: 2.6,
     baseHit: 0.94,
     baseCrit: 0.10,
     baseDodge: 0.05,
@@ -151,6 +151,7 @@
         { id: 'out', cell: [1, 0], dir: 'E', role: 'out' },
       ],
       links: [['in', 'out']],
+      boost: { regen: 0.10 },
       desc: '1 负荷，直通。',
     },
     elbow: {
@@ -161,6 +162,7 @@
         { id: 'out', cell: [1, 1], dir: 'E', role: 'out' },
       ],
       links: [['in', 'out']],
+      boost: { regen: 0.04 },
       desc: '1 负荷，转向。',
     },
     splitter: {
@@ -174,6 +176,7 @@
       ],
       links: [['in', 'outA'], ['in', 'outB']],
       split: ['outA', 'outB'],
+      boost: { regen: 0.06, skillCostCut: 1 },
       desc: '2 负荷。输入轮流分给两个出口，2 单位分成 1+1，绝不复制。',
     },
     capacitor: {
@@ -185,6 +188,7 @@
       ],
       links: [['in', 'out']],
       capacitor: true,
+      boost: { regen: -0.20, skillMult: 0.25 },
       desc: '2 负荷。积满 4 单位后一次性发出 4 单位（带 surge）。',
     },
     threshold: {
@@ -196,6 +200,7 @@
       ],
       links: [['in', 'out']],
       gate: { hpBelow: 0.5 },
+      boost: { lowHpRegen: 0.50 },
       desc: '1 负荷。生命低于 50% 才导通；未满足时本次能量消散。',
     },
     ember: {
@@ -207,6 +212,7 @@
       ],
       links: [['in', 'out']],
       ember: true,
+      boost: { attackMult: 0.10 },
       desc: '2 负荷。流经的能量附 ember，主手命中附 2 回合灼烧。',
     },
   };

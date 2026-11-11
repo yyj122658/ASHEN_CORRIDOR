@@ -24,9 +24,8 @@
 
   /** 当前主手实例。 */
   function weaponOf(st, unit) {
-    if (!unit || !unit.weaponId) return null;
-    const w = st.itemsById[unit.weaponId];
-    return w && w.kind === 'weapon' ? w : null;
+    /* 武器系统已移除，保留空实现避免调用方崩 */
+    return null;
   }
 
   /** 该角色在当前主手上已解锁的调谐特性（按人+件记录，换人不清零）。 */
@@ -244,15 +243,6 @@
       if (eligible && used && used.partId) {
         const part = st.itemsById[used.partId];
         if (part && part.kind === 'weapon') {
-          part.attunements = part.attunements || {};
-          const att = part.attunements[uid] || { eligibleRunIds: [], traitId: null };
-          if (!att.eligibleRunIds.includes(rec.runId)) att.eligibleRunIds.push(rec.runId);
-          if (att.eligibleRunIds.length >= D().DESIGN.attuneRuns && !att.traitId) {
-            const tpl = D().weapon(part.templateId);
-            att.traitId = tpl.trait ? tpl.trait.id : null;
-            records.push({ unitId: uid, type: 'attune', traitId: att.traitId, weaponId: part.templateId });
-          }
-          part.attunements[uid] = att;
         }
       }
 
@@ -265,8 +255,9 @@
   function history(st, unitId) {
     const u = st.roster.find((x) => x.id === unitId);
     if (!u) return null;
-    const w = weaponOf(st, u);
-    const att = w && w.attunements ? w.attunements[unitId] : null;
+    /* 武器已移除：调谐改为按「当前功法的合格撤离次数」统计，不做永久强化 */
+    const ms = u.manuscript || null;
+    const att = ms ? (u.history.msAttune || {})[ms.id] : null;
     return {
       unitId,
       name: u.name,
@@ -275,13 +266,13 @@
       eligibleRuns: u.history.eligibleRunIds.length,
       nextSlotIn: Math.max(0, D().DESIGN.logicUnlockExtracts - u.history.eligibleRunIds.length),
       attunement: {
-        weaponId: w ? w.templateId : null,
-        weaponName: w ? D().weapon(w.templateId).name : null,
-        runs: att ? att.eligibleRunIds.length : 0,
+        manuscriptId: ms ? ms.id : null,
+        manuscriptName: ms ? ms.name : null,
+        runs: att ? (att.eligibleRunIds || []).length : 0,
         need: D().DESIGN.attuneRuns,
-        traitId: att ? att.traitId : null,
-        traitName: att && att.traitId ? (D().weapon(w.templateId).trait || {}).name : null,
-        traitDesc: att && att.traitId ? (D().weapon(w.templateId).trait || {}).desc : null,
+        traitId: null,
+        traitName: null,
+        traitDesc: null,
       },
       records: u.history.records.slice(-8).reverse(),
     };

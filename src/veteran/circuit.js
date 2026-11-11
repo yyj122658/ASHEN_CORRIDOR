@@ -542,7 +542,20 @@
     const cov = V.Manuscript.coverage(oriented, ox, oy, idx);
     const rt = V.Manuscript.route(oriented, ox, oy, idx);
 
+    /* 构件增益：只要它压到一格「已对齐」的功法格，就计入 */
+    const alignedSet = new Set(cov.alignedCells || []);
+    const boost = { regen: 0, max: 0, skillCostCut: 0, attackMult: 0, skillMult: 0, lowHpRegen: 0 };
+    ((lay && lay.built) || []).forEach((b) => {
+      const hit = (b.abs || []).some((c) => alignedSet.has(c.x + ',' + c.y));
+      if (!hit) return;
+      const bo = (b.tpl && b.tpl.boost) || {};
+      Object.keys(bo).forEach((k) => {
+        if (typeof bo[k] === 'number') boost[k] = (boost[k] || 0) + bo[k];
+      });
+    });
+
     const eff = Object.assign({ mainMult: 1, supportMult: 1, startEnergy: 0 }, (cov.tier && cov.tier.effect) || {});
+    eff.boost = boost;
     if (rt.ok) {
       eff.mainMult = Math.round(eff.mainMult * 1.1 * 100) / 100;
       eff.supportMult = Math.round(eff.supportMult * 1.1 * 100) / 100;

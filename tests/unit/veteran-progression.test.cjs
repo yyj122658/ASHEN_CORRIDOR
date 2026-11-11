@@ -65,47 +65,6 @@ test('紧急撤退与败退都不算合格撤离', () => {
   });
 });
 
-test('同一主手三次合格撤离解锁一阶调谐', () => {
-  const { A, V } = boot(405);
-  let st = V.State.create(4242, { classicPlate: true });
-  const unitId = st.roster[0].id;
-  const partId = st.roster[0].weaponId;
-
-  st = extractAt(A, st, 3);
-  assert.equal(st.itemsById[partId].attunements[unitId].eligibleRunIds.length, 1);
-  assert.equal(st.itemsById[partId].attunements[unitId].traitId, null);
-
-  st = extractAt(A, st, 3);
-  assert.equal(st.itemsById[partId].attunements[unitId].eligibleRunIds.length, 2);
-  assert.equal(st.itemsById[partId].attunements[unitId].traitId, null);
-
-  st = extractAt(A, st, 3);
-  assert.equal(st.itemsById[partId].attunements[unitId].eligibleRunIds.length, 3);
-  assert.equal(st.itemsById[partId].attunements[unitId].traitId, 'refund', '短刃调谐是回手');
-
-  const unit = st.roster.find((u) => u.id === unitId);
-  assert.equal(V.Roster.traitOf(st, unit), 'refund');
-});
-
-test('转移主手不删除旧主记录，新使用者不继承', () => {
-  const { A, V } = boot(406);
-  let st = V.State.create(4242, { classicPlate: true });
-  const a = st.roster[0];
-  const b = st.roster[1];
-  const bladeId = a.weaponId;
-
-  for (let i = 0; i < 3; i++) st = extractAt(A, st, 3);
-  assert.equal(st.itemsById[bladeId].attunements[a.id].traitId, 'refund');
-
-  /* 把短刃交给另一个角色 */
-  const r = V.Roster.equipWeapon(st, b.id, bladeId);
-  assert.ok(r.ok, JSON.stringify(r.error));
-  st = r.state;
-  const b2 = st.roster.find((u) => u.id === b.id);
-  assert.equal(V.Roster.traitOf(st, b2), null, '新使用者没有解锁条件，不该借用');
-  assert.equal(st.itemsById[bladeId].attunements[a.id].traitId, 'refund', '旧主记录保留');
-});
-
 test('战史视图能解释为什么没拿到合格撤离', () => {
   const { A, V } = boot(407);
   let st = extractAt(A, V.State.create(4242, { classicPlate: true }), 2);

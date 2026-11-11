@@ -89,7 +89,7 @@
 
     st.stash.forEach((id) => push(id, 'stash'));
     st.roster.forEach((u) => {
-      push(u.weaponId, 'weapon', u.id);
+      /* 武器槽已移除 */
       (u.board && u.board.placements || []).forEach((p) => push(p.itemId, 'board', u.id));
     });
     (st.shop || []).forEach((o) => push(o.itemId, 'merchant', o.id));
@@ -179,7 +179,6 @@
       plateSeed: spec.plateSeed != null ? (spec.plateSeed >>> 0) : hashSeed('plate:' + unitId),
       stress: 0,
       affliction: null,
-      weaponId: null,
       board: { placements: [] },
       manuscript: null,
       gambits: D().defaultGambits(),
@@ -272,17 +271,14 @@
     /* 四位老兵：短刃 / 塔盾 / 长矛 / 仪式杖 */
     const setup = [
       /* 顺序即初始站位：短刃必须 1 号位，长矛 2 号位可贯穿，塔盾与杖在后 */
-      { skinId: 'blade', bodyPreset: 'sturdy', weaponId: 'shortBlade', name: '铁鸦' },
-      { skinId: 'ranger', bodyPreset: 'agile', weaponId: 'longSpear', name: '灰烬' },
-      { skinId: 'warden', bodyPreset: 'sturdy', weaponId: 'towerShield', name: '磐石' },
-      { skinId: 'cleric', bodyPreset: 'conduit', weaponId: 'ritualStaff', name: '烛火' },
+      { skinId: 'blade', bodyPreset: 'sturdy', name: '铁鸦' },
+      { skinId: 'ranger', bodyPreset: 'agile', name: '灰烬' },
+      { skinId: 'warden', bodyPreset: 'sturdy', name: '磐石' },
+      { skinId: 'cleric', bodyPreset: 'conduit', name: '烛火' },
     ];
 
     setup.forEach((spec) => {
       const unit = makeUnit(st, spec);
-      const weapon = makePart(st, { kind: 'weapon', weaponId: spec.weaponId });
-      st.itemsById[weapon.id] = weapon;
-      unit.weaponId = weapon.id;
       /* 开局不装功法：功法是副本掉落物，第一层必掉（见 expedition 掉落表）。
          没有功法的单位只能基础攻击，这是「还没入门」的状态。 */
       equipPreset(st, unit, 'basic');
@@ -292,10 +288,6 @@
     st.team = st.roster.map((u) => u.id);
 
     /* 仓库：一件重炮 + 一套可换的蓄能片（capacitor + straight） */
-    const cannon = makePart(st, { kind: 'weapon', weaponId: 'heavyCannon' });
-    st.itemsById[cannon.id] = cannon;
-    st.stash.push(cannon.id);
-
     ['capacitor', 'straight'].forEach((tpl) => {
       const part = makePart(st, { kind: 'circuit', templateId: tpl });
       st.itemsById[part.id] = part;
@@ -373,10 +365,6 @@
 
     /* 主手与回路本体 */
     (st.roster || []).forEach((u) => {
-      const w = u.weaponId ? st.itemsById[u.weaponId] : null;
-      if (u.weaponId && !w) err(`${u.id} 的主手不存在：${u.weaponId}`);
-      if (w && w.kind !== 'weapon') err(`${u.id} 的 weaponId 不是主手`);
-      if (w && !D().WEAPONS[w.templateId]) err(`${u.id} 的主手类型未知：${w.templateId}`);
       const maxCoord = (V.Circuit && typeof V.Circuit.plateOf === 'function'
         ? V.Circuit.plateOf(u).size
         : (st.plateMode === 'classic' ? D().DESIGN.gridSize : (V.PlateGen ? V.PlateGen.SIZE : D().DESIGN.gridSize))) - 1;
