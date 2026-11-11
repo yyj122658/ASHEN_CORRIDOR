@@ -1,0 +1,17 @@
+# 依赖
+node_modules/
+package-lock.json
+
+# 本地工具与缓存
+.workbuddy-ai/
+.DS_Store
+Thumbs.db
+*.log
+
+# 升级前的手工备份（本地安全网，不进仓库）
+.backups/
+
+# 临时脚本 / 截图
+_*.cjs
+_*.js
+_tmp/

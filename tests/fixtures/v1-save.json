@@ -1,0 +1,97 @@
+{
+  "gold": 512,
+  "shards": 14,
+  "bestDepth": 3,
+  "runs": 5,
+  "extracts": 3,
+  "wins": 1,
+  "bagCap": 10,
+  "shopRefresh": 2,
+  "roster": [
+    {
+      "id": "u1",
+      "cls": "blade",
+      "star": 2,
+      "name": "铁鸦·剑士",
+      "equip": {
+        "weapon": { "id": "it1", "slot": "weapon", "q": 2, "ilvl": 3, "base": "裂口长剑", "prefix": "锋利的", "stats": { "atk": 15 } },
+        "armor": { "id": "it2", "slot": "armor", "q": 1, "ilvl": 2, "base": "铁片胸甲", "prefix": "", "stats": { "hp": 40, "def": 3 } },
+        "trinket": null
+      },
+      "stress": 20,
+      "hp": null,
+      "affliction": "fear",
+      "virtue": null,
+      "note": ""
+    },
+    {
+      "id": "u2",
+      "cls": "blade",
+      "star": 1,
+      "name": "灰烬·剑士",
+      "equip": { "weapon": null, "armor": null, "trinket": null },
+      "stress": 0,
+      "hp": null,
+      "affliction": null,
+      "virtue": null,
+      "note": ""
+    },
+    {
+      "id": "u3",
+      "cls": "warden",
+      "star": 1,
+      "name": "寒霜·盾卫",
+      "equip": {
+        "weapon": null,
+        "armor": { "id": "it3", "slot": "armor", "q": 3, "ilvl": 4, "base": "守夜人斗篷", "prefix": "", "stats": { "hp": 90, "def": 6 } },
+        "trinket": null
+      },
+      "stress": 5,
+      "hp": null,
+      "affliction": null,
+      "virtue": null,
+      "note": ""
+    },
+    {
+      "id": "u4",
+      "cls": "cleric",
+      "star": 1,
+      "name": "晨星·牧师",
+      "equip": { "weapon": null, "armor": null, "trinket": null },
+      "stress": 35,
+      "hp": null,
+      "affliction": null,
+      "virtue": null,
+      "note": ""
+    },
+    {
+      "id": "u5",
+      "cls": "ranger",
+      "star": 1,
+      "name": "暗刃·游侠",
+      "equip": { "weapon": null, "armor": null, "trinket": null },
+      "stress": 0,
+      "hp": null,
+      "affliction": null,
+      "virtue": null,
+      "note": ""
+    }
+  ],
+  "stash": [
+    { "id": "it9", "slot": "trinket", "q": 4, "ilvl": 5, "base": "阴影碎片", "prefix": "缥缈的", "stats": { "eva": 0.06, "spd": 2 } },
+    { "id": "it10", "slot": "weapon", "q": 0, "ilvl": 1, "base": "锈蚀短刃", "prefix": "", "stats": { "atk": 3 } }
+  ],
+  "team": ["u1", "u2", "u3", "u4"],
+  "shop": [
+    {
+      "unit": { "id": "s1", "cls": "warlock", "star": 1, "name": "低语·术士", "equip": { "weapon": null, "armor": null, "trinket": null }, "stress": 0, "hp": null, "affliction": null, "virtue": null },
+      "sold": false
+    },
+    {
+      "unit": { "id": "s2", "cls": "rogue", "star": 2, "name": "夜莺·刺客", "equip": { "weapon": null, "armor": null, "trinket": null }, "stress": 0, "hp": null, "affliction": null, "virtue": null },
+      "sold": true
+    }
+  ],
+  "upgrades": { "bag": 1, "atk": 0 },
+  "logs": [{ "msg": "旧日志", "kind": "" }]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "ashen-corridor",
+  "version": "2.0.0",
+  "private": true,
+  "description": "灰烬回廊 · 像素横版自动战斗 / 搜打撤 / 刷装 / 自走棋羁绊",
+  "scripts": {
+    "test": "node --test \"tests/unit/*.test.cjs\"",
+    "dev": "node scripts/serve.cjs",
+    "test:e2e": "node tests/e2e/game.spec.cjs",
+    "simulate": "node scripts/simulate.cjs",
+    "test:e2e:veteran": "node tests/e2e/veteran.spec.cjs",
+    "sim:veteran": "node scripts/simulate-veteran.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.0"
+  }
+}

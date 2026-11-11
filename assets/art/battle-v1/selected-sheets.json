@@ -1,0 +1,50 @@
+[
+  {
+    "id": "blade.idle",
+    "character": "blade",
+    "state": "idle",
+    "path": "blade/idle.png"
+  },
+  {
+    "id": "bone.idle",
+    "character": "bone",
+    "state": "idle",
+    "path": "bone/idle.png"
+  },
+  {
+    "id": "blade.attack",
+    "character": "blade",
+    "state": "attack",
+    "path": "blade/attack-v2.png"
+  },
+  {
+    "id": "bone.attack",
+    "character": "bone",
+    "state": "attack",
+    "path": "bone/attack.png"
+  },
+  {
+    "id": "blade.hurt",
+    "character": "blade",
+    "state": "hurt",
+    "path": "blade/hurt.png"
+  },
+  {
+    "id": "bone.hurt",
+    "character": "bone",
+    "state": "hurt",
+    "path": "bone/hurt.png"
+  },
+  {
+    "id": "blade.death",
+    "character": "blade",
+    "state": "death",
+    "path": "blade/death.png"
+  },
+  {
+    "id": "bone.death",
+    "character": "bone",
+    "state": "death",
+    "path": "bone/death.png"
+  }
+]

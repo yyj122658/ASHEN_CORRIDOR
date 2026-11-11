@@ -1,0 +1,347 @@
+{
+  "frameCount": 48,
+  "allPassed": true,
+  "previewGifFrames": 25,
+  "previewSize": [
+    960,
+    400
+  ],
+  "checks": [
+    {
+      "character": "blade",
+      "state": "idle",
+      "frame": 0,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "idle",
+      "frame": 1,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "idle",
+      "frame": 2,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "idle",
+      "frame": 3,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "idle",
+      "frame": 4,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "idle",
+      "frame": 5,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "attack",
+      "frame": 0,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "attack",
+      "frame": 1,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "attack",
+      "frame": 2,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "attack",
+      "frame": 3,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "attack",
+      "frame": 4,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "attack",
+      "frame": 5,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "hurt",
+      "frame": 0,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "hurt",
+      "frame": 1,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "hurt",
+      "frame": 2,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "hurt",
+      "frame": 3,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "hurt",
+      "frame": 4,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "hurt",
+      "frame": 5,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "death",
+      "frame": 0,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "death",
+      "frame": 1,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "death",
+      "frame": 2,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "death",
+      "frame": 3,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "death",
+      "frame": 4,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "blade",
+      "state": "death",
+      "frame": 5,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "idle",
+      "frame": 0,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "idle",
+      "frame": 1,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "idle",
+      "frame": 2,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "idle",
+      "frame": 3,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "idle",
+      "frame": 4,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "idle",
+      "frame": 5,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "attack",
+      "frame": 0,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "attack",
+      "frame": 1,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "attack",
+      "frame": 2,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "attack",
+      "frame": 3,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "attack",
+      "frame": 4,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "attack",
+      "frame": 5,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "hurt",
+      "frame": 0,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "hurt",
+      "frame": 1,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "hurt",
+      "frame": 2,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "hurt",
+      "frame": 3,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "hurt",
+      "frame": 4,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "hurt",
+      "frame": 5,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "death",
+      "frame": 0,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "death",
+      "frame": 1,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "death",
+      "frame": 2,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "death",
+      "frame": 3,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "death",
+      "frame": 4,
+      "rgbaExact": true,
+      "alpha": true
+    },
+    {
+      "character": "bone",
+      "state": "death",
+      "frame": 5,
+      "rgbaExact": true,
+      "alpha": true
+    }
+  ]
+}
