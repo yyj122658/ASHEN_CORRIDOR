@@ -191,46 +191,8 @@
 
   /* ---------- 事件 ---------- */
 
-  function findUnit(b, id) {
-    if (!b || !id) return null;
-    return [...(b.allies || []), ...(b.enemies || [])].find((u) => u.id === id) || null;
-  }
-
-  function skillIsDamage(skillId) {
-    const sk = A.Data.SKILLS[skillId];
-    return !!sk && (sk.type === 'phys' || sk.type === 'magic');
-  }
-
-  /** 增量消费战斗日志。slain 判定用 targetId 对应的实时单位。 */
-  function consume(b, onImpact) {
-    if (!b || !b.logs) return;
-    const fresh = b.logs.filter((e) => (e.seq || 0) > lastSeq);
-    if (!fresh.length) {
-      lastSeq = Math.max(lastSeq, b.logSeq || 0);
-      return;
-    }
-
-    fresh.forEach((ev) => {
-      if (ev.type === 'act') {
-        const actor = findUnit(b, ev.actorId);
-        if (actor && skillIsDamage(ev.meta && ev.meta.skillId)) play(actor, 'attack');
-      } else if (ev.type === 'hit' || ev.type === 'crit') {
-        const tgt = findUnit(b, ev.targetId);
-        if (!tgt) return;
-        if (tgt.hp <= 0 || tgt.alive === false) play(tgt, 'death', { force: true });
-        else play(tgt, 'hurt');
-      } else if (ev.type === 'death') {
-        const tgt = findUnit(b, ev.targetId);
-        if (tgt) play(tgt, 'death', { force: true });
-      } else if (ev.type === 'miss') {
-        // 攻击者已在 act 时开始攻击；目标明确不受击
-      }
-      // 其余（heal/dot/regen/bossPhase…）不改基础动作
-    });
-
-    lastSeq = Math.max(lastSeq, fresh[fresh.length - 1].seq || 0);
-    if (typeof onImpact === 'function') onImpact(fresh);
-  }
+  /* 动作驱动由 battle 视图直接调 play() 完成（见 src/veteran/view.js 的
+     consumeEvents），这里不再按日志推导动作。 */
 
   /* ---------- 绘制 ---------- */
 
@@ -285,7 +247,7 @@
 
   A.SpriteAnim = {
     init, preload, isReady, supports, charIdFor,
-    play, update, consume, draw, syncFromBattle, stateOf, isImpactFrame, reset,
+    play, update, draw, syncFromBattle, stateOf, isImpactFrame, reset,
     get atlas() { return atlas; },
   };
 })(globalThis.Ashen ||= {});

@@ -1,7 +1,8 @@
 'use strict';
-/* 老兵回路版美术映射。旧 A.Art 的 BASE 固定指向 v1，
-   这里用独立映射，避免把 veteran-v1 的相对路径拼到 v1 目录下。
-   资源缺失时只返回 ''，由 CSS 渐变底 + SVG 图标降级。 */
+/* 灰烬回廊美术映射。
+   - veteran-v1：工坊 / 营火 / 静养 / 板面底材 / 构件缩略图，走本模块自己的 BASE。
+   - v1：营地场景、节点插画、职业立绘、首领肖像，走 A.Art 的固定映射。
+   两套都缺失时只返回 ''，由 CSS 渐变底 + SVG 图标降级。 */
 (function (A) {
   'use strict';
   const V = (A.Veteran ||= {});
@@ -111,6 +112,46 @@
       onerror="this.classList.add('art-broken');this.removeAttribute('src')">`;
   }
 
+  /* ---------- v1 美术（营地场景 / 节点插画 / 立绘 / 首领） ---------- */
+
+  /* 皮肤 → v1 职业立绘。SKINS 只带 id 与中文名，画面对应在这里。 */
+  const SKIN_PORTRAIT = {
+    blade: 'portrait.blade',
+    warden: 'portrait.warden',
+    ranger: 'portrait.ranger',
+    warlock: 'portrait.warlock',
+    cleric: 'portrait.cleric',
+    rogue: 'portrait.rogue',
+  };
+
+  /** 用 A.Art 的固定映射产出图片标签；没登记或已失败时返回 ''。 */
+  function v1Tag(id, cls, style) {
+    const art = A.Art && A.Art.getArt ? A.Art.getArt(id) : null;
+    if (!art) return '';
+    if (A.Art.statusOf(id) === 'failed') return '';
+    return `<img class="v-art v1-art ${cls || ''}" src="${art.src}" loading="lazy" decoding="async"
+      alt="" style="object-position:${art.objectPosition};${style || ''}"
+      onerror="this.classList.add('art-broken');this.removeAttribute('src')">`;
+  }
+
+  /** 任意图片 id：v1 优先，其次 veteran-v1。 */
+  function anyImgTag(id, cls, style) {
+    return v1Tag(id, cls, style) || imgTag(id, cls, style);
+  }
+
+  /** 老兵立绘：按皮肤取 v1 肖像，缺失时返回 ''，卡片保留文字布局。 */
+  function portraitTag(skinId, cls) {
+    const id = SKIN_PORTRAIT[skinId];
+    if (!id) return '';
+    return v1Tag(id, 'portrait-img ' + (cls || ''));
+  }
+
+  /** 首领肖像：gatekeeper / memoryEater。 */
+  function bossTag(bossId, cls) {
+    if (bossId !== 'gatekeeper' && bossId !== 'memoryEater') return '';
+    return v1Tag('enemy.' + bossId, 'boss-img ' + (cls || ''));
+  }
+
   /* 构件模板 → 收藏品物件图 */
   const TEMPLATE_ART = {
     straight: 'veteran.relic.channel',
@@ -132,9 +173,10 @@
     return `<span class="relic-thumb">${imgTag(id, 'relic-img')}</span>`;
   }
 
-  /** 场景横幅：图缺失时整块不渲染，CSS 渐变兜底。 */
+  /** 场景横幅：图缺失时整块不渲染，CSS 渐变兜底。
+      先查 v1（营地 / 节点插画），再查 veteran-v1（工坊 / 营火 / 静养）。 */
   function sceneBanner(sceneId, cls, title, sub) {
-    const img = imgTag(sceneId, 'banner-img');
+    const img = anyImgTag(sceneId, 'banner-img');
     return `<div class="v-banner ${cls || ''} ${img ? '' : 'no-art'}">
       ${img}
       ${title ? `<div class="v-banner-title">${title}</div>` : ''}
@@ -153,7 +195,8 @@
   }
 
   V.Art = {
-    BASE, ASSETS, TEMPLATE_ART, get, load, preload, image, isReady, statusOf,
-    imgTag, relicArtFor, relicThumb, sceneBanner, preloadFor,
+    BASE, ASSETS, TEMPLATE_ART, SKIN_PORTRAIT, get, load, preload, image, isReady, statusOf,
+    imgTag, v1Tag, anyImgTag, portraitTag, bossTag,
+    relicArtFor, relicThumb, sceneBanner, preloadFor,
   };
 })(globalThis.Ashen ||= {});

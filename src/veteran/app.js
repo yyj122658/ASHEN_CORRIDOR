@@ -167,7 +167,7 @@
         return;
 
       case 'resetSave':
-        if (!window.confirm('确定抹去老兵回路版的存档？\n\n只影响 ashen_corridor_veteran_v1，旧版《灰烬回廊》存档不受影响。')) return;
+        if (!window.confirm('确定抹去存档？\n\n会清空 ashen_corridor_veteran_v1 里的全部进度。')) return;
         V.Storage.clear();
         state = V.State.create();
         ui.hadSave = false;
