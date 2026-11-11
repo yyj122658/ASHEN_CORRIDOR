@@ -78,6 +78,7 @@
 
     const parts = [];
     parts.push(`<svg class="board" viewBox="0 0 ${CW} ${GY * 2 + CELL * 4}"
+      data-cell="${CELL}" data-gx="${GX}" data-gy="${GY}" data-n="4"
       xmlns="http://www.w3.org/2000/svg" role="img" aria-label="生命金属回路板面">`);
     parts.push(`<rect class="board-bg" x="0" y="0" width="${CW}" height="${GY * 2 + CELL * 4}" rx="4"/>`);
 
@@ -126,9 +127,19 @@
       parts.push(`<line class="link link-flow" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/>`);
     });
 
-    /* 构件格 */
+    /* 构件（可拖动：整块 <g> 接收指针，拖动逻辑在 app.js） */
+    const placementById = new Map((placements || []).map((p) => [p.itemId, p]));
     L.built.forEach((b) => {
       const color = TEMPLATE_COLOR[b.tpl.id] || '#4A4A5A';
+      const pl = placementById.get(b.item.id) || { x: 0, y: 0 };
+      const xs = b.abs.map((c) => c.x);
+      const ys = b.abs.map((c) => c.y);
+      const bx = GX + Math.min.apply(null, xs) * CELL;
+      const by = GY + Math.min.apply(null, ys) * CELL;
+      const bw = (Math.max.apply(null, xs) - Math.min.apply(null, xs) + 1) * CELL;
+      const bh = (Math.max.apply(null, ys) - Math.min.apply(null, ys) + 1) * CELL;
+      parts.push(`<g class="part-group" data-act="wsGrab" data-id="${b.item.id}"
+        data-px="${pl.x}" data-py="${pl.y}">`);
       b.abs.forEach((c) => {
         const [px, py] = cellXY(c.x, c.y);
         parts.push(`<rect class="part-cell" x="${px + 3}" y="${py + 3}" width="${CELL - 6}" height="${CELL - 6}"
@@ -141,16 +152,18 @@
       });
       const [lx, ly] = cellXY(b.abs[0].x, b.abs[0].y);
       parts.push(`<text class="part-label" x="${lx + CELL / 2}" y="${ly + CELL - 9}" text-anchor="middle">${esc(b.tpl.name)}</text>`);
+      /* 拖拽命中层：盖住整块构件的包围盒 */
+      parts.push(`<rect class="part-hit" x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="transparent"/>`);
+      parts.push('</g>');
     });
 
-    /* 点选放置 */
+    /* 空格命中层：只给没被构件占住的格子，构件自己那层在上/下层都能收到指针 */
     if (o.interactive) {
       for (let y = 0; y < 4; y++) {
         for (let x = 0; x < 4; x++) {
+          if (cellsUsed.has(x + ',' + y)) continue;
           const [px, py] = cellXY(x, y);
-          const covered = cellsUsed.has(x + ',' + y);
-          const cls = covered ? 'hit covered' : 'hit';
-          parts.push(`<rect class="${cls}" x="${px}" y="${py}" width="${CELL}" height="${CELL}"
+          parts.push(`<rect class="hit" x="${px}" y="${py}" width="${CELL}" height="${CELL}"
             data-act="wsCell" data-id="${x},${y}" role="button" tabindex="0">
             <title>格 (${x},${y})${blocked.has(x + ',' + y) ? ' 屏蔽' : ''}</title></rect>`);
         }
@@ -223,8 +236,8 @@
   function titleScreen(state, ui) {
     const hasSave = !!ui.hadSave;
     const meta = hasSave
-      ? `最深 ${state.bestDepth} 层 · ${state.gold} 金币 · ${state.roster.length} 位老兵`
-      : '培养并保护你的老兵 · 可逆装配 · 遭遇可无限重试';
+      ? `最深 ${state.bestDepth} 层 · ${state.gold} 金币 · ${state.roster.length} 位传奇`
+      : '培养并保护你的传奇 · 可逆装配 · 遭遇可无限重试';
     return `<div class="v-title">
       <div class="v-title-bg">${V.Art.v1Tag('scene.camp', 'title-bg-img')}</div>
       <div class="v-title-glow"></div>
@@ -256,10 +269,10 @@
     const party = state.team.filter(Boolean);
     return `
     ${V.Art.sceneBanner('scene.camp', 'scene-camp', '灰烬前哨',
-    `${state.roster.length} 位老兵 · 金币 ${state.gold} · 遗物 ${state.shards}`)}
+    `${state.roster.length} 位传奇 · 金币 ${state.gold} · 遗物 ${state.shards}`)}
     <div class="camp-cols">
       <div class="camp-col">
-      ${panel('四位老兵', `<div class="vet-grid">${state.team.map((uid, slot) => {
+      ${panel('四位传奇', `<div class="vet-grid">${state.team.map((uid, slot) => {
         const u = uid ? state.roster.find((x) => x.id === uid) : null;
         return `<div class="vet-slot ${u ? '' : 'empty'}">
           <div class="vet-slot-no">${slot + 1}</div>
@@ -336,7 +349,7 @@
         <div class="row wrap">${state.roster.map((u) => btn(u.name, 'teamSet', { cls: 'ghost xs', data: { slot: String(ui.teamPickSlot), id: u.id } })).join('')}</div></div>` : ''}
       `)}
 
-      ${panel('老兵', `<div class="row wrap">${state.roster.map((u) => btn(
+      ${panel('传奇', `<div class="row wrap">${state.roster.map((u) => btn(
     `${u.name}${state.team.includes(u.id) ? ' ●' : ''}`, 'inspectUnit',
     { cls: u.id === selected.id ? 'gold xs' : 'ghost xs', data: { id: u.id } },
   )).join('')}</div>
@@ -422,7 +435,7 @@
     ${V.Art.sceneBanner('veteran.scene.workshop', 'scene-workshop', '工坊', '可逆装配 · 停摆的构件不伪造连通')}
     <div class="ws-layout">
       <aside class="ws-left">
-        ${panel('老兵', `<div class="row wrap">${state.roster.map((u) => btn(u.name, 'wsUnit', {
+        ${panel('传奇', `<div class="row wrap">${state.roster.map((u) => btn(u.name, 'wsUnit', {
     cls: u.id === unit.id ? 'gold xs' : 'ghost xs', data: { id: u.id },
   })).join('')}</div>
         ${unit ? `<div class="mt2 small muted">${esc(body.name)} · 负荷上限 ${body.loadCap}<br>屏蔽格：${body.blocked.map((b) => `(${b[0]},${b[1]})`).join(' ')}</div>` : ''}`)}
@@ -454,7 +467,7 @@
 
       <aside class="ws-right">
         ${panel('构件库', `
-          <div class="muted tiny mb2">点选一件，再点格子放置。${ui.wsMode === 'inscribe' ? '原构件不能删除。' : ''}</div>
+          <div class="muted tiny mb2">拖到板面上直接放置，或点选一件后点空格。${ui.wsMode === 'inscribe' ? '原构件不能删除。' : ''}</div>
           <div class="part-list">${stashParts.length ? stashParts.map((id) => {
     const it = state.itemsById[id];
     const t = D().template(it.templateId);
@@ -489,7 +502,7 @@
           ${btn('按推荐布局摆放', 'wsAutoLayout', { cls: 'ghost sm' })}
           ${btn('确认烙印（生命上限 ×0.8，压力 +40）', 'wsInscribe', { cls: 'gold sm', disabled: !(pv.ok && pv.reachableOutputs.length) })}
           ${btn('取消', 'cancelInscribe', { cls: 'ghost sm' })}
-          <div class="muted tiny">原构件必须保留；新增构件只能有一件。可以点「选」再点空格移动原构件。</div>
+          <div class="muted tiny">原构件必须保留；新增构件只能有一件。直接拖动原构件就能换位置。</div>
         </div>` : ''}
       </aside>
     </div>`;
@@ -541,7 +554,7 @@
     const h = u ? V.Roster.history(state, u.id) : null;
     return `${V.Art.sceneBanner('veteran.scene.recovery', 'scene-recovery', '战史', '谁活下来了，谁没有')}
     <div class="grid-2">
-      ${panel('老兵', `<div class="row wrap">${state.roster.map((x) => btn(x.name, 'inspectHistory', {
+      ${panel('传奇', `<div class="row wrap">${state.roster.map((x) => btn(x.name, 'inspectHistory', {
     cls: x.id === (u && u.id) ? 'gold xs' : 'ghost xs', data: { id: x.id },
   })).join('')}</div>
         ${h ? `<div class="mt3">
