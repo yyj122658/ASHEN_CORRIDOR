@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>剑士与骸骨兵 · 逐帧动画预览</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b0a10;color:#e5dbca;font:15px "Microsoft YaHei",sans-serif;padding:28px}main{max-width:1100px;margin:auto}h1{font:28px Georgia,"SimSun",serif;letter-spacing:3px;color:#d9ad65;margin:0 0 8px}p{color:#b0a597;line-height:1.7;margin:8px 0 20px}canvas{display:block;width:100%;height:auto;border:1px solid #514351;background:#17141f;border-radius:4px}nav{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}button,select{font:inherit;color:#e5dbca;background:#211b2b;border:1px solid #514351;padding:10px 16px;border-radius:3px;min-height:44px;cursor:pointer}button.active,button:hover{border-color:#d9ad65;color:#d9ad65}button:focus-visible,select:focus-visible{outline:2px solid #7fbbc8;outline-offset:3px}.row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:#b0a597}input[type=range]{width:210px;accent-color:#d9ad65}small{display:block;color:#b0a597;margin-top:16px;line-height:1.8}a{color:#d9ad65}#error{color:#e99c99}
+</style>
+<main>
+<h1>灰烬回廊 · 剑士与骸骨兵</h1>
+<p>四类动作 · 每类六个绘制帧 · 透明底角色 · 本页仅演示美术，未连接游戏战斗逻辑</p>
+<canvas id="stage" width="960" height="400"></canvas>
+<nav id="controls"><button data-state="all" class="active">完整连播</button><button data-state="idle">待机</button><button data-state="attack">攻击</button><button data-state="hurt">受击</button><button data-state="death">倒地</button><button id="pause">暂停</button><button id="restart">重播</button></nav>
+<div class="row"><label>速度 <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label><label>逐帧 <input id="scrub" type="range" min="0" max="5" value="0"></label><span id="status"></span><label><input id="anchors" type="checkbox"> 显示脚底锚点</label></div>
+<small>倒地播放后保持末帧，点击重播可重新检查。完整连播会明确重置演示。编码接入请读取 <a href="INTEGRATION.md">INTEGRATION.md</a> 与 <a href="atlas.json">atlas.json</a>。<br>生成原片及逐帧PNG均保留；透明背景须由浏览器按Alpha合成。<span id="error"></span></small>
+</main>
+<script src="atlas-data.js"></script>
+<script>
+(async()=>{
+const atlas=window.ASHEN_BATTLE_ATLAS, canvas=document.getElementById('stage'),ctx=canvas.getContext('2d');
+const images={}; const states=['idle','attack','hurt','death']; const labels={idle:'待机 · IDLE',attack:'攻击 · ATTACK',hurt:'受击 · HURT',death:'倒地 · DEATH'};
+const load=src=>new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>reject(Error('图片加载失败：'+src));im.src=src});
+try{
+const bg=await load('../v1/scenes/corridor.png');
+await Promise.all(Object.entries(atlas.characters).flatMap(([id,c])=>Object.entries(c.animations).map(async([state,a])=>images[id+'.'+state]=await load(a.sheet))));
+let selected='all',elapsed=0,paused=false,last=0,manual=null;
+const status=document.getElementById('status'),scrub=document.getElementById('scrub');
+function draw(state,index,showAnchors=false){
+ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,960,400);ctx.imageSmoothingEnabled=true;
+// Align the source walking plane to y=330 at this preview size.
+const scale=Math.max(960/bg.width,400/bg.height),sw=960/scale,sh=400/scale,sx=(bg.width-sw)/2,sy=Math.max(0,Math.min(bg.height-sh,.84*bg.height-330/scale));
+ctx.drawImage(bg,sx,sy,sw,sh,0,0,960,400);ctx.fillStyle='rgba(11,10,16,.18)';ctx.fillRect(0,0,960,400);
+const footer=ctx.createLinearGradient(0,332,0,400);footer.addColorStop(0,'rgba(11,10,16,0)');footer.addColorStop(1,'rgba(11,10,16,.95)');ctx.fillStyle=footer;ctx.fillRect(0,332,960,68);
+ctx.fillStyle='#d9ad65';ctx.font='18px "Microsoft YaHei",sans-serif';ctx.textAlign='left';ctx.fillText(labels[state],24,32);ctx.fillStyle='#e5dbca';ctx.font='13px Consolas,monospace';ctx.fillText('FRAME '+String(index+1).padStart(2,'0')+' / 06',24,54);
+for(const [id,x,label] of [['blade',350,'剑士 · BLADE'],['bone',610,'骸骨兵 · BONE']]){
+const a=atlas.characters[id].animations[state],f=a.frames[index],s=.46;
+ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.ellipse(x,332,44,6,0,0,Math.PI*2);ctx.fill();
+ctx.imageSmoothingEnabled=false;ctx.drawImage(images[id+'.'+state],f.rect.x,f.rect.y,512,512,x-f.pivot.x*s,330-f.pivot.y*s,512*s,512*s);
+if(showAnchors){ctx.strokeStyle='#7fbbc8';ctx.beginPath();ctx.moveTo(x-8,330);ctx.lineTo(x+8,330);ctx.moveTo(x,322);ctx.lineTo(x,338);ctx.stroke()}
+ctx.fillStyle='#e5dbca';ctx.font='14px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.fillText(label,x,373);
+}
+ctx.textAlign='right';ctx.fillStyle='#b0a597';ctx.font='11px "Microsoft YaHei",sans-serif';ctx.fillText('美术动作演示 / 非战斗模拟',936,380);
+status.textContent=labels[state]+' · 第 '+(index+1)+' 帧';scrub.value=index;
+}
+function frameAt(state,t){const a=atlas.characters.blade.animations[state],sum=a.frames.reduce((v,f)=>v+f.durationMs,0);if(state==='idle')t%=sum;else t=Math.min(t,sum-1);let n=0;for(const f of a.frames){n+=f.durationMs;if(t<n)return f.index}return 5;}
+function stateAt(t){for(const s of states){const duration=atlas.characters.blade.animations[s].frames.reduce((v,f)=>v+f.durationMs,0);if(t<duration)return[s,t];t-=duration}return['death',1e5];}
+const allDuration=states.reduce((v,s)=>v+atlas.characters.blade.animations[s].frames.reduce((a,f)=>a+f.durationMs,0),0)+700;
+function tick(now){if(!last)last=now;if(!paused)elapsed+=(now-last)*Number(document.getElementById('speed').value);last=now;let [state,t]=selected==='all'?stateAt(elapsed%allDuration):[selected,elapsed];const i=manual===null?frameAt(state,t):manual;draw(state,i,document.getElementById('anchors').checked);requestAnimationFrame(tick)}
+for(const b of document.querySelectorAll('[data-state]'))b.onclick=()=>{selected=b.dataset.state;elapsed=0;manual=null;paused=false;document.getElementById('pause').textContent='暂停';document.querySelectorAll('[data-state]').forEach(x=>x.classList.toggle('active',x===b));};
+document.getElementById('pause').onclick=()=>{paused=!paused;manual=null;document.getElementById('pause').textContent=paused?'继续':'暂停'};
+document.getElementById('restart').onclick=()=>{elapsed=0;manual=null;paused=false;last=0;document.getElementById('pause').textContent='暂停'};
+scrub.oninput=()=>{manual=Number(scrub.value);paused=true;document.getElementById('pause').textContent='继续'};
+if(new URLSearchParams(location.search).has('export')){
+for(let n=0;n<24;n++){draw(states[Math.floor(n/6)],n%6);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const res=await fetch('/capture/'+String(n).padStart(3,'0'),{method:'POST',body:blob});if(!res.ok)throw Error('Capture rejected');}
+draw('attack',3);await fetch('/done');document.body.dataset.export='complete';
+}else requestAnimationFrame(tick);
+window.ASHEN_PREVIEW_READY=true;
+}catch(e){document.getElementById('error').textContent=' '+e.message;console.error(e)}
+})();
+</script>
+</html>

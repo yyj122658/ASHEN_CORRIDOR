@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "style": "余烬前哨 / Veteran life-metal workshop",
+  "generator": "Built-in imagegen",
+  "plannedAssets": 8,
+  "readyAssets": 8,
+  "assets": {
+    "veteran.scene.workshop": {
+      "path": "assets/art/veteran-v1/scenes/workshop.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "objectPosition": "65% 50%",
+      "status": "ready",
+      "bytes": 2540449,
+      "sha256": "16d7115c16cc9bbe14280caf1c1cb9f02687dcab7ad767fc422f936198e418a4"
+    },
+    "veteran.surface.board": {
+      "path": "assets/art/veteran-v1/surfaces/living-metal.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 1898860,
+      "sha256": "f9880026765d707a911e3ac5e49a412d9a030b44a44fcf8038489ca9d2cf36bc"
+    },
+    "veteran.scene.field": {
+      "path": "assets/art/veteran-v1/scenes/field-inscription.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "objectPosition": "55% 55%",
+      "status": "ready",
+      "bytes": 2717066,
+      "sha256": "9605cee112503e85adfe02344700e7a81b9f3113e35a0e6b739570bcf04a8dfc"
+    },
+    "veteran.scene.recovery": {
+      "path": "assets/art/veteran-v1/scenes/recovery.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "objectPosition": "60% 50%",
+      "status": "ready",
+      "bytes": 2476683,
+      "sha256": "bda5d8729e589592d2390fc6194128c0d7621fbd67faac0f7517de26c73263c8"
+    },
+    "veteran.relic.channel": {
+      "path": "assets/art/veteran-v1/relics/ember-channel.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": true,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 679701,
+      "sha256": "36f9cced3e0431b09591d80911c74f57d2886cda490137b56b7050f0117a7a01"
+    },
+    "veteran.relic.capacitor": {
+      "path": "assets/art/veteran-v1/relics/pulse-chamber.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": true,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 739411,
+      "sha256": "84a1fe3a3a478ea7c99a1437e3a80d7d4fdd16f6e34924b2f8681c8bc9ac228b"
+    },
+    "veteran.relic.splitter": {
+      "path": "assets/art/veteran-v1/relics/prism-splitter.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": true,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 854843,
+      "sha256": "91b5840f31643ced5da9ec74ce6bf2fe5e02f512334626e3f7f46fc7febb637c"
+    },
+    "veteran.relic.threshold": {
+      "path": "assets/art/veteran-v1/relics/threshold-seal.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": true,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 1276148,
+      "sha256": "47c94b6b7b09547ec2358e263e7ba759342e7235fe1bc69b82921e11ae793560"
+    }
+  }
+}

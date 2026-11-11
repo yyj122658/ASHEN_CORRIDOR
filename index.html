@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>灰烬回廊 · Ashen Corridor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="hud"></header>
+  <nav id="nav"></nav>
+  <main id="stage"></main>
+  <section id="logs" aria-live="polite"></section>
+</div>
+
+<!-- 顺序 defer，同一命名空间 globalThis.Ashen；不使用 ES module，双击 index.html 即可运行 -->
+<script defer src="src/data/catalog.js"></script>
+<script defer src="src/core/random.js"></script>
+<script defer src="src/core/state.js"></script>
+<script defer src="src/systems/roster.js"></script>
+<script defer src="src/systems/equipment.js"></script>
+<script defer src="src/systems/expedition.js"></script>
+<script defer src="src/systems/combat.js"></script>
+<script defer src="src/core/storage.js"></script>
+<script defer src="src/ui/assets.js"></script>
+<script defer src="assets/art/battle-v1/atlas-data.js"></script>
+<script defer src="src/ui/sprite-anim.js"></script>
+<script defer src="src/ui/battle-view.js"></script>
+<script defer src="src/ui/ui.js"></script>
+<script defer src="src/app.js"></script>
+</body>
+</html>

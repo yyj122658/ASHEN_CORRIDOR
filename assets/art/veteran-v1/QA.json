@@ -1,0 +1,118 @@
+{
+  "assetCount": 8,
+  "allPassed": true,
+  "checks": [
+    {
+      "id": "veteran.scene.workshop",
+      "decoded": true,
+      "size": [
+        1536,
+        1024
+      ],
+      "alphaExpected": false,
+      "alphaExtrema": [
+        255,
+        255
+      ],
+      "hashMatch": true
+    },
+    {
+      "id": "veteran.surface.board",
+      "decoded": true,
+      "size": [
+        1254,
+        1254
+      ],
+      "alphaExpected": false,
+      "alphaExtrema": [
+        255,
+        255
+      ],
+      "hashMatch": true
+    },
+    {
+      "id": "veteran.scene.field",
+      "decoded": true,
+      "size": [
+        1536,
+        1024
+      ],
+      "alphaExpected": false,
+      "alphaExtrema": [
+        255,
+        255
+      ],
+      "hashMatch": true
+    },
+    {
+      "id": "veteran.scene.recovery",
+      "decoded": true,
+      "size": [
+        1536,
+        1024
+      ],
+      "alphaExpected": false,
+      "alphaExtrema": [
+        255,
+        255
+      ],
+      "hashMatch": true
+    },
+    {
+      "id": "veteran.relic.channel",
+      "decoded": true,
+      "size": [
+        1254,
+        1254
+      ],
+      "alphaExpected": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "hashMatch": true
+    },
+    {
+      "id": "veteran.relic.capacitor",
+      "decoded": true,
+      "size": [
+        1254,
+        1254
+      ],
+      "alphaExpected": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "hashMatch": true
+    },
+    {
+      "id": "veteran.relic.splitter",
+      "decoded": true,
+      "size": [
+        1254,
+        1254
+      ],
+      "alphaExpected": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "hashMatch": true
+    },
+    {
+      "id": "veteran.relic.threshold",
+      "decoded": true,
+      "size": [
+        1254,
+        1254
+      ],
+      "alphaExpected": true,
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "hashMatch": true
+    }
+  ]
+}

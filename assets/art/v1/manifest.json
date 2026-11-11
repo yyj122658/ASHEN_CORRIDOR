@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "style": "余烬前哨 / Ashen Outpost",
+  "generator": "Built-in imagegen",
+  "plannedAssets": 18,
+  "readyAssets": 18,
+  "assets": {
+    "scene.camp": {
+      "path": "assets/art/v1/scenes/camp.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "65% 50%",
+      "status": "ready",
+      "bytes": 2310854,
+      "sha256": "da5b49b1f52d871485b207f7dc418c62bc8f9933fb2e828b1b0e057f7cf75e09"
+    },
+    "scene.corridor": {
+      "path": "assets/art/v1/scenes/corridor.png",
+      "width": 2172,
+      "height": 724,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "groundY": 0.84,
+      "status": "ready",
+      "bytes": 2553167,
+      "sha256": "8ba50e6cd9c82065703fb05ffaf241e49da3c7d3632499500392188613bd1526"
+    },
+    "scene.boss": {
+      "path": "assets/art/v1/scenes/boss-chamber.png",
+      "width": 2172,
+      "height": 724,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "groundY": 0.84,
+      "status": "ready",
+      "bytes": 2447850,
+      "sha256": "eefc9e8c2eaa32763ff23223ac34e209747c3b724c95933b9acc7b418fc5b291"
+    },
+    "portrait.blade": {
+      "path": "assets/art/v1/portraits/blade.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 35%",
+      "status": "ready",
+      "bytes": 2303938,
+      "sha256": "4fcfc79950077626b49b8afa57d8e9fa2ab14f6b90732aebbb5883a6abb6d465"
+    },
+    "portrait.warden": {
+      "path": "assets/art/v1/portraits/warden.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 35%",
+      "status": "ready",
+      "bytes": 2630531,
+      "sha256": "9f520611b7a6fa4f4af57658d8156f70cb9f9db9ca9ba16a6c24022240114c43"
+    },
+    "portrait.ranger": {
+      "path": "assets/art/v1/portraits/ranger.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 35%",
+      "status": "ready",
+      "bytes": 2494428,
+      "sha256": "3213547b38239ffe9b7a0566c306c8cd3bb07b5834e6c45e20ddd7e16f1a0cf2"
+    },
+    "portrait.warlock": {
+      "path": "assets/art/v1/portraits/warlock.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 35%",
+      "status": "ready",
+      "bytes": 2450626,
+      "sha256": "8fd4f62a6a74396bdcbc58ae2b593c578e996d00177ba63768d980a3302f18fb"
+    },
+    "portrait.cleric": {
+      "path": "assets/art/v1/portraits/cleric.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 35%",
+      "status": "ready",
+      "bytes": 2627140,
+      "sha256": "8f1ce1e297c87216c8c497ea6c9e1773b03782728ad664872a93fd5d08cec5e9"
+    },
+    "portrait.rogue": {
+      "path": "assets/art/v1/portraits/rogue.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 35%",
+      "status": "ready",
+      "bytes": 2248934,
+      "sha256": "7fd84db8222208429eb23319dcf3227976f7e7dc8388dffe02a7e8c1d0cfa8e8"
+    },
+    "node.chest": {
+      "path": "assets/art/v1/nodes/chest.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 2529728,
+      "sha256": "0bb73b1f9d59ac29c4f5299f763755cf9e47ba021b392a6ad2cbb69bb2144c25"
+    },
+    "node.battle": {
+      "path": "assets/art/v1/nodes/battle.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 2663699,
+      "sha256": "b906b6839af8b08968c6faa1af7e2de12a2dbfb3bc9d4eadcd41d881224c8156"
+    },
+    "node.elite": {
+      "path": "assets/art/v1/nodes/elite.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 2787019,
+      "sha256": "1a299b293398b75da0c089a2cb4f5a5a8e5507aec89f65fbc16e441714f39717"
+    },
+    "node.event": {
+      "path": "assets/art/v1/nodes/event.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 2495031,
+      "sha256": "9f8b69f7a70fb3d06eba746f3d68b8564bc7d2d54d848b71755d10ab8b31b579"
+    },
+    "node.camp": {
+      "path": "assets/art/v1/nodes/camp.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 2670916,
+      "sha256": "470938545953e534608fa108534ff4b5485375a56aca22745b300f25df6432d3"
+    },
+    "node.merchant": {
+      "path": "assets/art/v1/nodes/merchant.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 2838414,
+      "sha256": "15c4348315644ab8a5709bb7e3db35e09938cf90b99c23cc6f31b3cc1e3fc26a"
+    },
+    "node.boss": {
+      "path": "assets/art/v1/nodes/boss.png",
+      "width": 1536,
+      "height": 1024,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 50%",
+      "status": "ready",
+      "bytes": 2462879,
+      "sha256": "1aae17ce699c6826c946ebff409f6e4669633e0acf9101d6c4ebd02ee4329fe1"
+    },
+    "enemy.gatekeeper": {
+      "path": "assets/art/v1/enemies/gatekeeper.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 35%",
+      "status": "ready",
+      "bytes": 2553398,
+      "sha256": "005e9f90dd5adae0408d6a0e6c1153dedb65504e6a7536d477bb3b64d9b74440"
+    },
+    "enemy.memoryEater": {
+      "path": "assets/art/v1/enemies/memory-eater.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "hasAlphaChannel": false,
+      "objectPosition": "50% 35%",
+      "status": "ready",
+      "bytes": 1998636,
+      "sha256": "b007b375e43ff5cf57225a7e23808ea2c3a605c72923f2564a1116a0b2fa9c04"
+    }
+  }
+}

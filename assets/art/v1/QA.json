@@ -1,0 +1,134 @@
+{
+  "assetCount": 18,
+  "uniqueAssets": 18,
+  "allPassed": true,
+  "visualReview": "All 18 generated outputs individually inspected; final game UI integration remains with coding agent.",
+  "checks": [
+    {
+      "id": "scene.camp",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "scene.corridor",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "scene.boss",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "portrait.blade",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "portrait.warden",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "portrait.ranger",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "portrait.warlock",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "portrait.cleric",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "portrait.rogue",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "node.chest",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "node.battle",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "node.elite",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "node.event",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "node.camp",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "node.merchant",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "node.boss",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "enemy.gatekeeper",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    },
+    {
+      "id": "enemy.memoryEater",
+      "decode": "pass",
+      "dimensionsMatch": true,
+      "opaque": true,
+      "hashMatch": true
+    }
+  ]
+}

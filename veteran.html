@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>老兵回路 · Veteran Circuit</title>
+<link rel="stylesheet" href="styles/veteran.css">
+</head>
+<body class="vet">
+<div id="app">
+  <header id="hud"></header>
+  <nav id="nav"></nav>
+  <main id="stage"></main>
+  <div id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<!-- 经典 defer 脚本，同一命名空间 globalThis.Ashen；双击本文件即可运行 -->
+<script defer src="src/data/catalog.js"></script>
+<script defer src="src/core/random.js"></script>
+<script defer src="src/core/state.js"></script>
+
+<script defer src="src/veteran/data.js"></script>
+<script defer src="src/veteran/state.js"></script>
+<script defer src="src/veteran/circuit.js"></script>
+<script defer src="src/veteran/tactics.js"></script>
+<script defer src="src/veteran/positions.js"></script>
+<script defer src="src/veteran/combat.js"></script>
+<script defer src="src/veteran/encounter.js"></script>
+<script defer src="src/veteran/expedition.js"></script>
+<script defer src="src/veteran/roster.js"></script>
+<script defer src="src/veteran/storage.js"></script>
+
+<script defer src="src/ui/assets.js"></script>
+<script defer src="src/veteran/art.js"></script>
+<script defer src="assets/art/battle-v1/atlas-data.js"></script>
+<script defer src="src/ui/sprite-anim.js"></script>
+
+<script defer src="src/veteran/ui.js"></script>
+<script defer src="src/veteran/view.js"></script>
+<script defer src="src/veteran/app.js"></script>
+</body>
+</html>

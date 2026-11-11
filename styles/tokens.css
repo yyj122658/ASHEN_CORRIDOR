@@ -1,0 +1,58 @@
+/* 设计 token：颜色、字体、间距、层次 */
+:root {
+  --bg: #0B0A10;
+  --surface: #17141F;
+  --surface-raised: #211B2B;
+  --surface-hi: #2A2233;
+  --border: #514351;
+  --border-soft: #352B3C;
+
+  --text: #E5DBCA;
+  --text-muted: #B0A597;
+  --text-dim: #7E7466;
+
+  --accent: #D9AD65;
+  --accent-dim: #8A6F32;
+  --ember: #D87843;
+  --danger: #D36A65;
+  --success: #8DB69B;
+  --ice: #7FBBC8;
+  --shadow: #AD8AC7;
+
+  --q0: #8A8A8A;
+  --q1: #B0A597;
+  --q2: #8DB69B;
+  --q3: #7FBBC8;
+  --q4: #AD8AC7;
+  --q5: #D9AD65;
+
+  --font-body: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  --font-title: "Songti SC", "SimSun", "STSong", Georgia, serif;
+  --font-mono: "Cascadia Mono", "Consolas", "SF Mono", ui-monospace, monospace;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+
+  --radius: 3px;
+  --line: 1px solid var(--border);
+  --line-soft: 1px solid var(--border-soft);
+  --shadow-hard: 3px 3px 0 #000;
+
+  --maxw: 1280px;
+}
+
+.q0 { color: var(--q0); }
+.q1 { color: var(--q1); }
+.q2 { color: var(--q2); }
+.q3 { color: var(--q3); }
+.q4 { color: var(--q4); }
+.q5 { color: var(--q5); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
