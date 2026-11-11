@@ -797,7 +797,8 @@
 
   function campNodeScreen(state) {
     const r = state.run;
-    return `${V.Art.sceneBanner('veteran.scene.field', 'scene-field', '废弃营火', '铁在这里会变软一点')}
+    return `${V.Art.sceneBanner('veteran.scene.field', 'scene-field', '',
+    `第 ${r.floor} 层 · 每名角色本局可现场烙印一次`)}
     ${panel('废弃营火', `
       <div class="story">火还有余温。铁在这里会变软一点。</div>
       <div class="row wrap mt3">

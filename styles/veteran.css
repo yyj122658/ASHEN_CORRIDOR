@@ -456,3 +456,6 @@ img.art-broken, .art-broken { display: none !important; }
   .relic-thumb { flex-basis: 34px; width: 34px; height: 34px; }
   .board-surface-img { width: 86%; }
 }
+
+/* 横幅没有主标题时，副标题上移居中 */
+.v-banner:not(:has(.v-banner-title)) .v-banner-sub { bottom: 20px; }
