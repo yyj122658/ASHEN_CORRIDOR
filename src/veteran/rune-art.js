@@ -21,16 +21,24 @@
 
   /* 默认相对页面根目录（index.html 在仓库根）。独立预览页可以用 setBase 改，
      不要把它写成相对模块文件的路径——那样游戏里又会指错。 */
-  let basePath = 'assets/art/rune-set-v1/grid/';
+  let basePath = 'assets/art/';
 
   /* cols/rows 来自 grid/manifest.json，必须与 data.js 的 TEMPLATES 一致 */
+  const V1 = 'rune-set-v1/grid';
+  const V2 = 'rune-set-v2/grid';
   const RUNES = {
-    straight: { file: 'straight.png', cols: 2, rows: 1 },
-    elbow: { file: 'elbow.png', cols: 2, rows: 2 },
-    splitter: { file: 'splitter.png', cols: 2, rows: 3 },
-    capacitor: { file: 'capacitor.png', cols: 2, rows: 2 },
-    threshold: { file: 'threshold.png', cols: 2, rows: 1 },
-    ember: { file: 'ember.png', cols: 2, rows: 1 },
+    /* 第一批：1~4 格 */
+    straight: { file: 'straight.png', cols: 2, rows: 1, dir: V1 },
+    elbow: { file: 'elbow.png', cols: 2, rows: 2, dir: V1 },
+    splitter: { file: 'splitter.png', cols: 2, rows: 3, dir: V1 },
+    capacitor: { file: 'capacitor.png', cols: 2, rows: 2, dir: V1 },
+    threshold: { file: 'threshold.png', cols: 2, rows: 1, dir: V1 },
+    ember: { file: 'ember.png', cols: 2, rows: 1, dir: V1 },
+    /* 第二批：单格 / 长条 / 三通 / 四通 */
+    rivet: { file: 'rivet.png', cols: 1, rows: 1, dir: V2 },
+    long: { file: 'long.png', cols: 3, rows: 1, dir: V2 },
+    tee: { file: 'tee.png', cols: 3, rows: 2, dir: V2 },
+    cross: { file: 'cross.png', cols: 3, rows: 3, dir: V2 },
   };
 
   function rune(id) { return RUNES[id] || null; }
@@ -98,7 +106,7 @@
     const cls = o.cls ? ' ' + o.cls : '';
     const op = o.opacity == null ? '' : ` opacity="${o.opacity}"`;
     return `<g class="rune${cls}" transform="translate(${round(x)},${round(y)}) scale(${round(cell)})">`
-      + `<image href="${basePath}${r.file}" x="0" y="0" width="${r.cols}" height="${r.rows}"`
+      + `<image href="${basePath}${r.dir}/${r.file}" x="0" y="0" width="${r.cols}" height="${r.rows}"`
       + ` preserveAspectRatio="none" transform="matrix(${m.map(round).join(',')})"${op}/></g>`;
   }
 
@@ -106,7 +114,7 @@
   function thumb(id, cls) {
     const r = rune(id);
     if (!r) return '';
-    return `<img class="rune-thumb ${cls || ''}" src="${basePath}${r.file}" alt="" loading="lazy" decoding="async">`;
+    return `<img class="rune-thumb ${cls || ''}" src="${basePath}${r.dir}/${r.file}" alt="" loading="lazy" decoding="async">`;
   }
 
   /** 预加载：板面一出现就把六张读进内存，避免拖拽时闪白 */
@@ -117,7 +125,7 @@
       const img = new Image();
       img.onload = () => resolve({ id, ok: true, img });
       img.onerror = () => resolve({ id, ok: false });
-      img.src = basePath + r.file;
+      img.src = basePath + r.dir + '/' + r.file;
     })));
   }
 

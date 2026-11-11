@@ -22,10 +22,12 @@ function fakeState() {
 
 const STATE = fakeState();
 const IDS = Object.keys(RA.RUNES);
+/* 已进 data.js 的模板；第二批（rivet/long/tee/cross）只有美术，TEMPLATES 待补 */
+const IN_DATA = IDS.filter((id) => Data.TEMPLATES[id]);
 
-test('六种纹章都在清单里，且格数与 data.js 的模板一致', () => {
-  assert.equal(IDS.length, 6);
-  IDS.forEach((tid) => {
+test('已在 data.js 的纹章，格数与模板一致', () => {
+  assert.equal(IN_DATA.length, 6);
+  IN_DATA.forEach((tid) => {
     const tpl = Data.TEMPLATES[tid];
     assert.ok(tpl, `${tid} 不在 TEMPLATES 里`);
     const rune = RA.rune(tid);
@@ -38,7 +40,7 @@ test('六种纹章都在清单里，且格数与 data.js 的模板一致', () =>
 });
 
 test('matrixFor 与 layout 的格子逐一吻合（含旋转与翻转）', () => {
-  IDS.forEach((tid) => {
+  IN_DATA.forEach((tid) => {
     const tpl = Data.TEMPLATES[tid];
     const baseCells = tpl.cells.map((c) => ({ x: c[0], y: c[1] }));
     for (let rot = 0; rot < 4; rot++) {
@@ -66,7 +68,7 @@ test('matrixFor 与 layout 的格子逐一吻合（含旋转与翻转）', () =>
 });
 
 test('sizeFor 与实际占用包围盒一致', () => {
-  IDS.forEach((tid) => {
+  IN_DATA.forEach((tid) => {
     for (let rot = 0; rot < 4; rot++) {
       const L = Circuit.layout(STATE, [{
         itemId: 'it_' + tid, x: 0, y: 0, rotation: rot, mirrorY: false,
@@ -77,6 +79,16 @@ test('sizeFor 与实际占用包围盒一致', () => {
       assert.equal(size.cols, Math.max.apply(null, xs) + 1, `${tid} rot=${rot} 列`);
       assert.equal(size.rows, Math.max.apply(null, ys) + 1, `${tid} rot=${rot} 行`);
     }
+  });
+});
+
+test('第二批纹章（单格/长条/三通/四通）已登记且格数正确', () => {
+  const expect = { rivet: [1, 1], long: [3, 1], tee: [3, 2], cross: [3, 3] };
+  Object.keys(expect).forEach((id) => {
+    const r = RA.rune(id);
+    assert.ok(r, `${id} 应该已登记`);
+    assert.deepEqual([r.cols, r.rows], expect[id], `${id} 格数`);
+    assert.ok(r.dir.indexOf('rune-set-v2') >= 0, `${id} 应指向第二批目录`);
   });
 });
 

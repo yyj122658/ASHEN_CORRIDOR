@@ -31,8 +31,7 @@ import sys
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIR = os.path.join(ROOT, 'assets', 'art', 'rune-set-v1')
-OUT_DIR = os.path.join(SRC_DIR, 'grid')
+SETS = ['rune-set-v1', 'rune-set-v2']
 
 # 原画外面有一圈 alpha 个位数的极淡外发光。按 alpha>0 取包围盒会把发光算进去，
 # 导致切片留出空白边距、相邻构件拼不上。alpha>=64 得到的边界与 manifest 的
@@ -47,11 +46,50 @@ def alpha_bbox(img):
     return solid.getbbox()
 
 
+def process(src_dir, out_dir, cell):
+    man_path = os.path.join(src_dir, 'manifest.json')
+    if not os.path.exists(man_path):
+        return []
+    man = json.load(open(man_path, encoding='utf-8'))
+    os.makedirs(out_dir, exist_ok=True)
+    problems = []
+    for tid, meta in man['assets'].items():
+        if not str(meta.get('file', '')).endswith('.png'):
+            continue
+        mask = meta.get('mask')
+        if not mask:
+            continue
+        src = os.path.join(src_dir, meta['file'])
+        img = Image.open(src).convert('RGBA')
+        cols, rows = len(mask[0]), len(mask)
+        bbox = alpha_bbox(img)
+        if not bbox:
+            problems.append(f'{tid}: 全透明')
+            continue
+        crop = img.crop(bbox)
+        target = (cols * cell, rows * cell)
+        crop.resize(target, Image.LANCZOS).save(os.path.join(out_dir, meta['file']), optimize=True)
+        print(f'  {tid:10s} {meta["width"]}x{meta["height"]} bbox={bbox} -> {target[0]}x{target[1]}')
+    return problems
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--cell', type=int, default=160, help='单格像素（默认 160）')
     args = ap.parse_args()
     cell = args.cell
+
+    for name in SETS:
+        src_dir = os.path.join(ROOT, 'assets', 'art', name)
+        if not os.path.isdir(src_dir):
+            continue
+        print(f'[{name}]')
+        problems = process(src_dir, os.path.join(src_dir, 'grid'), cell)
+        if problems:
+            print('  需要注意:')
+            for p in problems:
+                print('   -', p)
+    return
 
     man_path = os.path.join(SRC_DIR, 'manifest.json')
     if not os.path.exists(man_path):

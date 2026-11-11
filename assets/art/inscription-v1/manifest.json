@@ -1,0 +1,508 @@
+{
+  "version": 1,
+  "assetCount": 19,
+  "directions": "file-name N up E right S down W left",
+  "runtimeIntegrated": false,
+  "assets": {
+    "scroll-common": {
+      "file": "scroll-common.png",
+      "width": 768,
+      "height": 1024,
+      "bytes": 1369478,
+      "sha256": "2448b17d98a05fd485523f36b7864ca92955024793fe88a097039139a5ba42cf",
+      "aspect": "3:4",
+      "alpha": false
+    },
+    "scroll-fine": {
+      "file": "scroll-fine.png",
+      "width": 768,
+      "height": 1024,
+      "bytes": 1016131,
+      "sha256": "6605dd5c694bee91ed01c3f88465a43653d0c6f40a68d0ecfddcec95a795ded5",
+      "aspect": "3:4",
+      "alpha": false
+    },
+    "scroll-rare": {
+      "file": "scroll-rare.png",
+      "width": 768,
+      "height": 1024,
+      "bytes": 1366330,
+      "sha256": "2935a525e24b747bf44314bc96e1ed6e3a7366bc29766bf10a1107fb74965359",
+      "aspect": "3:4",
+      "alpha": true
+    },
+    "membrane-texture": {
+      "file": "membrane-texture.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 715071,
+      "sha256": "a707ffbf6855428e11282d134f5c5f619fd2a67020d76e50efadb640d063f26e",
+      "alpha": true,
+      "uniformAlpha": 112,
+      "tileable": true,
+      "oppositeEdgePixelDifference": 0
+    },
+    "ns": {
+      "file": "ns.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 7214,
+      "sha256": "e7a32edd3d2d44efec21c16ad2a09f86d847b050cbf95391f1dd0a1bce4dcf35",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "N",
+        "S"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "n": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "s": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "ew": {
+      "file": "ew.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 5781,
+      "sha256": "cd09e8eef6c9a1867b316aadace70cf31bebb93ae3e956b3ef69953be8efe27d",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "E",
+        "W"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "e": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "w": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "ne": {
+      "file": "ne.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 6686,
+      "sha256": "ae361686b1350358aec7166f99eb66a81dd3bce88911e25ef63dccf9bf08f952",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "N",
+        "E"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "n": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "e": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "es": {
+      "file": "es.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 6688,
+      "sha256": "caf4ec235ebdc590b73f75c0f5e5dc7d57a8d78ea95951153cffad8579f28aa0",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "E",
+        "S"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "e": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "s": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "sw": {
+      "file": "sw.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 6748,
+      "sha256": "1fde7f8c9cbf130c8d0bde5536b21ba061f17babf0bcdd919a28035d4d060156",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "S",
+        "W"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "s": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "w": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "wn": {
+      "file": "wn.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 6747,
+      "sha256": "2a9e1928a86c99752e6b4d4c1227b1c40c232d12802df4f2aeb5f598f49f73ef",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "W",
+        "N"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "n": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "w": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "nes": {
+      "file": "nes.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 9443,
+      "sha256": "08066a8eeb4ee2919328b68e068b7d84bf2da70e26891b4f763f1e8c5c520b89",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "N",
+        "E",
+        "S"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "n": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "e": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "s": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "esw": {
+      "file": "esw.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 8707,
+      "sha256": "9c8bbaa63c676bbe9f1cde8509909496fb24de32575c716c1d7a886cf69a0340",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "E",
+        "S",
+        "W"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "e": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "s": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "w": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "swn": {
+      "file": "swn.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 9499,
+      "sha256": "06df88bbd91e492d3878dcd4b009fbfe54bcba7f1e92da01f029a8d4a44ff600",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "S",
+        "W",
+        "N"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "n": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "s": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "w": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "wne": {
+      "file": "wne.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 8737,
+      "sha256": "7ad63eb41badd0d12bbb37ef519bfb88fc457f1521694e8a856a1ac16b21b47f",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "W",
+        "N",
+        "E"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "n": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "e": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "w": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "nesw": {
+      "file": "nesw.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 11484,
+      "sha256": "0a2c15a966c7e1fcc6e7a2673a5260fa070c31c8d52221902ea8533c62b64487",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "N",
+        "E",
+        "S",
+        "W"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "n": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "e": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "s": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        },
+        "w": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "n": {
+      "file": "n.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 4363,
+      "sha256": "0993bf5360f87618818c06023ab6bc9f0623e45a5de80b8285d14c9fdc3c9588",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "N"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "n": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "e": {
+      "file": "e.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 3717,
+      "sha256": "4782f4da64b79950897cdddf5172233c64acf954da9cc8e0a4ccded1f1805959",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "E"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "e": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "s": {
+      "file": "s.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 4370,
+      "sha256": "753656ed03209854db00882e3ee18287d1db17404efc1efe1441108bd39fe826",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "S"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "s": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    },
+    "w": {
+      "file": "w.png",
+      "width": 256,
+      "height": 256,
+      "bytes": 3799,
+      "sha256": "7e9d11d42189c9756853c78411baf5afbb076ed010932b913dab6da3ad20c0e5",
+      "alpha": true,
+      "monochrome": true,
+      "directions": [
+        "W"
+      ],
+      "nominalStrokeWidthPx": 20,
+      "measuredStrokeWidthPx": 18,
+      "widthThresholdAlpha": 64,
+      "edgeOffsets": {
+        "w": {
+          "insetPx": 0,
+          "centerOffsetPx": 0.0,
+          "widthPxAlpha64": 18
+        }
+      },
+      "source": "raw/stroke-master.png",
+      "method": "shared-master-crop-scale-rotate-and-alpha-union"
+    }
+  }
+}

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>功法膜 · 叠加/染色/缩放验收</title>
+<style>
+  body { margin:0; padding:24px 26px 60px; background:#0E0C14; color:#CFC6B8;
+         font-family: ui-sans-serif, system-ui, "Microsoft YaHei", sans-serif; }
+  h1 { font-size:19px; color:#EFD082; letter-spacing:.08em; margin:0 0 6px; font-weight:600; }
+  .sub { font-size:12.5px; color:#7A7386; line-height:1.7; margin-bottom:22px; max-width:820px; }
+  .sub code { color:#9FB4C8; }
+  h2 { font-size:13px; color:#8E9CAC; letter-spacing:.1em; margin:26px 0 12px; font-weight:500; }
+  .row { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
+  .cap { font-size:12px; color:#8E9CAC; margin-top:8px; line-height:1.6; }
+  .cap b { color:#D8CFC0; font-weight:500; }
+  .cap span { color:#635C71; font-size:11px; }
+  .box { background:#151220; border:1px solid #2A2438; display:inline-block; line-height:0; }
+  .box svg { display:block; max-width:100%; }
+</style>
+</head>
+<body>
+<h1>功法膜 · 叠加 / 染色 / 缩放验收</h1>
+<div class="sub">
+  数据来自真实模块：板面由 <code>PlateGen.generate()</code> 生成，膜的格与走向由 <code>Manuscript</code> 计算，
+  覆盖率也是模块算的。纹路片段取自 <code>inscription-v1/vein/*.png</code>，
+  <b>只做染色，没有缩放单张图</b>——整格拉伸到格子尺寸，笔宽随格子等比变化。
+</div>
+
+<h2>一、叠加：膜在下、构件在上</h2>
+<div class="row">
+  <div>
+    <div id="main"></div>
+    <div class="cap"><b>7×7 板面 + 一套 12 格功法</b><br>
+      <span id="maininfo"></span></div>
+  </div>
+  <div>
+    <div id="ref"></div>
+    <div class="cap"><b>同一块板，只有底材与构件</b><br><span>用来对比膜的存在感是否过强</span></div>
+  </div>
+</div>
+
+<h2>二、染色：一套灰度片段支持多套配色</h2>
+<div class="row" id="tints"></div>
+
+<h2>三、缩放：18px 笔宽在不同格距下的表现</h2>
+<div class="row" id="scales"></div>
+
+<script src="../../src/core/random.js"></script>
+<script src="../../src/veteran/plate-gen.js"></script>
+<script src="../../src/veteran/manuscript.js"></script>
+<script>
+const V = window.Ashen.Veteran;
+const PLATE = V.PlateGen.generate({ seed: 23578, archetype: 'full', target: 28 });
+const CELLS = PLATE.cells;
+
+/* 演示功法：从板面上取一条连通路径，保证「膜整块落在金属上」。
+   真实功法是手工设计的形状，摆不下就是摆不下——这里只是想验证渲染。 */
+const DIRV = [[0,-1,'N'],[1,0,'E'],[0,1,'S'],[-1,0,'W']];
+function deriveManuscript(cells, want) {
+  const set = new Set(cells.map((c) => c.join(',')));
+  const startCell = cells.slice().sort((a, b) => (a[1] - b[1]) || (a[0] - b[0]))[0];
+  const seen = new Set([startCell.join(',')]);
+  const queue = [startCell];
+  const picked = [startCell];
+  const edges = [];
+  while (queue.length && picked.length < want) {
+    const cur = queue.shift();
+    for (let i = 0; i < DIRV.length && picked.length < want; i++) {
+      const nx = cur[0] + DIRV[i][0];
+      const ny = cur[1] + DIRV[i][1];
+      const k = nx + ',' + ny;
+      if (!set.has(k) || seen.has(k)) continue;
+      seen.add(k);
+      queue.push([nx, ny]);
+      picked.push([nx, ny]);
+      edges.push([cur.join(','), k]);
+    }
+  }
+  const veins = {};
+  const link = (a, b) => {
+    const [ax, ay] = a.split(',').map(Number);
+    const [bx, by] = b.split(',').map(Number);
+    const d = DIRV.find(([dx, dy]) => ax + dx === bx && ay + dy === by);
+    if (!d) return;
+    const back = { N: 'S', E: 'W', S: 'N', W: 'E' }[d[2]];
+    veins[a] = veins[a] || [];
+    veins[b] = veins[b] || [];
+    if (veins[a].indexOf(d[2]) < 0) veins[a].push(d[2]);
+    if (veins[b].indexOf(back) < 0) veins[b].push(back);
+  };
+  edges.forEach(([a, b]) => link(a, b));
+  const leaves = picked.filter((c) => (veins[c.join(',')] || []).length === 1);
+  const minX = Math.min.apply(null, picked.map((c) => c[0]));
+  const minY = Math.min.apply(null, picked.map((c) => c[1]));
+  const spec = V.Manuscript.normalize({
+    id: 'demo', name: '演示功法',
+    cells: picked,
+    veins,
+    entry: startCell,
+    exits: leaves.length ? leaves : [picked[picked.length - 1]],
+    tiers: [{ at: 40, id: 't1', name: '一阶' }, { at: 75, id: 't2', name: '二阶' }, { at: 100, id: 't3', name: '三阶' }],
+  });
+  return { ms: spec, ox: minX, oy: minY };
+}
+
+const DERIVED = deriveManuscript(CELLS, 12);
+const MS = DERIVED.ms;
+const OX = DERIVED.ox;
+const OY = DERIVED.oy;
+
+const ORDER = ['N','E','S','W'];
+const VEIN_DIR = '../../assets/art/inscription-v1/';
+const RUNE_DIR = '../../assets/art/rune-set-v1/grid/';
+const MEMBRANE = '../../assets/art/inscription-v1/membrane-texture.png';
+
+/* 片段文件名不是统一的罗盘顺序（wne / swn 是沿用需求表里的写法），
+   所以用显式映射，不要靠推导 */
+const NAME = {
+  N: 'n', E: 'e', S: 's', W: 'w',
+  NS: 'ns', EW: 'ew', NE: 'ne', ES: 'es', SW: 'sw', NW: 'wn',
+  NES: 'nes', ESW: 'esw', NSW: 'swn', NEW: 'wne',
+  NESW: 'nesw',
+};
+const ink = (dirs) => {
+  const k = dirs.slice().sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)).join('');
+  return NAME[k] || '';
+};
+
+/* 一格的纹路：用片段 + feFlood 染色，不缩放单张图 */
+function veinAt(x, y, cell, color, opacity) {
+  const deltas = MS.cells.filter((c) => c[0] + OX === x && c[1] + OY === y);
+  if (!deltas.length) return '';
+  const local = deltas[0];
+  const dirs = MS.veins[local[0] + ',' + local[1]] || [];
+  if (!dirs.length) return '';
+  const id = 'vein-' + ink(dirs);
+  return `<image href="${VEIN_DIR}${ink(dirs)}.png" x="${cell ? x * cell : 0}" y="${cell ? y * cell : 0}"
+    width="${cell}" height="${cell}" preserveAspectRatio="none"
+    filter="url(#tint-${color})" opacity="${opacity == null ? 1 : opacity}"/>`;
+}
+
+let uid = 0;
+function board(opts) {
+  const o = opts || {};
+  const fid = 'f' + (++uid);
+  const cell = o.cell || 56;
+  const pad = 10;
+  const W = 7 * cell + pad * 2;
+
+  const masks = {};
+  MS.cells.forEach((c) => {
+    const dirs = MS.veins[c[0] + ',' + c[1]] || [];
+    if (!dirs.length) return;
+    const k = ink(dirs);
+    masks[k] = true;
+  });
+  const defs = Object.keys(masks).map((k) => `<image id="vm-${k}" href="${VEIN_DIR}${k}.png" x="0" y="0" width="1" height="1" preserveAspectRatio="none"/>`).join('');
+
+  const tintSet = (o.tints || { on: '#F2D48A', off: '#6A6784' });
+  const colorDefs = `
+    <filter id="${fid}-on" x="-30%" y="-30%" width="160%" height="160%">
+      <feFlood flood-color="${tintSet.on}" result="c"/>
+      <feComposite in="c" in2="SourceGraphic" operator="in" result="ink"/>
+      <feGaussianBlur in="ink" stdDeviation="1.5" result="halo"/>
+      <feMerge><feMergeNode in="halo"/><feMergeNode in="ink"/></feMerge>
+    </filter>
+    <filter id="${fid}-off" x="-30%" y="-30%" width="160%" height="160%">
+      <feFlood flood-color="${tintSet.off}" result="c"/>
+      <feComposite in="c" in2="SourceGraphic" operator="in"/>
+    </filter>`;
+
+  let metal = '';
+  CELLS.forEach(([x, y]) => {
+    metal += `<rect x="${pad + x * cell}" y="${pad + y * cell}" width="${cell}" height="${cell}" fill="#241E33"/>`;
+    metal += `<rect x="${pad + x * cell + 0.5}" y="${pad + y * cell + 0.5}" width="${cell - 1}" height="${cell - 1}"
+      fill="none" stroke="rgba(150,140,180,.26)"/>`;
+  });
+
+  let veins = '';
+  if (o.withVein !== false) {
+    MS.cells.forEach(([lx, ly]) => {
+      const dirs = MS.veins[lx + ',' + ly] || [];
+      if (!dirs.length) return;
+      const filled = o.filled ? o.filled(lx + OX, ly + OY) : true;
+      veins += `<image href="${VEIN_DIR}${ink(dirs)}.png"
+        x="${pad + (lx + OX) * cell}" y="${pad + (ly + OY) * cell}" width="${cell}" height="${cell}"
+        preserveAspectRatio="none" filter="url(#${fid}-${filled ? 'on' : 'off'})"
+        opacity="${filled ? 1 : 0.34}"/>`;
+    });
+  }
+
+  let runes = '';
+  (o.runes || []).forEach((r) => {
+    runes += `<image href="${RUNE_DIR}${r.id}.png" x="${pad + r.x * cell}" y="${pad + r.y * cell}"
+      width="${r.cols * cell}" height="${r.rows * cell}" preserveAspectRatio="none" opacity=".92"/>`;
+  });
+
+  return `<svg width="${W}" height="${W}" viewBox="0 0 ${W} ${W}">
+    ${colorDefs}
+    <rect x="0" y="0" width="${W}" height="${W}" fill="#0E0C14"/>
+    ${metal}${veins}${runes}
+  </svg>`;
+}
+
+/* 覆盖率：把构件当作「已填」来算，验证模块口径 */
+const fakePieces = { dirs: new Map(), occupied: new Set() };
+MS.cells.forEach(([lx, ly]) => {
+  const ax = lx + OX, ay = ly + OY;
+  const dirs = MS.veins[lx + ',' + ly] || [];
+  fakePieces.occupied.add(ax + ',' + ay);
+  fakePieces.dirs.set(ax + ',' + ay, dirs.slice());
+});
+const cov = V.Manuscript.coverage(MS, OX, OY, fakePieces);
+const rt = V.Manuscript.route(MS, OX, OY, fakePieces);
+
+document.getElementById('main').innerHTML = board({
+  cell: 56,
+  filled: () => true,
+  runes: [
+    { id: 'straight', x: OX + 1, y: OY + 0, cols: 2, rows: 1 },
+    { id: 'capacitor', x: OX + 1, y: OY + 2, cols: 2, rows: 2 },
+  ],
+});
+document.getElementById('ref').innerHTML = board({
+  cell: 56, withVein: false,
+  runes: [
+    { id: 'straight', x: OX + 1, y: OY + 0, cols: 2, rows: 1 },
+    { id: 'capacitor', x: OX + 1, y: OY + 2, cols: 2, rows: 2 },
+  ],
+});
+document.getElementById('maininfo').textContent =
+  `膜 ${cov.total} 格 · 覆盖 ${cov.aligned}/${cov.total} = ${cov.pct}% · ${cov.tier ? cov.tier.name : '未达台阶'} · 贯通 ${rt.ok ? '是' : '否'}`;
+
+/* 染色 */
+const TINTS = [
+  ['金 · 主手', '#E8C46A', '#4B4A5E'],
+  ['青 · 保护', '#6FC7C0', '#3E4A52'],
+  ['紫 · 禁忌', '#B08BE0', '#4A3F5E'],
+  ['红 · 受击', '#E08A7A', '#52403E'],
+];
+document.getElementById('tints').innerHTML = TINTS.map(([name, on, off]) => `
+  <div><div class="box">${board({ cell: 40, tints: { on, off }, filled: (x, y) => (x + y) % 3 !== 0 })}</div>
+  <div class="cap"><b>${name}</b><br><span>同一套灰度片段</span></div></div>`).join('');
+
+/* 缩放 */
+document.getElementById('scales').innerHTML = [56, 40, 28].map((c) => `
+  <div><div class="box">${board({ cell: c, filled: () => true })}</div>
+  <div class="cap"><b>格距 ${c}px</b><br><span>笔宽约 ${(18 / 256 * c).toFixed(1)}px</span></div></div>`).join('');
+</script>
+</body>
+</html>
