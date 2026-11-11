@@ -228,7 +228,9 @@
       const msLoad = Number(unit.manuscript.load) || 0;
       load += msLoad;
     }
-    if (load > body.loadCap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${body.loadCap}`);
+    /* 异形板面格数多，负荷上限单独给；经典模式沿用老值 */
+    const cap = (plate.generated && body.plate && body.plate.loadCap) ? body.plate.loadCap : body.loadCap;
+    if (load > cap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${cap}`);
 
     /* 主手本身不计负荷，但必须存在且是主手 */
     const weapon = unit.weaponId ? st.itemsById[unit.weaponId] : null;
@@ -517,6 +519,50 @@
     return { ok: true, state: next, events: [], load: p.load, reachableOutputs: p.reachableOutputs };
   }
 
+  /**
+   * 功法状态：覆盖率台阶 + 是否贯通 → 战斗要用的效果。
+   * 覆盖率给「量」（乘算、起手能量），贯通只给额外乘算，不解锁机制——
+   * 这样「只填满不管流向」也玩得下去，懂路由的人多吃一档。
+   */
+  function manuscriptState(st, unitId, placementsIn) {
+    const EMPTY = { mainMult: 1, supportMult: 1, startEnergy: 0 };
+    const unit = (st.roster || []).find((u) => u.id === unitId);
+    if (!unit || !unit.manuscript || !V.Manuscript) {
+      return { ok: false, reason: '没有功法', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
+    }
+    const plate = plateOf(unit);
+    const oriented = V.Manuscript.orient(
+      V.Manuscript.normalize(unit.manuscript),
+      unit.manuscript.rotation || 0,
+      !!unit.manuscript.mirrorY,
+    );
+    const ox = unit.manuscript.x || 0;
+    const oy = unit.manuscript.y || 0;
+    if (!V.Manuscript.fits(oriented, plate.cellsList, ox, oy)) {
+      return { ok: false, reason: '功法没落在板面上', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
+    }
+    const lay = layout(st, placementsIn || unit.board.placements || [], plate.terminals);
+    const idx = V.Manuscript.pieceIndex(lay);
+    const cov = V.Manuscript.coverage(oriented, ox, oy, idx);
+    const rt = V.Manuscript.route(oriented, ox, oy, idx);
+
+    const eff = Object.assign({ mainMult: 1, supportMult: 1, startEnergy: 0 }, (cov.tier && cov.tier.effect) || {});
+    if (rt.ok) {
+      eff.mainMult = Math.round(eff.mainMult * 1.1 * 100) / 100;
+      eff.supportMult = Math.round(eff.supportMult * 1.1 * 100) / 100;
+    }
+    return {
+      ok: true,
+      pct: cov.pct,
+      aligned: cov.aligned,
+      total: cov.total,
+      tierId: cov.tier ? cov.tier.id : null,
+      tierName: cov.tier ? cov.tier.name : '',
+      routed: rt.ok,
+      effects: eff,
+    };
+  }
+
   /* ------------------------------ 能量路由 ------------------------------ */
 
   function token(tags) { return { tags: (tags || []).slice() }; }
@@ -715,7 +761,7 @@
   }
 
   V.Circuit = {
-    plateOf,
+    plateOf, manuscriptState,
     opposite, rotateDir, flipNS, transformTemplate, preview, compile, saveLoadout, layout,
     buildGraph, route, emptyRuntime, pulse, token, outputTokens,
     hasSurge, hasEmber, consumeOutput, refund, portKey,

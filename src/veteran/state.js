@@ -122,9 +122,19 @@
     const base = A.Veteran.Manuscript.normalize(spec);
     if (!base) return unit;
     const plate = A.Veteran.Circuit.plateOf(unit);
+    /* 已放构件占住的格不能让出来给功法 */
+    const occupied = new Set();
+    (unit.board.placements || []).forEach((pl) => {
+      const item = st.itemsById[pl.itemId];
+      if (!item) return;
+      const tpl = D().template(item.templateId);
+      const tf = A.Veteran.Circuit.transformTemplate(tpl, pl.rotation || 0, !!pl.mirrorY);
+      tf.cells.forEach((c) => occupied.add((c.x + pl.x) + ',' + (c.y + pl.y)));
+    });
     for (let r = 0; r < 4; r++) {
       const oriented = A.Veteran.Manuscript.orient(base, r, false);
-      const spots = A.Veteran.Manuscript.placements(oriented, plate.cellsList);
+      const spots = A.Veteran.Manuscript.placements(oriented, plate.cellsList)
+        .filter(([ox, oy]) => oriented.cells.every((c) => !occupied.has((c[0] + ox) + ',' + (c[1] + oy))));
       if (spots.length) {
         unit.manuscript = Object.assign({}, spec, {
           x: spots[0][0], y: spots[0][1], rotation: r, mirrorY: false,
@@ -191,6 +201,16 @@
     const preset = D().PRESETS[presetId] || D().PRESETS.basic;
     /* 板面只认 Circuit.plateOf，别处不要重复推导 */
     const plateCells = A.Veteran.Circuit.plateOf(unit).cells;
+    /* 功法先铺好，构件给它让位 */
+    if (unit.manuscript && A.Veteran.Manuscript) {
+      const or = A.Veteran.Manuscript.orient(
+        A.Veteran.Manuscript.normalize(unit.manuscript),
+        unit.manuscript.rotation || 0, !!unit.manuscript.mirrorY,
+      );
+      const ox = unit.manuscript.x || 0;
+      const oy = unit.manuscript.y || 0;
+      or.cells.forEach((c) => plateCells.delete((c[0] + ox) + ',' + (c[1] + oy)));
+    }
 
     const fits = (dx, dy) => preset.layout.every((slot) => {
       const tpl = D().template(slot.templateId);
@@ -233,6 +253,8 @@
       shards: 0,
       bestDepth: 0,
       roster: [],
+      /* 功法藏品：掉到的功法先进这里，工坊里再装到具体单位身上 */
+      manuscriptVault: [],
       team: [null, null, null, null],
       itemsById: {},
       stash: [],
@@ -261,12 +283,9 @@
       const weapon = makePart(st, { kind: 'weapon', weaponId: spec.weaponId });
       st.itemsById[weapon.id] = weapon;
       unit.weaponId = weapon.id;
+      /* 开局不装功法：功法是副本掉落物，第一层必掉（见 expedition 掉落表）。
+         没有功法的单位只能基础攻击，这是「还没入门」的状态。 */
       equipPreset(st, unit, 'basic');
-      /* 经典模式不带功法：老存档与单测沿用旧负荷与旧终端 */
-      if (st.plateMode === 'plate') {
-        equipManuscript(st, unit, 'corridor5');
-        if (!unit.manuscript) equipManuscript(st, unit, 'ember12');
-      }
       st.roster.push(unit);
     });
 
@@ -282,6 +301,13 @@
       st.itemsById[part.id] = part;
       st.stash.push(part.id);
     });
+
+    /* 开局身上没有功法，但仓库给一套入门的：玩家在工坊里自己装。
+       后续更稀有的功法走副本掉落与祭坛兑换。 */
+    if (st.manuscriptVault.length === 0) {
+      const starter = D().manuscript('corridor5');
+      if (starter) st.manuscriptVault.push(JSON.parse(JSON.stringify(starter)));
+    }
 
     addLog(st, { kind: 'sys', text: '灰烬前哨。四位老兵在等下一次下潜。' });
 
@@ -363,6 +389,11 @@
         }
         if (![0, 1, 2, 3].includes(p.rotation)) err(`${u.id} 的构件 ${p.itemId} 旋转值非法`);
       });
+    });
+
+    /* 功法藏品：只认已知谱目，避免坏档塞进任意对象 */
+    (st.manuscriptVault || []).forEach((m) => {
+      if (!m || !D().MANUSCRIPTS[m.id]) err(`功法藏品里有未知条目：${m && m.id}`);
     });
 
     /* 功法：必须整块落在板面上（占格由 preview 统一查） */

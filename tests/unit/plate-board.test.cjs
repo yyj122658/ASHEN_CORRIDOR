@@ -30,20 +30,27 @@ test('同一单位重复取板面结果一致（seed 稳定，可存档）', () 
   assert.equal(a, b);
 });
 
-test('能量点由功法给：四个具名点都落在功法格上', () => {
+test('开局身无功法（功法在仓库），装上后四个具名点落在板面上', () => {
   const st = V.State.create(9001);
-  st.roster.forEach((u) => {
-    assert.ok(u.manuscript, `${u.name} 应该带一套入门功法`);
-    const plate = V.Circuit.plateOf(u);
-    const t = plate.terminals;
-    assert.deepEqual(Object.keys(t).sort(), ['clock', 'damage', 'main', 'support']);
-    Object.keys(t).forEach((id) => {
-      assert.ok(plate.cells.has(key(t[id].cell)), `${u.name} 的 ${id} 不在板面上`);
-      assert.equal(t[id].fromManuscript, true);
-    });
-    assert.equal(t.clock.role, 'in');
-    assert.equal(t.main.role, 'out');
+  st.roster.forEach((u) => assert.equal(u.manuscript, null, `${u.name} 开局不该带功法`));
+  assert.ok(st.manuscriptVault.length >= 1, '仓库里应该有入门功法');
+
+  const u = st.roster[0];
+  const before = V.Circuit.plateOf(u);
+  assert.deepEqual(Object.keys(before.terminals), [], '没功法时没有能量点');
+
+  V.State.equipManuscript(st, u, st.manuscriptVault[0].id);
+  assert.ok(u.manuscript, '装上后应持有功法');
+
+  const plate = V.Circuit.plateOf(u);
+  const t = plate.terminals;
+  assert.deepEqual(Object.keys(t).sort(), ['clock', 'damage', 'main', 'support']);
+  Object.keys(t).forEach((id) => {
+    assert.ok(plate.cells.has(key(t[id].cell)), `${u.name} 的 ${id} 不在板面上`);
+    assert.equal(t[id].fromManuscript, true);
   });
+  assert.equal(t.clock.role, 'in');
+  assert.equal(t.main.role, 'out');
 });
 
 test('没有功法就没有能量点：板面只剩槽位', () => {

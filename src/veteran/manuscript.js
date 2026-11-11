@@ -220,14 +220,19 @@
       if (exits.has(cur) && cur !== start) { hit = cur; break; }
       const [x, y] = unkey(cur);
       const have = dirs.get(cur) || [];
+      const myOwner = idx.owner ? idx.owner.get(cur) : null;
       Object.keys(ORTH).forEach((d) => {
-        if (have.indexOf(d) < 0) return;
         const nx = x + ORTH[d][0];
         const ny = y + ORTH[d][1];
         const nk = key(nx, ny);
         if (!good.has(nk) || seen.has(nk)) return;
-        const back = OPPOSITE[d];
-        if ((dirs.get(nk) || []).indexOf(back) < 0) return;
+        /* 同一个构件铺到的相邻格：内部 links 本来就通，不必两端对望 */
+        const sameOwner = myOwner && idx.owner && idx.owner.get(nk) === myOwner;
+        if (!sameOwner) {
+          if (have.indexOf(d) < 0) return;
+          const back = OPPOSITE[d];
+          if ((dirs.get(nk) || []).indexOf(back) < 0) return;
+        }
         seen.add(nk);
         queue.push(nk);
       });
@@ -239,15 +244,19 @@
   function pieceIndex(layout) {
     const dirs = new Map();
     const occupied = new Set();
+    const owner = new Map();
     ((layout && layout.built) || []).forEach((b) => {
-      (b.abs || []).forEach((c) => occupied.add(key(c.x, c.y)));
+      (b.abs || []).forEach((c) => {
+        occupied.add(key(c.x, c.y));
+        owner.set(key(c.x, c.y), b.item ? b.item.id : (b.itemId || ''));
+      });
       b.aps.forEach((p) => {
         const k = key(p.cell[0], p.cell[1]);
         if (!dirs.has(k)) dirs.set(k, []);
         dirs.get(k).push(p.dir);
       });
     });
-    return { dirs, occupied };
+    return { dirs, occupied, owner };
   }
 
   V.Manuscript = { normalize, orient, fits, placements, coverage, route, pieceIndex, ORTH };

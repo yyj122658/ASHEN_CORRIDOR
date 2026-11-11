@@ -46,21 +46,21 @@
       hp: 160, atk: 28, def: 18, spd: 8,
       loadCap: 8, blocked: [[2, 3], [3, 3]],
       /* 板面：由 seed 生成的异形金属，格数与形状解耦 */
-      plate: { archetype: 'full', target: 28 },
+      plate: { archetype: 'full', target: 28, loadCap: 16 },
       desc: '厚甲慢步。能扛住贯穿，但上手慢。',
     },
     agile: {
       id: 'agile', name: '轻量骨架',
       hp: 120, atk: 28, def: 8, spd: 14,
       loadCap: 6, blocked: [[0, 0], [2, 3]],
-      plate: { archetype: 'bar', target: 22 },
+      plate: { archetype: 'bar', target: 22, loadCap: 13 },
       desc: '出手快、皮薄。能量周转快，容错低。',
     },
     conduit: {
       id: 'conduit', name: '导流腔体',
       hp: 140, atk: 28, def: 12, spd: 10,
       loadCap: 7, blocked: [[0, 0], [3, 3]],
-      plate: { archetype: 'square', target: 28 },
+      plate: { archetype: 'square', target: 28, loadCap: 15 },
       desc: '居中。屏蔽格偏角，两条基础线路都能过。',
     },
   };
@@ -419,9 +419,9 @@
         support: { cell: [3, 2], dir: 'S' },
       },
       tiers: [
-        { at: 40, id: 't1', name: '一阶 · 初鸣' },
-        { at: 75, id: 't2', name: '二阶 · 共振' },
-        { at: 100, id: 't3', name: '三阶 · 圆满' },
+        { at: 40, id: 't1', name: '一阶 · 初鸣', effect: { mainMult: 1.10 } },
+        { at: 75, id: 't2', name: '二阶 · 共振', effect: { mainMult: 1.18, startEnergy: 1 } },
+        { at: 100, id: 't3', name: '三阶 · 圆满', effect: { mainMult: 1.26, startEnergy: 1, supportMult: 1.2 } },
       ],
     },
     corridor5: {
@@ -437,9 +437,9 @@
         support: { cell: [3, 0], dir: 'W' },
       },
       tiers: [
-        { at: 40, id: 't1', name: '一阶 · 初鸣' },
-        { at: 80, id: 't2', name: '二阶 · 共振' },
-        { at: 100, id: 't3', name: '三阶 · 贯通' },
+        { at: 40, id: 't1', name: '一阶 · 初鸣', effect: { mainMult: 1.08 } },
+        { at: 80, id: 't2', name: '二阶 · 共振', effect: { mainMult: 1.16, startEnergy: 1 } },
+        { at: 100, id: 't3', name: '三阶 · 贯通', effect: { mainMult: 1.24, startEnergy: 1 } },
       ],
     },
     wide14: {
@@ -459,9 +459,9 @@
         support: { cell: [1, 2], dir: 'W' },
       },
       tiers: [
-        { at: 35, id: 't1', name: '一阶 · 余温' },
-        { at: 70, id: 't2', name: '二阶 · 灼脉' },
-        { at: 100, id: 't3', name: '三阶 · 圆满' },
+        { at: 35, id: 't1', name: '一阶 · 余温', effect: { mainMult: 1.12 } },
+        { at: 70, id: 't2', name: '二阶 · 灼脉', effect: { mainMult: 1.22, supportMult: 1.15 } },
+        { at: 100, id: 't3', name: '三阶 · 圆满', effect: { mainMult: 1.34, startEnergy: 2, supportMult: 1.3 } },
       ],
     },
   };

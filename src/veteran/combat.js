@@ -107,6 +107,10 @@
     const weaponId = weapon ? weapon.templateId : 'shortBlade';
     const placements = (st.run.fieldLayouts && st.run.fieldLayouts[unit.id]) || unit.board.placements;
     const cc = V.Circuit.compile(st, unit.id, placements);
+    /* 功法状态：覆盖率台阶 + 贯通。没有功法时是空效果，不影响老存档 */
+    const ms = V.Circuit.manuscriptState
+      ? V.Circuit.manuscriptState(st, unit.id, placements)
+      : null;
 
     const maxHpMod = (st.run.maxHpModifiers && st.run.maxHpModifiers[unit.id]) || 1;
     const maxHp = Math.round(body.hp * maxHpMod);
@@ -115,6 +119,7 @@
     return {
       id: 'a_' + unit.id,
       sourceUnitId: unit.id,
+      ms,
       side: 'ally',
       slot: partyEntry.slot,
       skinId: unit.skinId,
@@ -209,13 +214,13 @@
     });
     const enemies = enemyBlueprint.units.map(buildEnemy);
 
-    /* 祝福：开局直充 */
-    const startEnergy = (next.run.blessings || []).some((id) => id === 'flow') ? 2 : 0;
-    if (startEnergy) {
-      allies.forEach((a) => {
-        a.runtime.outputs.main = V.Circuit.pulse(startEnergy);
-      });
-    }
+    /* 开局直充：祝福给全场 2 点，功法台阶再按人加成 */
+    const blessEnergy = (next.run.blessings || []).some((id) => id === 'flow') ? 2 : 0;
+    allies.forEach((a) => {
+      const msEnergy = (a.ms && a.ms.effects && a.ms.effects.startEnergy) || 0;
+      const total = blessEnergy + msEnergy;
+      if (total > 0) a.runtime.outputs.main = V.Circuit.pulse(total);
+    });
 
     next.run.battle = {
       id: 'btl_' + (next.run.encounter ? next.run.encounter.id : 'x'),
@@ -470,6 +475,10 @@
     }
 
     let mult = m.mult || 1;
+    /* 功法：覆盖率台阶与贯通给乘算。这是唯一的功法数值入口 */
+    if (actor.ms && actor.ms.effects && actor.ms.effects.mainMult) {
+      mult *= actor.ms.effects.mainMult;
+    }
     let stress = 0;
     if (spent.surge) {
       mult *= D().DESIGN.surgeMult;
@@ -584,6 +593,9 @@
     const tgt = byId(b.allies, targetId) || byId(b.enemies, targetId);
     if (!tgt || tgt.alive === false) return { dealtDamage: false, action: 'support' };
     let pct = D().SUPPORT.shieldPct;
+    if (actor.ms && actor.ms.effects && actor.ms.effects.supportMult) {
+      pct *= actor.ms.effects.supportMult;
+    }
     if (spent.surge) {
       pct *= D().DESIGN.surgeMult;
       actor.stress = Math.min(100, actor.stress + D().DESIGN.surgeStress);
