@@ -514,3 +514,22 @@ img.art-broken, .art-broken { display: none !important; }
   border: 1px solid var(--border); background: #12101B;
 }
 .u-detail::after { content: ''; display: block; clear: both; }
+
+/* ---------------- 板面拖拽 ---------------- */
+.board { touch-action: none; }
+.part-group { cursor: grab; }
+.part-group:hover .part-cell { stroke: rgba(232, 196, 106, .5); }
+.part-group.dragging { cursor: grabbing; opacity: .35; }
+.part-item[data-act="wsPick"] { cursor: grab; }
+.part-item[data-act="wsPick"].on { cursor: grabbing; }
+body.is-dragging { user-select: none; -webkit-user-select: none; }
+.drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 9999; pointer-events: none;
+  padding: 4px 10px; font-size: 12px; letter-spacing: .06em; color: #EFD082;
+  background: rgba(20, 16, 28, .94); border: 1px solid #5E7285;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .55);
+}
+.drop-hint {
+  fill: rgba(232, 196, 106, .18); stroke: #E8C46A; stroke-width: 1.5;
+  stroke-dasharray: 5 3; pointer-events: none;
+}

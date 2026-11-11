@@ -417,6 +417,43 @@
         return;
       }
 
+      /* 拖拽落点：选中 + 放置一次完成，只重绘一次。已放置的构件保留自身旋转。 */
+      case 'wsDrop': {
+        const id = action.id;
+        const cell = String(action.cell || '').split(',').map(Number);
+        if (!id || cell.length !== 2 || !Number.isFinite(cell[0]) || !Number.isFinite(cell[1])) return;
+        const existing = (ui.wsDraft || []).find((p) => p.itemId === id);
+        const rot = existing ? existing.rotation : ui.wsRot;
+        const mir = existing ? !!existing.mirrorY : ui.wsMirror;
+
+        /* 按真实几何把整块构件夹在 4x4 内：拖到角落也不会半个身子出界 */
+        const probe = V.Circuit.layout(state, [{ itemId: id, x: 0, y: 0, rotation: rot, mirrorY: mir }]);
+        const abs = (probe.built && probe.built[0] && probe.built[0].abs) || [{ x: 0, y: 0 }];
+        const xs = abs.map((c) => c.x);
+        const ys = abs.map((c) => c.y);
+        const nx = Math.max(-Math.min.apply(null, xs), Math.min(3 - Math.max.apply(null, xs), cell[0]));
+        const ny = Math.max(-Math.min.apply(null, ys), Math.min(3 - Math.max.apply(null, ys), cell[1]));
+
+        pushHistory();
+        ui.wsPick = id;
+        if (existing) {
+          existing.x = nx;
+          existing.y = ny;
+          ui.wsRot = existing.rotation;
+          ui.wsMirror = !!existing.mirrorY;
+        } else {
+          ui.wsDraft.push({ itemId: id, x: nx, y: ny, rotation: rot, mirrorY: mir });
+        }
+        ui.wsErrors = [];
+        render();
+        return;
+      }
+
+      /* 点一下构件（没有拖动）：等同于选中，之后可用旋转/翻转/点空格移动 */
+      case 'wsGrab':
+        dispatch({ type: 'wsPick', id: action.id });
+        return;
+
       case 'wsUndo': {
         if (!ui.wsHist.length) return;
         ui.wsRedo.push(V.State.clone(ui.wsDraft));
@@ -838,8 +875,65 @@
     return null;
   }
 
+  /* ------------------------------ 板面拖拽 ------------------------------ */
+  /* 只在这里改 UI，落点时才 dispatch 一次：拖动过程不重绘，不碰 state。 */
+  let drag = null;
+  let suppressClick = false;
+
+  function boardGrid(svg) {
+    return {
+      cell: Number(svg.dataset.cell) || 60,
+      gx: Number(svg.dataset.gx) || 0,
+      gy: Number(svg.dataset.gy) || 0,
+      n: Number(svg.dataset.n) || 4,
+    };
+  }
+
+  /** 屏幕坐标 → 板面格子；落在板外返回 null */
+  function cellFromPoint(svg, clientX, clientY) {
+    if (!svg || !svg.getScreenCTM || !svg.createSVGPoint) return null;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    const g = boardGrid(svg);
+    const x = Math.floor((p.x - g.gx) / g.cell);
+    const y = Math.floor((p.y - g.gy) / g.cell);
+    if (x < 0 || y < 0 || x >= g.n || y >= g.n) return null;
+    return { x, y };
+  }
+
+  function showHint(svg, cell) {
+    let hint = svg.querySelector('.drop-hint');
+    if (!hint) {
+      hint = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      hint.setAttribute('class', 'drop-hint');
+      svg.appendChild(hint);
+    }
+    if (!cell) { hint.style.display = 'none'; return; }
+    const g = boardGrid(svg);
+    hint.style.display = '';
+    hint.setAttribute('x', g.gx + cell.x * g.cell + 1);
+    hint.setAttribute('y', g.gy + cell.y * g.cell + 1);
+    hint.setAttribute('width', g.cell - 2);
+    hint.setAttribute('height', g.cell - 2);
+  }
+
+  function endDrag() {
+    if (!drag) return;
+    if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+    if (drag.group) drag.group.classList.remove('dragging');
+    if (drag.svg) showHint(drag.svg, null);
+    document.body.classList.remove('is-dragging');
+    if (drag.moved) suppressClick = true;
+    drag = null;
+  }
+
   function bind() {
     document.addEventListener('click', (e) => {
+      if (suppressClick) { suppressClick = false; return; }
       const el = findAction(e.target);
       if (!el) return;
       const act = el.dataset.act;
@@ -853,6 +947,80 @@
       });
       dispatch(action, el);
     });
+
+    /* ---- 拖拽装配：从构件库拖到板面，或拖动板面上已有的构件 ---- */
+    document.addEventListener('pointerdown', (e) => {
+      if (ui.screen !== 'workshop' && ui.screen !== 'campNode') return;
+      if (e.button != null && e.button !== 0) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const group = t.closest('[data-act="wsGrab"]');
+      const stash = t.closest('.part-item[data-act="wsPick"]');
+      if (!group && !stash) return;
+      if (stash && stash.hasAttribute('disabled')) return;
+      const svg = document.querySelector('svg.board');
+      if (!svg) return;
+      const src = group || stash;
+      const id = src.dataset.id;
+      if (!id) return;
+
+      /* 抓住构件的哪一格，落下时就对回哪一格，手感不会跳 */
+      let grabDx = 0;
+      let grabDy = 0;
+      if (group) {
+        const cell = cellFromPoint(svg, e.clientX, e.clientY);
+        if (cell) {
+          grabDx = cell.x - (Number(group.dataset.px) || 0);
+          grabDy = cell.y - (Number(group.dataset.py) || 0);
+        }
+      }
+      const nameEl = group ? group.querySelector('.part-label') : stash.querySelector('.part-name');
+      drag = {
+        id,
+        from: group ? 'board' : 'stash',
+        svg,
+        group,
+        grabDx,
+        grabDy,
+        x0: e.clientX,
+        y0: e.clientY,
+        moved: false,
+        ghost: null,
+        label: nameEl ? nameEl.textContent.trim() : '构件',
+      };
+    });
+
+    document.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      if (!drag.moved) {
+        if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) return;
+        drag.moved = true;
+        document.body.classList.add('is-dragging');
+        if (drag.group) drag.group.classList.add('dragging');
+        const ghost = document.createElement('div');
+        ghost.className = 'drag-ghost';
+        ghost.textContent = drag.label;
+        document.body.appendChild(ghost);
+        drag.ghost = ghost;
+      }
+      e.preventDefault();
+      if (drag.ghost) drag.ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 12}px)`;
+      showHint(drag.svg, cellFromPoint(drag.svg, e.clientX, e.clientY));
+    }, { passive: false });
+
+    document.addEventListener('pointerup', (e) => {
+      if (!drag) return;
+      const d = drag;
+      const target = d.svg ? cellFromPoint(d.svg, e.clientX, e.clientY) : null;
+      const moved = d.moved;
+      endDrag();
+      if (!moved || !target) return;
+      const ax = Math.max(0, Math.min(3, target.x - d.grabDx));
+      const ay = Math.max(0, Math.min(3, target.y - d.grabDy));
+      dispatch({ type: 'wsDrop', id: d.id, cell: ax + ',' + ay });
+    });
+
+    document.addEventListener('pointercancel', () => { endDrag(); });
 
     document.addEventListener('change', (e) => {
       const el = findAction(e.target);

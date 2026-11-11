@@ -125,6 +125,66 @@ async function launch() {
   }));
   await click('[data-act="wsUndo"]');
 
+  /* ---------- B8~B9 拖拽装配 ---------- */
+  const dragGeo = await ev(() => {
+    const svg = document.querySelector('svg.board');
+    if (!svg) return null;
+    const g = { cell: +svg.dataset.cell, gx: +svg.dataset.gx, gy: +svg.dataset.gy };
+    const ctm = svg.getScreenCTM();
+    const pt = svg.createSVGPoint();
+    const center = (el) => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
+    const toScreen = (cx, cy) => {
+      pt.x = g.gx + cx * g.cell + g.cell / 2;
+      pt.y = g.gy + cy * g.cell + g.cell / 2;
+      const p = pt.matrixTransform(ctm);
+      return { x: p.x, y: p.y };
+    };
+    const part = svg.querySelector('.part-group');
+    const itemEl = document.querySelector('.part-item[data-act="wsPick"]');
+    const hit = svg.querySelector('.hit');
+    return {
+      part: part ? Object.assign({ id: part.dataset.id }, center(part)) : null,
+      item: itemEl ? Object.assign({ id: itemEl.dataset.id }, center(itemEl)) : null,
+      hit: hit ? (() => {
+        const [cx, cy] = hit.dataset.id.split(',').map(Number);
+        return Object.assign({ id: hit.dataset.id }, toScreen(cx, cy));
+      })() : null,
+    };
+  });
+
+  if (dragGeo && dragGeo.part && dragGeo.hit) {
+    const before = await ev((id) => {
+      const p = window.Ashen.Veteran.App.ui.wsDraft.find((x) => x.itemId === id);
+      return p ? p.x + ',' + p.y : null;
+    }, dragGeo.part.id);
+    await page.mouse.move(dragGeo.part.x, dragGeo.part.y);
+    await page.mouse.down();
+    await page.mouse.move(dragGeo.hit.x, dragGeo.hit.y, { steps: 8 });
+    await page.mouse.up();
+    await wait(300);
+    const after = await ev((id) => {
+      const p = window.Ashen.Veteran.App.ui.wsDraft.find((x) => x.itemId === id);
+      return p ? p.x + ',' + p.y : null;
+    }, dragGeo.part.id);
+    ok('B8 拖动已有构件能换位置', !!after && after !== before, `${before} -> ${after}`);
+  } else {
+    ok('B8 跳过（没有可拖的构件或空格）', true);
+  }
+
+  if (dragGeo && dragGeo.item && dragGeo.hit) {
+    const n0 = await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length);
+    await page.mouse.move(dragGeo.item.x, dragGeo.item.y);
+    await page.mouse.down();
+    await page.mouse.move(dragGeo.hit.x, dragGeo.hit.y, { steps: 8 });
+    await page.mouse.up();
+    await wait(300);
+    const n1 = await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length);
+    ok('B9 从构件库拖到板面能放置', n1 === n0 + 1, `${n0} -> ${n1}`);
+    await click('[data-act="wsUndo"]');
+  } else {
+    ok('B9 跳过（构件库为空）', true);
+  }
+
   /* ---------- C 出征与战斗 ---------- */
   await click('[data-act="go"][data-v="camp"]');
   await click('[data-act="startRun"]');
