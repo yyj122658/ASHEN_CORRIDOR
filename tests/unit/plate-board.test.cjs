@@ -30,17 +30,20 @@ test('同一单位重复取板面结果一致（seed 稳定，可存档）', () 
   assert.equal(a, b);
 });
 
-test('开局身无功法（功法在仓库），装上后四个具名点落在板面上', () => {
+test('开局自带一阶微功法，仓库另有可换的功法', () => {
   const st = V.State.create(9001);
-  st.roster.forEach((u) => assert.equal(u.manuscript, null, `${u.name} 开局不该带功法`));
-  assert.ok(st.manuscriptVault.length >= 1, '仓库里应该有入门功法');
+  st.roster.forEach((u) => {
+    assert.ok(u.manuscript, `${u.name} 开局应带一门微功法`);
+    assert.equal(u.manuscript.rarity, 1);
+  });
+  assert.ok(st.manuscriptVault.length >= 1, '仓库里应该有可替换的功法');
 
   const u = st.roster[0];
-  const before = V.Circuit.plateOf(u);
-  assert.deepEqual(Object.keys(before.terminals), [], '没功法时没有能量点');
+  const bare = Object.assign({}, u, { manuscript: null });
+  assert.deepEqual(Object.keys(V.Circuit.plateOf(bare).terminals), [], '没功法时没有能量点');
 
   V.State.equipManuscript(st, u, st.manuscriptVault[0].id);
-  assert.ok(u.manuscript, '装上后应持有功法');
+  assert.ok(u.manuscript, '换上后应持有功法');
 
   const plate = V.Circuit.plateOf(u);
   const t = plate.terminals;

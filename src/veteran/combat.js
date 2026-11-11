@@ -111,7 +111,12 @@
       : null;
 
     const maxHpMod = (st.run.maxHpModifiers && st.run.maxHpModifiers[unit.id]) || 1;
-    const maxHp = Math.round(body.hp * maxHpMod);
+    const rarity = (unit.manuscript && unit.manuscript.rarity) || 1;
+    const rs = D().DESIGN.rarityStat || { atk: 0, hp: 0, def: 0 };
+    const msHp = 1 + (rarity - 1) * (rs.hp || 0);
+    const msAtk = 1 + (rarity - 1) * (rs.atk || 0);
+    const msDef = 1 + (rarity - 1) * (rs.def || 0);
+    const maxHp = Math.round(body.hp * maxHpMod * msHp);
     const hp = partyEntry.hp == null ? maxHp : clamp(partyEntry.hp, 1, maxHp);
 
     return {
@@ -150,8 +155,8 @@
       traitId: (unit.manuscript && unit.manuscript.traitId) || null,
       bodyPreset: unit.bodyPreset,
       maxHp, hp,
-      atk: body.atk,
-      def: body.def,
+      atk: Math.round(body.atk * msAtk),
+      def: Math.round(body.def * msDef),
       spd: body.spd,
       hits: D().DESIGN.baseHit,
       crit: D().DESIGN.baseCrit,

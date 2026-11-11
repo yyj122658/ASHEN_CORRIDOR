@@ -10,12 +10,14 @@
     gridSize: 4,
     /* 时间轴：一步 0.24s，战斗按秒推进 */
     stepSeconds: 0.24,
-    autoAttack: { interval: 0.5, mult: 0.35 },
+    autoAttack: { interval: 0.5, mult: 0.55 },
     energyBase: { regen: 1.0, max: 20 },
     energyPerHit: 0,
     baseSpeed: 10,
+    /* 功法稀有度直接抬角色面板：这是除乘算之外唯一的成长维度 */
+    rarityStat: { atk: 0.06, hp: 0.07, def: 0.04 },
     /* 敌人仍走旧的行动逻辑，伤害按平A 的新量级统一缩放，避免一边倒 */
-    enemyDamageScale: 0.16,
+    enemyDamageScale: 0.13,
     /* 我方平A 归一化后，敌人血池要相应拉长，否则一场只有 10 秒 */
     enemyHpScale: 2.6,
     baseHit: 0.94,
@@ -44,7 +46,7 @@
     emergency: { stress: 10, keepRatio: 0.5 },
     defeat: { stress: 20 },
     recruitCost: { min: 55, max: 80 },
-    scaling: { hpPerFloor: 0.20, atkPerFloor: 0.12, defPerFloor: 0.10, minionHpMult: 0.72, bossMinionHpMult: 0.40 },
+    scaling: { hpPerFloor: 0.15, atkPerFloor: 0.09, defPerFloor: 0.06, minionHpMult: 0.72, bossMinionHpMult: 0.40 },
     floorRecovery: 0.12,
   };
 
@@ -484,7 +486,8 @@
       positions: [0, 1, 2, 3],
       skills: [{
         id: 'emberBurst', name: '余烬回响', cost: 10, castTime: 0.7, cooldown: 6,
-        cond: { routed: true }, target: 'frontFoe', effect: { mult: 2.0, dot: { turns: 3, dmgMult: 0.25 } },
+        cond: { routed: true }, target: 'frontFoe',
+        effect: { mult: 2.0, dot: { turns: 3, dmgMult: 0.25 }, shield: 0.22 },
       }],
       tiers: [
         { at: 40, id: 't1', name: '一阶 · 初鸣', effect: { mainMult: 1.10 } },
@@ -515,7 +518,7 @@
       positions: [0, 1],
       skills: [{
         id: 'quake', name: '重铸震击', cost: 12, castTime: 0.8, cooldown: 7,
-        cond: { foeHpBelow: 0.6 }, target: 'frontFoe', effect: { mult: 2.4, splash: 0.4 },
+        cond: { foeHpBelow: 0.6 }, target: 'frontFoe', effect: { mult: 2.4, splash: 0.4, shield: 0.18 },
       }],
       tiers: [
         { at: 35, id: 't1', name: '一阶 · 余温', effect: { mainMult: 1.12 } },
@@ -570,15 +573,15 @@
         main: { cell: [3, 0], dir: 'E' },
         support: { cell: [3, 1], dir: 'W' },
       },
-      attack: { intervalScale: 0.95, mult: 1.05, extraHits: 0 },
-      energy: { regen: 1.5, max: 28 },
+      attack: { intervalScale: 0.9, mult: 1.15, extraHits: 0 },
+      energy: { regen: 1.6, max: 28 },
       positions: [0, 1, 2, 3],
       skills: [{
         id: 'flowA', name: '左流', cost: 10, castTime: 0.5, cooldown: 5,
         cond: {}, target: 'frontFoe', effect: { mult: 1.9 },
       }, {
         id: 'flowB', name: '右流', cost: 10, castTime: 0.5, cooldown: 5, sharedCooldown: true,
-        cond: { energyAbove: 14 }, target: 'lowestHpFoe', effect: { mult: 2.2 },
+        cond: { energyAbove: 14 }, target: 'ally', effect: { heal: 1.9 },
       }],
       tiers: [
         { at: 40, id: 't1', name: '一阶 · 分流', effect: { mainMult: 1.12 } },
@@ -590,25 +593,25 @@
     inverse: {
       id: 'inverse', name: '逆脉', rarity: 7, load: 5,
       desc: '十格逆流拓片。平A 也吃贯通加成，护盾溢出转伤害。',
-      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1]],
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1]],
       veins: {
-        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'], '4,0': ['W'],
-        '0,1': ['E'], '1,1': ['W'], '2,1': ['E'], '3,1': ['W'], '4,1': ['E'],
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
+        '0,1': ['E'], '1,1': ['W'], '2,1': ['E'], '3,1': ['W'],
       },
-      entry: [0, 0], exits: [[4, 1]],
+      entry: [0, 0], exits: [[3, 1]],
       io: {
         clock: { cell: [0, 0], dir: 'W' },
         damage: { cell: [0, 1], dir: 'E' },
-        main: { cell: [4, 0], dir: 'W' },
-        support: { cell: [4, 1], dir: 'E' },
+        main: { cell: [3, 0], dir: 'E' },
+        support: { cell: [3, 1], dir: 'W' },
       },
-      attack: { intervalScale: 0.85, mult: 1.1, extraHits: 0, routedBonus: 0.2 },
-      energy: { regen: 1.3, max: 30, onAttack: 0.15 },
+      attack: { intervalScale: 0.8, mult: 1.3, extraHits: 0, routedBonus: 0.25 },
+      energy: { regen: 1.7, max: 32, onAttack: 0.2 },
       positions: [0, 1, 2, 3],
       skills: [{
-        id: 'inverse', name: '逆脉', cost: 14, castTime: 0.9, cooldown: 8,
-        cond: { routed: true }, target: 'frontFoe',
-        effect: { mult: 2.6, pierce: 3, shieldToDamage: true },
+        id: 'inverse', name: '逆脉', cost: 10, castTime: 0.8, cooldown: 6,
+        cond: {}, target: 'frontFoe',
+        effect: { mult: 2.8, pierce: 3, shield: 0.3 },
       }],
       tiers: [
         { at: 40, id: 't1', name: '一阶 · 逆流', effect: { mainMult: 1.15 } },

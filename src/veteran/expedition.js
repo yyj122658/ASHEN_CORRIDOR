@@ -108,7 +108,7 @@
       if (!u) return;
       p.stress = u.stress || 0;
       run.startLoadouts[u.id] = {
-        weaponId: u.weaponId,
+        manuscriptId: u.manuscript ? u.manuscript.id : null,
         board: ST().clone(u.board),
         gambits: ST().clone(u.gambits),
         hp: p.hp,
@@ -182,11 +182,11 @@
       for (let i = 0; i < 3; i++) {
         const isWeapon = rngChance(next, 0.3);
         const tpl = isWeapon
-          ? rngShuffle(next, D().WEAPON_ORDER)[0]
+          ? D().MANUSCRIPT_ORDER[0]
           : rngShuffle(next, D().TEMPLATE_ORDER)[0];
         const part = ST().makePart(next, {
           kind: isWeapon ? 'weapon' : 'circuit',
-          weaponId: isWeapon ? tpl : undefined,
+          manuscriptId: undefined,
           templateId: isWeapon ? undefined : tpl,
         });
         next.itemsById[part.id] = part;
@@ -597,15 +597,9 @@
       depth: r.completedFloors,
       floors: r.finishedFloors.slice(),
       party: r.party.map((p) => p.uid),
-      usedWeapons: r.party.map((p) => {
-        const load = (r.startLoadouts || {})[p.uid];
-        const partId = load ? load.weaponId : null;
-        const part = partId ? next.itemsById[partId] : null;
-        return {
-          uid: p.uid,
-          partId,
-          weaponId: part ? part.templateId : null,
-        };
+      usedManuscripts: r.party.map((p) => {
+        const u = next.roster.find((x) => x.id === p.uid);
+        return { uid: p.uid, manuscriptId: u && u.manuscript ? u.manuscript.id : null };
       }),
     });
 
@@ -613,8 +607,23 @@
     if (record.eligible) next.stats.extracts = (next.stats.extracts || 0) + 1;
     if (kind === 'clear') next.stats.wins = (next.stats.wins || 0) + 1;
 
+    /* 功法掉落：按这趟走到第几层给对应阶位。这是唯一的成长来源 */
+    let droppedMs = null;
+    const grantable = record.eligible || kind === 'clear';
+    if (grantable) {
+      const tier = Math.max(1, Math.min(7, kind === 'clear' ? 7 : r.completedFloors));
+      const order = D().MANUSCRIPT_ORDER || [];
+      const spec = D().MANUSCRIPTS[order[Math.min(order.length, tier) - 1]];
+      if (spec) {
+        droppedMs = JSON.parse(JSON.stringify(spec));
+        next.manuscriptVault = next.manuscriptVault || [];
+        next.manuscriptVault.push(droppedMs);
+      }
+    }
+
     next.settlement = {
       mode: kind,
+      manuscript: droppedMs ? { id: droppedMs.id, name: droppedMs.name, rarity: droppedMs.rarity } : null,
       title: kind === 'clear' ? '回廊尽头' : '成功撤离',
       depth: r.completedFloors,
       gold: gained.gold,
@@ -692,7 +701,7 @@
     Object.entries(run.startLoadouts || {}).forEach(([uid, load]) => {
       const u = next.roster.find((x) => x.id === uid);
       if (!u) return;
-      u.weaponId = load.weaponId;
+      /* 武器槽已移除 */
       u.board = ST().clone(load.board);
       u.gambits = ST().clone(load.gambits);
     });

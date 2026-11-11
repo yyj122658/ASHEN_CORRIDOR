@@ -279,6 +279,8 @@
 
     setup.forEach((spec) => {
       const unit = makeUnit(st, spec);
+      /* 开局就带一门微功法（经典模式除外，老存档沿用旧负荷） */
+      if (st.plateMode === 'plate') equipManuscript(st, unit, 'spark');
       /* 开局不装功法：功法是副本掉落物，第一层必掉（见 expedition 掉落表）。
          没有功法的单位只能基础攻击，这是「还没入门」的状态。 */
       equipPreset(st, unit, 'basic');

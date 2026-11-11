@@ -41,7 +41,8 @@ function setup(opts) {
   if (o.place !== false) {
     u.board.placements.push({ itemId: part.id, x: o.x || 0, y: o.y || 0, rotation: 0, mirrorY: false });
   }
-  if (o.noMs !== true) u.manuscript = msSpec(o.ms);
+  if (o.noMs === true) u.manuscript = null;
+  else u.manuscript = msSpec(o.ms);
   return { st, u, part };
 }
 

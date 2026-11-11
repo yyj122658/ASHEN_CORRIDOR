@@ -92,6 +92,13 @@
     unit.weaponId = weapon.id;
     /* 招募的人也不带功法：功法靠掉落与祭坛 */
     ST().equipPreset(next, unit, 'basic');
+    /* 招募自带一阶微功法 + 两件刻印，开箱即可战斗 */
+    V.State.equipManuscript(next, unit, 'spark');
+    ['capacitor', 'straight'].forEach((tpl) => {
+      const part = ST().makePart(next, { kind: 'circuit', templateId: tpl });
+      next.itemsById[part.id] = part;
+      next.stash.push(part.id);
+    });
     next.roster.push(unit);
 
     /* 有空位就自动上场 */
