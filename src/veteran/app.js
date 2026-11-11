@@ -27,7 +27,7 @@
     wsMode: 'workshop',
     wsLocked: [],
     inscribeItem: null,
-    wsMsId: 'ash12',
+    wsMsId: 'ember12',
     wsMsRot: 0,
     wsMsMir: false,
     wsMsSpotIdx: 0,
@@ -765,6 +765,76 @@
         return;
       }
 
+      /* 把仓库里的功法装到当前角色身上：先用拖好的位置，压到构件上就自动挪开 */
+      case 'wsMsEquip': {
+        const vault = state.manuscriptVault || [];
+        const idx = vault.findIndex((m) => m.id === ui.wsMsId);
+        if (idx < 0) { toast('仓库里没有这套功法'); return; }
+
+        const attempt = (useDragPos) => {
+          const next = V.State.clone(state);
+          const u2 = next.roster.find((u) => u.id === ui.wsUnit);
+          if (!u2) return null;
+          const spec = next.manuscriptVault[idx];
+          u2.manuscript = Object.assign({}, spec, {
+            x: useDragPos && Number.isFinite(ui.wsMsOx) ? ui.wsMsOx : 0,
+            y: useDragPos && Number.isFinite(ui.wsMsOy) ? ui.wsMsOy : 0,
+            rotation: (((ui.wsMsRot | 0) % 4) + 4) % 4,
+            mirrorY: !!ui.wsMsMir,
+          });
+          if (!useDragPos) {
+            u2.manuscript = null;
+            V.State.equipManuscript(next, u2, ui.wsMsId);
+            if (!u2.manuscript) return null;
+          }
+          const check = V.State.validate(next);
+          if (!check.ok) return null;
+          next.manuscriptVault.splice(idx, 1);
+          return next;
+        };
+
+        const next = attempt(true) || attempt(false);
+        if (!next) {
+          ui.wsErrors = ['这套功法在这块板面上摆不下，或者被构件挡住了'];
+          render();
+          toast('装不上：先挪开构件或换块板面');
+          return;
+        }
+        const autoMoved = !attempt(true);
+        state = next;
+        persistSoon();
+        openWorkshop(ui.wsUnit);
+        render();
+        toast(autoMoved ? '位置被占，已自动挪到空位' : '功法已装上');
+        return;
+      }
+
+      /* 卸下功法：回到仓库，位置留在 UI 里方便再调 */
+      case 'wsMsUnequip': {
+        const next = V.State.clone(state);
+        const u2 = next.roster.find((u) => u.id === ui.wsUnit);
+        if (!u2 || !u2.manuscript) return;
+        const spec = {};
+        Object.keys(u2.manuscript).forEach((k) => {
+          if (k === 'x' || k === 'y' || k === 'rotation' || k === 'mirrorY') return;
+          spec[k] = u2.manuscript[k];
+        });
+        next.manuscriptVault.push(spec);
+        u2.manuscript = null;
+        state = next;
+        persistSoon();
+        render();
+        toast('功法已卸下');
+        return;
+      }
+
+      case 'wsMsMove':
+        ui.wsMsOx = Number(action.ox);
+        ui.wsMsOy = Number(action.oy);
+        ui.wsMsSpotIdx = 0;
+        render();
+        return;
+
       case 'wsMsPick':
         ui.wsMsId = action.id;
         ui.wsMsRot = 0;
@@ -838,11 +908,30 @@
       }
 
       case 'wsSave': {
-        const r = V.Roster.saveBoard(state, ui.wsUnit, ui.wsDraft);
+        /* 功法膜的位置也要一起落盘：它和构件一样是被摆上去的 */
+        let base = state;
+        const cur = state.roster.find((u) => u.id === ui.wsUnit);
+        if (cur && cur.manuscript && Number.isFinite(ui.wsMsOx) && Number.isFinite(ui.wsMsOy)) {
+          const next = V.State.clone(state);
+          const u2 = next.roster.find((u) => u.id === ui.wsUnit);
+          u2.manuscript.x = ui.wsMsOx;
+          u2.manuscript.y = ui.wsMsOy;
+          u2.manuscript.rotation = (((ui.wsMsRot | 0) % 4) + 4) % 4;
+          u2.manuscript.mirrorY = !!ui.wsMsMir;
+          base = next;
+        }
+        const r = V.Roster.saveBoard(base, ui.wsUnit, ui.wsDraft);
         if (!r.ok) {
           ui.wsErrors = r.details || [r.error.message];
           render();
           toast('板面不合法');
+          return;
+        }
+        const check = V.State.validate(r.state);
+        if (!check.ok) {
+          ui.wsErrors = check.errors.slice(0, 4);
+          render();
+          toast('功法没有落在板面上');
           return;
         }
         state = r.state;
@@ -1202,11 +1291,13 @@
     ui.wsRedo = [];
     ui.wsErrors = [];
     ui.wsLocked = [];
-    ui.wsMsRot = 0;
-    ui.wsMsMir = false;
+    const ms = unit.manuscript;
+    ui.wsMsId = ms ? ms.id : ui.wsMsId;
+    ui.wsMsRot = ms ? (ms.rotation || 0) : 0;
+    ui.wsMsMir = ms ? !!ms.mirrorY : false;
     ui.wsMsSpotIdx = 0;
-    ui.wsMsOx = null;
-    ui.wsMsOy = null;
+    ui.wsMsOx = ms ? (ms.x || 0) : null;
+    ui.wsMsOy = ms ? (ms.y || 0) : null;
   }
 
   function pushHistory() {
@@ -1793,7 +1884,13 @@
 
   function bind() {
     document.addEventListener('click', (e) => {
-      if (suppressClick) { suppressClick = false; return; }
+      /* 只吞掉拖拽落在板面上产生的那一次合成点击；
+         否则拖完再点「取消选中」之类的按钮会被白白吃掉一次 */
+      if (suppressClick) {
+        suppressClick = false;
+        const onBoard = e.target && e.target.closest && e.target.closest('svg.board');
+        if (onBoard) return;
+      }
       const el = findAction(e.target);
       if (!el) return;
       const act = el.dataset.act;
@@ -1872,12 +1969,52 @@
       if (e.button != null && e.button !== 0) return;
       const t = e.target;
       if (!t || !t.closest || t.closest('[data-act="wsRemove"]')) return;
+      const msGrab = t.closest('[data-act="wsMsGrab"]');
       const group = t.closest('[data-act="wsGrab"]');
       const stash = t.closest('.part-item[data-stash="1"]');
-      if (!group && !stash) return;
+      if (!msGrab && !group && !stash) return;
       if (stash && stash.hasAttribute('disabled')) return;
       const svg = document.querySelector('svg.board');
       if (!svg) return;
+
+      /* 功法膜：和构件同一条拖拽通道，只是落点写回 wsMsOx/Oy */
+      if (msGrab) {
+        const raw = (svg.dataset.msCells || '').split(';').filter(Boolean);
+        if (!raw.length) return;
+        const cells = raw.map((k) => k.split(',').map(Number));
+        const ox = Number(svg.dataset.msOx);
+        const oy = Number(svg.dataset.msOy);
+        const cell = cellFromPoint(svg, e.clientX, e.clientY);
+        drag = {
+          kind: 'ms',
+          id: 'ms',
+          svg,
+          cells,
+          grabDx: cell ? cell.x - (Number.isFinite(ox) ? ox : 0) : 0,
+          grabDy: cell ? cell.y - (Number.isFinite(oy) ? oy : 0) : 0,
+          x0: e.clientX,
+          y0: e.clientY,
+          moved: false,
+          ghost: null,
+          shape: (function () {
+            const xs = cells.map((c) => c[0]);
+            const ys = cells.map((c) => c[1]);
+            const minX = Math.min.apply(null, xs);
+            const minY = Math.min.apply(null, ys);
+            return {
+              name: '功法膜',
+              color: '#7E6BB8',
+              cells: cells.map((c) => ({ x: c[0] - minX, y: c[1] - minY })),
+              minX, minY,
+              maxX: Math.max.apply(null, xs) - minX,
+              maxY: Math.max.apply(null, ys) - minY,
+            };
+          })(),
+          label: '功法膜',
+        };
+        return;
+      }
+
       const src = group || stash;
       const id = src.dataset.id;
       if (!id) return;
@@ -1952,6 +2089,16 @@
         && (!valid || !valid.ok) && isWayOutsideBoard(d.svg, e.clientX, e.clientY);
       endDrag();
       if (!moved) return;
+
+      /* 功法膜：吸附到格子后写回 UI 状态，保存时再落盘 */
+      if (d.kind === 'ms') {
+        const raw = rawTarget || (d.svg ? cellFromPoint(d.svg, e.clientX, e.clientY) : null);
+        if (!raw) return;
+        const snapped = clampAnchor(d.shape, { x: raw.x - d.grabDx, y: raw.y - d.grabDy });
+        dispatch({ type: 'wsMsMove', ox: snapped.x, oy: snapped.y });
+        return;
+      }
+
       if (dropOutside) {
         dispatch({ type: 'wsRemove', id: d.id });
         return;

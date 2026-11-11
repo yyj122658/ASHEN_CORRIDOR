@@ -118,8 +118,8 @@
     const uui = ui || {};
     if (uui.wsMsId === 'none' && !(unit && unit.manuscript)) return { disabled: true, id: 'none' };
     const raw = (unit && unit.manuscript)
-      || WORKSHOP_MANUSCRIPTS.find((m) => m.id === uui.wsMsId)
-      || WORKSHOP_MANUSCRIPTS[0];
+      || (D().MANUSCRIPTS || {})[uui.wsMsId]
+      || (D().MANUSCRIPTS || {})[(D().MANUSCRIPT_ORDER || [])[0]];
     if (!raw) return null;
     const base = V.Manuscript.normalize(raw);
     if (!base) return null;
@@ -527,6 +527,9 @@
     const parts = [];
     parts.push(`<svg class="board${o.pickId ? ' has-pick' : ''}" viewBox="0 0 ${geo.cw} ${geo.ch}"
       data-cell="${CELL}" data-gx="${gx}" data-gy="${gy}" data-n="${plate.size}"
+      data-ms-ox="${o.ms && !o.ms.disabled ? (o.ms.ox || 0) : ''}"
+      data-ms-oy="${o.ms && !o.ms.disabled ? (o.ms.oy || 0) : ''}"
+      data-ms-cells="${o.ms && !o.ms.disabled && o.ms.oriented ? o.ms.oriented.cells.map((c) => c.join(',')).join(';') : ''}"
       xmlns="http://www.w3.org/2000/svg" role="img" aria-label="生命金属回路板面">`);
     parts.push(`<defs>
       <pattern id="${fid}_metal" width="256" height="256" patternUnits="userSpaceOnUse">
@@ -618,6 +621,17 @@
           parts.push(`<polygon class="ms-io-mark exit" points="${px + CELL - 9},${py + CELL - 13} ${px + CELL - 5},${py + CELL - 9} ${px + CELL - 9},${py + CELL - 5} ${px + CELL - 13},${py + CELL - 9}"/>`);
         }
       });
+      /* 可拖命中区：功法膜和构件一样能被抓起换位置 */
+      if (o.interactive !== false) {
+        parts.push('<g class="layer-ms-hit">');
+        ms.oriented.cells.forEach(([lx, ly]) => {
+          const [px, py] = cellXY(lx + ms.ox, ly + ms.oy);
+          parts.push(`<rect class="ms-hit" x="${px + 1}" y="${py + 1}" width="${CELL - 2}" height="${CELL - 2}"
+            fill="transparent" pointer-events="all" data-act="wsMsGrab" data-id="ms" role="button"
+            tabindex="0"><title>拖动功法膜换位置</title></rect>`);
+        });
+        parts.push('</g>');
+      }
     }
     parts.push('</g>');
 
@@ -782,16 +796,21 @@
     parts.push('</g>');
 
     if (o.interactive) {
+      /* 功法膜占的格不算空格：它们有自己的拖拽命中层，不能被「点空格放置」抢走 */
+      const msCells = new Set();
+      if (o.ms && !o.ms.disabled && o.ms.oriented && o.ms.fits) {
+        o.ms.oriented.cells.forEach(([lx, ly]) => msCells.add((lx + o.ms.ox) + ',' + (ly + o.ms.oy)));
+      }
       if (plate.generated) {
         cellsList.forEach(([x, y]) => {
-          if (cellsUsed.has(x + ',' + y)) return;
+          if (cellsUsed.has(x + ',' + y) || msCells.has(x + ',' + y)) return;
           const [px, py] = cellXY(x, y);
           parts.push(`<rect class="hit" x="${px}" y="${py}" width="${CELL}" height="${CELL}" data-act="wsCell" data-id="${x},${y}" role="button" tabindex="0"><title>格 (${x},${y}) 点击放置选中构件</title></rect>`);
         });
       } else {
         for (let y = 0; y < plate.size; y++) {
           for (let x = 0; x < plate.size; x++) {
-            if (cellsUsed.has(x + ',' + y)) continue;
+            if (cellsUsed.has(x + ',' + y) || msCells.has(x + ',' + y)) continue;
             const [px, py] = cellXY(x, y);
             parts.push(`<rect class="hit" x="${px}" y="${py}" width="${CELL}" height="${CELL}" data-act="wsCell" data-id="${x},${y}" role="button" tabindex="0"><title>格 (${x},${y})${blocked.has(x + ',' + y) ? ' 屏蔽格（不可放置）' : ' 点击放置选中构件'}</title></rect>`);
           }
@@ -1141,13 +1160,25 @@
   }
 
   /** 渲染功法膜覆盖率与贯通状态面板（分母永远是膜格数，摆不下时灰掉并给出明确原因）。 */
-  function manuscriptPanelBody(plate, ms) {
+  function manuscriptPanelBody(plate, ms, unit, state) {
+    const catalog = (D().MANUSCRIPT_ORDER || []).map((id) => D().MANUSCRIPTS[id]);
+    const vault = (state && state.manuscriptVault) || [];
+    const inVault = (id) => vault.some((m) => m.id === id);
+    const equippedId = unit && unit.manuscript ? unit.manuscript.id : null;
+
     const picker = `<div class="row wrap tight mb2">
-      ${WORKSHOP_MANUSCRIPTS.map((m) => btn(m.name, 'wsMsPick', {
+      ${catalog.map((m) => btn(`${m.name}${inVault(m.id) ? '' : '（未拥有）'}`, 'wsMsPick', {
         cls: ms && !ms.disabled && ms.id === m.id ? 'gold xs' : 'ghost xs',
         data: { id: m.id },
       })).join('')}
       ${btn('无', 'wsMsPick', { cls: ms && ms.disabled ? 'gold xs' : 'ghost xs', data: { id: 'none' } })}
+    </div>
+    <div class="row wrap tight mb2">
+      ${equippedId
+    ? btn('卸下功法', 'wsMsUnequip', { cls: 'ghost xs danger' })
+    : (ms && !ms.disabled && inVault(ms.id)
+      ? btn('把「' + esc(ms.spec.name) + '」装上', 'wsMsEquip', { cls: 'gold xs' })
+      : '<span class="tiny muted">仓库里还没有这套功法（副本掉落 / 祭坛兑换）</span>')}
     </div>`;
 
     if (!ms || ms.disabled) {
@@ -1159,7 +1190,8 @@
     const pctText = `${ms.cov.aligned}/${ms.cov.total} = ${ms.cov.pct}%`;
     const cellsList = plateCellsList(plate);
     const altFit = unfit && V.Manuscript
-      ? WORKSHOP_MANUSCRIPTS.find((m) => m.id !== ms.id && V.Manuscript.placements(V.Manuscript.normalize(m), cellsList).length > 0)
+      ? (D().MANUSCRIPT_ORDER || []).map((id) => D().MANUSCRIPTS[id])
+        .find((m) => m && m.id !== ms.id && V.Manuscript.placements(V.Manuscript.normalize(m), cellsList).length > 0)
       : null;
 
     return `<div class="ms-panel ${unfit ? 'ms-unfit' : ''}" data-ms-fits="${ms.fits ? '1' : '0'}">
@@ -1246,7 +1278,7 @@
           ${(!pv.ok && pv.errors.length) || (ui.wsErrors && ui.wsErrors.length)
     ? `<div class="err-box mt2">${(ui.wsErrors && ui.wsErrors.length ? ui.wsErrors : pv.errors).slice(0, 4).map((e) => `<div>${esc(e)}</div>`).join('')}</div>` : ''}
           ${pv.ok && !pv.reachableOutputs.length ? '<div class="mt2 tiny muted">还没有接通任何输出——可以先存下来，回头在工坊里接。</div>' : ''}`)}
-        ${panel('功法膜覆盖率', manuscriptPanelBody(plate, ms))}
+        ${panel('功法膜覆盖率', manuscriptPanelBody(plate, ms, unit, state))}
       </aside>
 
       <div class="ws-board">
