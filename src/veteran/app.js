@@ -905,27 +905,95 @@
     return { x, y };
   }
 
-  function showHint(svg, cell) {
-    let hint = svg.querySelector('.drop-hint');
-    if (!hint) {
-      hint = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      hint.setAttribute('class', 'drop-hint');
-      svg.appendChild(hint);
+  /** 落点夹在 4x4 内：按构件真实包围盒，拖到角落会自己贴回来 */
+  function clampAnchor(shape, cell) {
+    return {
+      x: Math.max(-shape.minX, Math.min(3 - shape.maxX, cell.x)),
+      y: Math.max(-shape.minY, Math.min(3 - shape.maxY, cell.y)),
+    };
+  }
+
+  /** 吸附预览：在板面上按构件真实形状画出半透明虚影 */
+  function showDropGhost(svg, shape, anchor) {
+    if (!svg) return;
+    let g = svg.querySelector('.drop-ghost');
+    if (!shape || !anchor) {
+      if (g) g.style.display = 'none';
+      return;
     }
-    if (!cell) { hint.style.display = 'none'; return; }
-    const g = boardGrid(svg);
-    hint.style.display = '';
-    hint.setAttribute('x', g.gx + cell.x * g.cell + 1);
-    hint.setAttribute('y', g.gy + cell.y * g.cell + 1);
-    hint.setAttribute('width', g.cell - 2);
-    hint.setAttribute('height', g.cell - 2);
+    if (!g) {
+      g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'drop-ghost');
+      svg.appendChild(g);
+    }
+    g.style.display = '';
+    const grid = boardGrid(svg);
+    const html = shape.cells.map((c) => {
+      const x = grid.gx + (c.x + anchor.x) * grid.cell;
+      const y = grid.gy + (c.y + anchor.y) * grid.cell;
+      return `<rect class="drop-ghost-cell" x="${x + 2}" y="${y + 2}"
+        width="${grid.cell - 4}" height="${grid.cell - 4}" rx="2" fill="${shape.color}"/>`;
+    }).join('');
+    if (g.dataset.key !== html) {
+      g.innerHTML = html;
+      g.dataset.key = html;
+    }
+  }
+
+  /** 板面格坐标 → 屏幕坐标（幽灵吸附用） */
+  function boardPointToScreen(svg, cx, cy) {
+    const grid = boardGrid(svg);
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = grid.gx + cx * grid.cell;
+    pt.y = grid.gy + cy * grid.cell;
+    const p = pt.matrixTransform(ctm);
+    return { x: p.x, y: p.y };
+  }
+
+  /** 板面一格在屏幕上占多少像素：幽灵要跟板面同尺寸才对得上 */
+  function cellPixelSize(svg) {
+    const vb = svg.viewBox && svg.viewBox.baseVal;
+    const rect = svg.getBoundingClientRect();
+    if (!vb || !vb.width || !rect.width) return 0;
+    return (rect.width / vb.width) * boardGrid(svg).cell;
+  }
+
+  /** 跟着指针走的构件虚影：按真实格子数与配色拼出来 */
+  function buildFloatGhost(shape, cellPx, label) {
+    const el = document.createElement('div');
+    el.className = 'drag-ghost';
+    if (!shape || !cellPx) {
+      el.classList.add('drag-ghost-text');
+      el.textContent = label || '构件';
+      document.body.appendChild(el);
+      return el;
+    }
+    el.style.width = (shape.maxX - shape.minX + 1) * cellPx + 'px';
+    el.style.height = (shape.maxY - shape.minY + 1) * cellPx + 'px';
+    shape.cells.forEach((c) => {
+      const i = document.createElement('i');
+      i.style.left = (c.x - shape.minX) * cellPx + 'px';
+      i.style.top = (c.y - shape.minY) * cellPx + 'px';
+      i.style.width = cellPx + 'px';
+      i.style.height = cellPx + 'px';
+      i.style.background = shape.color;
+      el.appendChild(i);
+    });
+    const name = document.createElement('span');
+    name.className = 'drag-ghost-name';
+    name.textContent = shape.name || label || '构件';
+    el.appendChild(name);
+    document.body.appendChild(el);
+    return el;
   }
 
   function endDrag() {
     if (!drag) return;
     if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
     if (drag.group) drag.group.classList.remove('dragging');
-    if (drag.svg) showHint(drag.svg, null);
+    showDropGhost(drag.svg, null, null);
     document.body.classList.remove('is-dragging');
     if (drag.moved) suppressClick = true;
     drag = null;
@@ -975,6 +1043,10 @@
         }
       }
       const nameEl = group ? group.querySelector('.part-label') : stash.querySelector('.part-name');
+      const placed = (ui.wsDraft || []).find((p) => p.itemId === id);
+      const shape = V.UI && V.UI.partShape
+        ? V.UI.partShape(state, id, placed ? placed.rotation : ui.wsRot, placed ? placed.mirrorY : ui.wsMirror)
+        : null;
       drag = {
         id,
         from: group ? 'board' : 'stash',
@@ -986,6 +1058,8 @@
         y0: e.clientY,
         moved: false,
         ghost: null,
+        shape,
+        cellPx: cellPixelSize(svg),
         label: nameEl ? nameEl.textContent.trim() : '构件',
       };
     });
@@ -997,15 +1071,32 @@
         drag.moved = true;
         document.body.classList.add('is-dragging');
         if (drag.group) drag.group.classList.add('dragging');
-        const ghost = document.createElement('div');
-        ghost.className = 'drag-ghost';
-        ghost.textContent = drag.label;
-        document.body.appendChild(ghost);
-        drag.ghost = ghost;
+        drag.ghost = buildFloatGhost(drag.shape, drag.cellPx, drag.label);
       }
       e.preventDefault();
-      if (drag.ghost) drag.ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 12}px)`;
-      showHint(drag.svg, cellFromPoint(drag.svg, e.clientX, e.clientY));
+      const cell = cellFromPoint(drag.svg, e.clientX, e.clientY);
+      const anchor = cell && drag.shape
+        ? clampAnchor(drag.shape, { x: cell.x - drag.grabDx, y: cell.y - drag.grabDy })
+        : null;
+      drag.anchor = anchor;
+
+      if (drag.ghost) {
+        if (anchor && drag.shape && drag.cellPx) {
+          /* 进了板面就吸附到格子上：看到的就是落下去的样子 */
+          const p = boardPointToScreen(drag.svg, anchor.x + drag.shape.minX, anchor.y + drag.shape.minY);
+          if (p) drag.ghost.style.transform = `translate(${p.x}px, ${p.y}px)`;
+          drag.ghost.classList.add('snapped');
+        } else if (drag.shape && drag.cellPx) {
+          /* 板面外：跟手，抓着的那一格停在指针下 */
+          const ox = (drag.grabDx - drag.shape.minX + 0.5) * drag.cellPx;
+          const oy = (drag.grabDy - drag.shape.minY + 0.5) * drag.cellPx;
+          drag.ghost.style.transform = `translate(${e.clientX - ox}px, ${e.clientY - oy}px)`;
+          drag.ghost.classList.remove('snapped');
+        } else {
+          drag.ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 12}px)`;
+        }
+      }
+      showDropGhost(drag.svg, drag.shape, anchor);
     }, { passive: false });
 
     document.addEventListener('pointerup', (e) => {
@@ -1013,11 +1104,12 @@
       const d = drag;
       const target = d.svg ? cellFromPoint(d.svg, e.clientX, e.clientY) : null;
       const moved = d.moved;
+      const anchor = d.anchor || (target && d.shape
+        ? clampAnchor(d.shape, { x: target.x - d.grabDx, y: target.y - d.grabDy })
+        : null);
       endDrag();
-      if (!moved || !target) return;
-      const ax = Math.max(0, Math.min(3, target.x - d.grabDx));
-      const ay = Math.max(0, Math.min(3, target.y - d.grabDy));
-      dispatch({ type: 'wsDrop', id: d.id, cell: ax + ',' + ay });
+      if (!moved || !anchor) return;
+      dispatch({ type: 'wsDrop', id: d.id, cell: anchor.x + ',' + anchor.y });
     });
 
     document.addEventListener('pointercancel', () => { endDrag(); });
