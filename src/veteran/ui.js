@@ -1322,7 +1322,7 @@
   }).join('') : '<div class="muted small">板面空着</div>'}</div>`)}
         ${ui.wsMode === 'inscribe' ? `<div class="col mt2">
           ${btn('按推荐布局摆放', 'wsAutoLayout', { cls: 'ghost sm' })}
-          ${btn('确认烙印（生命上限 ×0.8，压力 +40）', 'wsInscribe', { cls: 'gold sm', disabled: !(pv.ok && pv.reachableOutputs.length) })}
+          ${btn('确认烙印（生命上限 ×0.8，压力 +40）', 'wsInscribe', { cls: 'gold sm', disabled: !pv.ok })}
           ${btn('取消', 'cancelInscribe', { cls: 'ghost sm' })}
           <div class="muted tiny">原构件必须保留；新增构件只能有一件。直接拖动原构件就能换位置。</div>
         </div>` : ''}

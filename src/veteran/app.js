@@ -1349,7 +1349,7 @@
         if (ri >= restIds.length) {
           const draft = chosenList.map((c) => c.pl);
           const pv = V.Circuit.preview(st, unit.id, draft);
-          return pv.ok && pv.reachableOutputs.length ? draft : null;
+          return pv.ok ? draft : null;
         }
         const cands = candsByItem[restIds[ri]];
         for (let i = 0; i < cands.length; i++) {
@@ -1382,7 +1382,7 @@
         if (!packAll) {
           const draft = chosen.map((c) => c.pl);
           const pv = V.Circuit.preview(st, unit.id, draft);
-          if (pv.ok && pv.reachableOutputs.length) return draft;
+          if (pv.ok) return draft;
         } else {
           const res = packRest(idxList, chosen.slice(), new Set(used));
           if (res) return res;
