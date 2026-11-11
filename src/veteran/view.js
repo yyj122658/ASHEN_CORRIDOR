@@ -415,37 +415,26 @@
     ctx.fillStyle = body;
     ctx.fillRect(x + dir * 5 - (dir > 0 ? 0 : 1), y - 22 + bob, 2, 7);
 
-    /* 武器剪影 */
+    /* 手中刻印剪影：按功法稀有度换形制（武器已移除） */
     const wx = x + dir * 6;
+    const rarity = (u.ms && u.ms.spec && u.ms.spec.rarity) || 1;
     ctx.fillStyle = trim;
-    if (u.weaponId === 'shortBlade') {
-      ctx.fillRect(wx, y - 25 + bob, 2, 12);
-      ctx.fillStyle = '#D9AD65';
-      ctx.fillRect(wx - 1, y - 14 + bob, 4, 1);
-    } else if (u.weaponId === 'towerShield') {
-      ctx.fillStyle = '#6A7A94';
-      ctx.fillRect(wx, y - 24 + bob, 5, 14);
-      ctx.fillStyle = '#EFD082';
-      ctx.fillRect(wx + 2, y - 20 + bob, 1, 6);
-      ctx.fillRect(wx + 1, y - 18 + bob, 3, 2);
-    } else if (u.weaponId === 'longSpear') {
-      ctx.fillStyle = '#7A5B3A';
-      ctx.fillRect(wx, y - 28 + bob, 1, 21);
-      ctx.fillStyle = '#DDE5EE';
-      ctx.fillRect(wx - 1, y - 32 + bob, 3, 4);
-    } else if (u.weaponId === 'heavyCannon') {
-      ctx.fillStyle = '#4A4048';
-      ctx.fillRect(wx - 1, y - 22 + bob, 7, 5);
-      ctx.fillStyle = '#D87843';
-      ctx.fillRect(wx + (dir > 0 ? 5 : -2), y - 21 + bob, 2, 3);
-    } else if (u.weaponId === 'ritualStaff') {
-      ctx.fillStyle = '#7D6342';
-      ctx.fillRect(wx, y - 28 + bob, 1, 18);
+    if (rarity >= 6) {
+      ctx.fillRect(wx, y - 28 + bob, 2, 16);
       ctx.fillStyle = '#F2CF7E';
-      ctx.fillRect(wx - 1, y - 32 + bob, 3, 4);
-    } else if (u.enemyType) {
-      ctx.fillStyle = '#D0B99E';
-      ctx.fillRect(wx, y - 22 + bob, 2, 12);
+      ctx.fillRect(wx - 2, y - 33 + bob, 6, 5);
+    } else if (rarity >= 4) {
+      ctx.fillRect(wx - 1, y - 24 + bob, 6, 5);
+      ctx.fillStyle = '#D87843';
+      ctx.fillRect(wx + (dir > 0 ? 5 : -2), y - 23 + bob, 2, 3);
+    } else if (rarity >= 2) {
+      ctx.fillRect(wx, y - 26 + bob, 1, 18);
+      ctx.fillStyle = '#DDE5EE';
+      ctx.fillRect(wx - 1, y - 30 + bob, 3, 4);
+    } else {
+      ctx.fillRect(wx, y - 24 + bob, 2, 12);
+      ctx.fillStyle = '#D9AD65';
+      ctx.fillRect(wx - 1, y - 13 + bob, 4, 1);
     }
 
     ctx.globalAlpha = 1;

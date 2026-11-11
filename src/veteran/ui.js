@@ -857,17 +857,12 @@
   function partName(state, id) {
     const it = state.itemsById[id];
     if (!it) return '（已失效）';
-    if (it.kind === 'weapon') return D().weapon(it.templateId).name;
     return D().template(it.templateId).name;
   }
 
   function partMeta(state, id) {
     const it = state.itemsById[id];
     if (!it) return '';
-    if (it.kind === 'weapon') {
-      const w = D().weapon(it.templateId);
-      return `主手 · 占 ${w.cells} 格 · ${w.main.energy} 能量`;
-    }
     const t = D().template(it.templateId);
     return `回路 · ${t.cells.length} 格 · 负荷 ${t.load}`;
   }
@@ -875,7 +870,6 @@
   function partIcon(state, id) {
     const it = state.itemsById[id];
     if (!it) return '';
-    if (it.kind === 'weapon') return tag('主手', 'tag-weapon');
     return tag('回路', 'tag-circuit');
   }
 
@@ -895,34 +889,8 @@
   }
 
   function slotFitBadge(state, u, slot) {
-    if (!u || !u.weaponId) return '';
-    const it = state.itemsById[u.weaponId];
-    if (!it || it.kind !== 'weapon') return '';
-    const tid = it.templateId;
-    if (tid === 'shortBlade') {
-      return slot === 0
-        ? '<span class="tag tag-ok">前锋适位 · 160%</span>'
-        : '<span class="tag tag-warn">限1号位 · 将退回普攻</span>';
-    }
-    if (tid === 'longSpear') {
-      if (slot === 0) return '<span class="tag tag-ok">1号位 · 突刺单体</span>';
-      if (slot === 1) return '<span class="tag tag-ok">2号位 · 贯穿2人</span>';
-      return '<span class="tag tag-warn">限1/2号位 · 不可用</span>';
-    }
-    if (tid === 'heavyCannon') {
-      if (slot === 3) return '<span class="tag tag-ok">4号位 · 省能2⚡</span>';
-      if (slot === 0) return '<span class="tag tag-warn">1号位自伤10%</span>';
-      return '<span class="tag">需4⚡ · 4号位减半</span>';
-    }
-    if (tid === 'towerShield') {
-      return slot === 0
-        ? '<span class="tag tag-ok">1号位 · 减伤20%</span>'
-        : '<span class="tag">标准站位</span>';
-    }
-    if (tid === 'ritualStaff') {
-      return '<span class="tag tag-circuit">全位 · 治疗/法术</span>';
-    }
-    return '';
+    if (!u) return '';
+    return u.manuscript ? `<span class="tag tag-weapon">${esc(u.manuscript.name)}</span>` : '';
   }
 
   function hpLine(u, st) {
@@ -1069,9 +1037,7 @@
 
   function unitDetail(state, u) {
     const s = V.Roster.stats(state, u);
-    const w = state.itemsById[u.weaponId];
     const h = V.Roster.history(state, u.id);
-    const weapons = state.stash.filter((id) => state.itemsById[id].kind === 'weapon');
     return `<div class="u-detail mt3">
       ${V.Art.portraitTag(u.skinId, 'unit-portrait')}
       <div class="u-detail-head"><b>${esc(u.name)}</b>
@@ -1084,7 +1050,7 @@
         <span class="muted">${esc(u.manuscript ? u.manuscript.desc : '去工坊装一门')}</span></div>
       ${h.attunement.traitId
     ? `<div class="small success mt1">调谐已解锁：${esc(h.attunement.traitName)} — ${esc(h.attunement.traitDesc)}</div>`
-    : `<div class="small muted mt1">调谐进度 ${h.attunement.runs}/${h.attunement.need}（同一主手三次合格撤离）</div>`}
+    : `<div class="small muted mt1">调谐进度 ${h.attunement.runs}/${h.attunement.need}（同一功法三次合格撤离）</div>`}
       <div class="mt2 small"><span class="muted">功法只能装备一套；换功法去工坊</span></div>
       <div class="mt2 row wrap">${btn('编辑行为指令', 'editRules', { cls: 'ghost xs', data: { id: u.id } })}
         ${btn(state.gold >= 30 ? '安抚降压（30 金）' : '安抚（缺金币）', 'comfort', { cls: 'ghost xs', data: { id: u.id }, disabled: state.gold < 30 || u.stress === 0 })}</div>
@@ -1101,8 +1067,6 @@
     const pool = inRun
       ? state.run.encounter.preparation.formation.filter(Boolean).map((id) => state.roster.find((x) => x.id === id)).filter(Boolean)
       : state.roster;
-    const w = state.itemsById[u.weaponId];
-    const wMeta = w && w.kind === 'weapon' ? D().weapon(w.templateId) : null;
     const slotIdx = inRun ? state.run.encounter.preparation.formation.indexOf(u.id) : state.team.indexOf(u.id);
 
     return panel(`${esc(u.name)} 的行为指令`, `
@@ -1112,7 +1076,7 @@
         <div class="spacer"></div>
         ${slotIdx >= 0 ? slotFitBadge(state, u, slotIdx) : ''}
       </div>
-      ${wMeta ? `<div class="tiny muted mb2">当前主手：<b class="gold">${esc(wMeta.name)}</b> — ${esc(wMeta.main.desc)}</div>` : ''}
+      ${u.manuscript ? `<div class="tiny muted mb2">当前功法：<b class="gold">${esc(u.manuscript.name)}</b> — ${esc(u.manuscript.desc)}</div>` : '<div class="tiny muted mb2">未修功法：只能依赖战前指令选目标</div>'}
       <p class="muted small">按从上到下的顺序检查，第一条条件、目标、能量与身位都合法的指令生效；均不可用时退回基础攻击。</p>
       <div class="rules mt2">${rules.map((r, i) => `<div class="rule-row ${r.enabled === false ? 'disabled' : ''}">
         <div class="rule-no">${i + 1}</div>
@@ -1385,7 +1349,7 @@
         </div>
       </div>`).join('') : `<div class="empty-call panel-wide">
         <div class="small">火塘边暂时没有闲散的老兵。</div>
-        <div class="tiny muted mt1">花 12 金币向灰烬前哨打听一轮，可立刻物色三位新传奇（随机底盘与主手）。</div>
+        <div class="tiny muted mt1">花 12 金币向灰烬前哨打听一轮，可立刻物色三位新传奇（随机底盘，自带一阶微功法）。</div>
       </div>`}</div>
       ${ui.shopMsg ? `<div class="err-box mt2">${esc(ui.shopMsg)}</div>` : ''}
     `);
@@ -1398,7 +1362,7 @@
       <div class="part-list mt2">${list.length ? list.map((id) => {
     const it = state.itemsById[id];
     const tpl = it && it.kind === 'circuit' ? D().template(it.templateId) : null;
-    const desc = tpl ? tpl.desc : (it && it.kind === 'weapon' ? D().weapon(it.templateId).main.desc : '');
+    const desc = tpl ? tpl.desc : '';
     return `<div class="part-item static">
         ${tpl ? `<span class="part-shape-box">${miniShapeSvg(tpl.id, 0, false)}</span>` : '<span class="relic-thumb"></span>'}
         <span class="part-text">
@@ -1424,7 +1388,7 @@
           <div class="small mt1">逻辑槽 ${h.logicSlots} 个${h.logicSlots < 3 ? `，再 ${h.nextSlotIn} 次合格撤离解锁第 3 个` : ''}</div>
           <div class="small mt1">调谐：${h.attunement.traitId
     ? `<b class="gold">${esc(h.attunement.traitName)}</b> — ${esc(h.attunement.traitDesc)}`
-    : `${h.attunement.runs}/${h.attunement.need}（${esc(h.attunement.weaponName || '无主手')}）`}</div>
+    : `${h.attunement.runs}/${h.attunement.need}（${esc(h.attunement.manuscriptName || '未修功法')}）`}</div>
         </div>` : ''}`)}
       ${panel('最近记录', h && h.records.length ? h.records.map((r) => `<div class="hist-row">
         <span class="hist-name">${esc({ extract: '撤离', clear: '通关', emergency: '紧急撤退', defeat: '败退' }[r.kind] || r.kind)}</span>
@@ -1547,7 +1511,7 @@
     return panel('紧急撤退会付出什么', `
       <div class="small">保留新构件 <b class="gold">${p.keepParts.length}</b> 件（共 ${p.keepParts.length + p.lostParts.length} 件），其余丢弃。</div>
       <div class="small mt1">金币 +${p.gold} · 遗物 +${p.shards} · 参战压力 +${p.stress}</div>
-      <div class="small muted mt1">带入的主手与回路全部保留。本次不算合格撤离。</div>
+      <div class="small muted mt1">带入的功法与回路全部保留。本次不算合格撤离。</div>
     `, 'panel-danger');
   }
 
@@ -1589,8 +1553,9 @@
 
   function battleBar(u) {
     const isAlly = u.side === 'ally';
-    const energy = u.runtime ? [V.Circuit.outputTokens(u.runtime, 'main').length, V.Circuit.outputTokens(u.runtime, 'support').length] : null;
-    const gPct = Math.max(0, Math.min(100, ((u.gauge || 0) / 60) * 100));
+    /* 时间轴：能量按秒回，出手靠 atkTimer，不再有「行动条」 */
+    const energy = [Math.floor(u.energy || 0), Math.round(u.energyMax || 20)];
+    const gPct = Math.max(0, Math.min(100, ((u.atkTimer || 0) / (u.attackInterval || 0.5)) * 100));
     const hasBurn = (u.buffs || []).some((x) => x.k === 'burn' || x.k === 'bleed');
     const hasGuard = (u.buffs || []).some((x) => x.k === 'guard' || x.k === 'dmgReduce');
     return `<div class="unit-bar ${u.alive === false ? 'dead' : ''} ${u.isBoss ? 'boss' : ''}">
@@ -1601,7 +1566,7 @@
       <div class="ub-meta">
         <span>${u.hp}/${u.maxHp}</span>
         ${u.shield > 0 ? `<span class="shield">盾${u.shield}</span>` : ''}
-        ${energy ? `<span class="energy" title="主手/保护能量">⚡${energy[0]}/${energy[1]}</span>` : ''}
+        ${energy ? `<span class="energy" title="当前能量 / 上限">⚡${energy[0]}/${energy[1]}</span>` : ''}
         ${u.skipActions > 0 ? tag('被压住', 'tag-warn') : ''}
         ${u.charging ? tag('蓄力', 'tag-boss') : ''}
         ${hasBurn ? tag('灼烧', 'tag-warn') : ''}
@@ -1631,7 +1596,7 @@
       <div class="small muted">确认之前，奖励、战史与伤痕都不会落账。可以无限次重新整备。</div>
       ${win ? `<div class="mt3 small">确认后获得：金币 +${p.rewardSpec.gold} · 遗物 +${p.rewardSpec.shards} ·
         ${p.rewardSpec.drops.length} 件构件（确认时才分配物品）</div>`
-    : `<div class="mt3 small danger">败退会失去本局所有新收获；带入的主手与回路保留，压力 +${D().DESIGN.defeat.stress}。</div>`}
+    : `<div class="mt3 small danger">败退会失去本局所有新收获；带入的功法与回路保留，压力 +${D().DESIGN.defeat.stress}。</div>`}
       <div class="row mt3">
         ${win ? btn('确认结果', 'confirmResult', { cls: 'gold' }) : ''}
         ${btn('重新整备', 'rewind', { cls: 'ghost' })}
