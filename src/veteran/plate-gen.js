@@ -305,5 +305,26 @@
     };
   }
 
-  V.PlateGen = { SIZE, ARCHETYPES, generate, analyze, isConnected };
+  /**
+   * 由板面派生四个极端：左→时钟、下→受击、右→主手、上→保护。
+   * 位置永远是板面上真实存在的格，所以异形板面也不会出现悬空终端。
+   */
+  function terminals(cells) {
+    if (!cells || !cells.length) return null;
+    const pick = (cmp) => cells.slice().sort(cmp)[0];
+    const byX = (a, b) => (a[0] - b[0]) || (a[1] - b[1]);
+    const byY = (a, b) => (a[1] - b[1]) || (a[0] - b[0]);
+    const left = pick(byX);
+    const right = pick((a, b) => (b[0] - a[0]) || (b[1] - a[1]));
+    const top = pick(byY);
+    const bottom = pick((a, b) => (b[1] - a[1]) || (b[0] - a[0]));
+    return {
+      clock: { id: 'clock', cell: [left[0], left[1]], dir: 'W', role: 'in', kind: 'input', name: '时钟' },
+      damage: { id: 'damage', cell: [bottom[0], bottom[1]], dir: 'S', role: 'in', kind: 'input', name: '受击' },
+      main: { id: 'main', cell: [right[0], right[1]], dir: 'E', role: 'out', kind: 'output', name: '主手' },
+      support: { id: 'support', cell: [top[0], top[1]], dir: 'N', role: 'out', kind: 'output', name: '保护' },
+    };
+  }
+
+  V.PlateGen = { SIZE, ARCHETYPES, generate, analyze, isConnected, terminals };
 })(globalThis.Ashen ||= {});

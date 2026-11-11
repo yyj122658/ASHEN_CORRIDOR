@@ -15,7 +15,7 @@ function hashBattle(b) {
 
 test('open 固定敌人、RNG 与检查点；连按不会重新生成', () => {
   const { A, V } = boot(201);
-  let s = startRun(A, V.State.create(4242), 201);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 201);
   s = setNodes(A, s, ['battle']);
   const nodeId = s.run.nodes[0].id;
 
@@ -34,7 +34,7 @@ test('open 固定敌人、RNG 与检查点；连按不会重新生成', () => {
 
 test('检查点里没有自嵌套的 encounter', () => {
   const { A, V } = boot(202);
-  let s = startRun(A, V.State.create(4242), 202);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 202);
   s = setNodes(A, s, ['battle']);
   s = V.Encounter.open(s, s.run.nodes[0].id).state;
   const cp = s.run.encounter.checkpoint;
@@ -47,7 +47,7 @@ test('检查点里没有自嵌套的 encounter', () => {
 
 test('rewind 完整恢复 HP / 压力 / 能量 / 背包 / nextId / RNG', () => {
   const { A, V } = boot(203);
-  let s = startRun(A, V.State.create(4242), 203);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 203);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
 
@@ -74,7 +74,7 @@ test('rewind 完整恢复 HP / 压力 / 能量 / 背包 / nextId / RNG', () => {
 
 test('相同整备重打，战斗哈希完全一致', () => {
   const { A, V } = boot(204);
-  let s = startRun(A, V.State.create(4242), 204);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 204);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
   const first = hashBattle(stepUntilOver(A, s, 400).st.run.battle);
@@ -88,7 +88,7 @@ test('相同整备重打，战斗哈希完全一致', () => {
 
 test('rewind 保留上次阵型与指令供修改', () => {
   const { A, V } = boot(205);
-  let s = startRun(A, V.State.create(4242), 205);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 205);
   s = setNodes(A, s, ['battle']);
   s = V.Encounter.open(s, s.run.nodes[0].id).state;
 
@@ -105,7 +105,7 @@ test('rewind 保留上次阵型与指令供修改', () => {
 
 test('attemptNumber 增加但不推进养成', () => {
   const { A, V } = boot(206);
-  let s = startRun(A, V.State.create(4242), 206);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 206);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
   const before = s.roster.reduce((a, u) => a + u.history.eligibleRunIds.length, 0);
@@ -117,7 +117,7 @@ test('attemptNumber 增加但不推进养成', () => {
 
 test('确认后禁止回转，且检查点被删除', () => {
   const { A, V } = boot(207);
-  let s = startRun(A, V.State.create(4242), 207);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 207);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
   s = stepUntilOver(A, s).st;
@@ -136,7 +136,7 @@ test('确认后禁止回转，且检查点被删除', () => {
 
 test('确认双击不会重复发奖、掉落或战史', () => {
   const { A, V } = boot(208);
-  let s = startRun(A, V.State.create(4242), 208);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 208);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
   s = stepUntilOver(A, s).st;
@@ -158,7 +158,7 @@ test('确认双击不会重复发奖、掉落或战史', () => {
 
 test('victory 确认后进入 loot 且未处理完不能进下一层', () => {
   const { A, V } = boot(209);
-  let s = startRun(A, V.State.create(4242), 209);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 209);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
   s = stepUntilOver(A, s).st;
@@ -186,7 +186,7 @@ test('victory 确认后进入 loot 且未处理完不能进下一层', () => {
 
 test('锁定后不能换节点', () => {
   const { A, V } = boot(210);
-  let s = startRun(A, V.State.create(4242), 210);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 210);
   s = setNodes(A, s, ['battle', 'battle', 'battle']);
   s = V.Encounter.open(s, s.run.nodes[0].id).state;
   const other = V.Encounter.open(s, s.run.nodes[1].id);
@@ -196,7 +196,7 @@ test('锁定后不能换节点', () => {
 
 test('全灭也可以回转，不会被困死', () => {
   const { A, V } = boot(211);
-  let s = startRun(A, V.State.create(4242), 211);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 211);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
   /* 强行全灭 */
@@ -212,7 +212,7 @@ test('全灭也可以回转，不会被困死', () => {
 
 test('battleReview 阶段仍可回转', () => {
   const { A, V } = boot(212);
-  let s = startRun(A, V.State.create(4242), 212);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 212);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
   s = stepUntilOver(A, s).st;
@@ -226,7 +226,7 @@ test('battleReview 阶段仍可回转', () => {
 
 test('prepareResult 不改长期状态', () => {
   const { A, V } = boot(213);
-  let s = startRun(A, V.State.create(4242), 213);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 213);
   s = setNodes(A, s, ['battle']);
   s = fight(A, s, 'normal').st;
   s = stepUntilOver(A, s).st;

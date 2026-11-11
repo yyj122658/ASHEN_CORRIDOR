@@ -23,7 +23,7 @@ function compiled(st, unitId, layout) {
 }
 
 function baseState() {
-  const st = V.State.create(777);
+  const st = V.State.create(777, { classicPlate: true });
   return { st, unit: st.roster[0] };
 }
 

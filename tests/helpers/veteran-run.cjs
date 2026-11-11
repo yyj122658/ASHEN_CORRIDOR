@@ -5,7 +5,7 @@ const { loadVeteran } = require('./load-veteran.cjs');
 function boot(seed) {
   const A = loadVeteran();
   const V = A.Veteran;
-  return { A, V, st: V.State.create(seed == null ? 4242 : seed) };
+  return { A, V, st: V.State.create(seed == null ? 4242 : seed, { classicPlate: true }) };
 }
 
 function startRun(A, st, seed) {

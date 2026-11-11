@@ -20,7 +20,7 @@ function extractAt(A, st, depth, opts) {
 
 test('只完成 2 层不算合格撤离', () => {
   const { A, V } = boot(401);
-  const st = extractAt(A, V.State.create(4242), 2);
+  const st = extractAt(A, V.State.create(4242, { classicPlate: true }), 2);
   assert.equal(st.settlement.eligible, false);
   assert.ok(st.settlement.reason.includes('至少 3 层'));
   assert.ok(st.roster.every((u) => u.history.eligibleRunIds.length === 0));
@@ -28,7 +28,7 @@ test('只完成 2 层不算合格撤离', () => {
 
 test('三次 3 层撤离后仍只有 2 个逻辑槽，两次后解锁第 3 槽', () => {
   const { A, V } = boot(402);
-  let st = V.State.create(4242);
+  let st = V.State.create(4242, { classicPlate: true });
   assert.equal(st.roster[0].logicSlots, 2);
   st = extractAt(A, st, 3);
   assert.equal(st.roster[0].logicSlots, 2, '一次还不够');
@@ -38,7 +38,7 @@ test('三次 3 层撤离后仍只有 2 个逻辑槽，两次后解锁第 3 槽',
 
 test('同一 runId 不会重复计数', () => {
   const { A, V } = boot(403);
-  let st = V.State.create(4242);
+  let st = V.State.create(4242, { classicPlate: true });
   st = extractAt(A, st, 3);
   const unit = st.roster[0];
   const before = unit.history.eligibleRunIds.length;
@@ -67,7 +67,7 @@ test('紧急撤退与败退都不算合格撤离', () => {
 
 test('同一主手三次合格撤离解锁一阶调谐', () => {
   const { A, V } = boot(405);
-  let st = V.State.create(4242);
+  let st = V.State.create(4242, { classicPlate: true });
   const unitId = st.roster[0].id;
   const partId = st.roster[0].weaponId;
 
@@ -89,7 +89,7 @@ test('同一主手三次合格撤离解锁一阶调谐', () => {
 
 test('转移主手不删除旧主记录，新使用者不继承', () => {
   const { A, V } = boot(406);
-  let st = V.State.create(4242);
+  let st = V.State.create(4242, { classicPlate: true });
   const a = st.roster[0];
   const b = st.roster[1];
   const bladeId = a.weaponId;
@@ -108,7 +108,7 @@ test('转移主手不删除旧主记录，新使用者不继承', () => {
 
 test('战史视图能解释为什么没拿到合格撤离', () => {
   const { A, V } = boot(407);
-  let st = extractAt(A, V.State.create(4242), 2);
+  let st = extractAt(A, V.State.create(4242, { classicPlate: true }), 2);
   const h = V.Roster.history(st, st.roster[0].id);
   assert.equal(h.eligibleRuns, 0);
   assert.equal(h.nextSlotIn, 2);
@@ -119,7 +119,7 @@ test('战史视图能解释为什么没拿到合格撤离', () => {
 
 test('招募产出可用角色：主手 + 基础线路 + 合法状态', () => {
   const { A, V } = boot(408);
-  let st = V.State.create(4242);
+  let st = V.State.create(4242, { classicPlate: true });
   st.gold = 999;
   st = V.Roster.refreshShop(st, false).state;
   assert.equal(st.shop.length, 3);
@@ -138,7 +138,7 @@ test('招募产出可用角色：主手 + 基础线路 + 合法状态', () => {
 
 test('指令超过槽位被拒绝', () => {
   const { A, V } = boot(409);
-  let st = V.State.create(4242);
+  let st = V.State.create(4242, { classicPlate: true });
   const unit = st.roster[0];
   const tooMany = [
     { id: '1', enabled: true, conditions: [{ type: 'always' }], target: 'frontFoe', action: 'main' },
@@ -150,4 +150,4 @@ test('指令超过槽位被拒绝', () => {
   assert.equal(r.error.code, 'bad_gambits');
 });
 
-function v0() { return boot(4242).V.State.create(4242); }
+function v0() { return boot(4242).V.State.create(4242, { classicPlate: true }); }

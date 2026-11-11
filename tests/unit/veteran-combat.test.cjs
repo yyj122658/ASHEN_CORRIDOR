@@ -187,4 +187,4 @@ test('execute: 完整流程能打完三种遭遇且状态合法', () => {
 });
 
 /** 取一份合法初始状态。 */
-function s0(V) { return V.State.create(4242); }
+function s0(V) { return V.State.create(4242, { classicPlate: true }); }

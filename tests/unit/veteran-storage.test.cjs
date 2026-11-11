@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const { boot, startRun, setNodes, fight, stepUntilOver } = require('../helpers/veteran-run.cjs');
 
 function prebattle(A) {
-  let s = startRun(A, A.Veteran.State.create(4242), 4242);
+  let s = startRun(A, A.Veteran.State.create(4242, { classicPlate: true }), 4242);
   s = setNodes(A, s, ['battle']);
   return A.Veteran.Encounter.open(s, s.run.nodes[0].id).state;
 }
@@ -53,7 +53,7 @@ test('五个阶段都能 roundtrip', () => {
 
 test('只认 ruleset=veteran，别的一律拒绝', () => {
   const { A, V } = boot(502);
-  const st = V.State.create(4242);
+  const st = V.State.create(4242, { classicPlate: true });
   const okRaw = V.Storage.encode(st, 1);
   const env = JSON.parse(okRaw);
   env.ruleset = 'classic';
@@ -82,7 +82,7 @@ test('自嵌套 checkpoint 被拒绝', () => {
 
 test('重复归属被拒绝', () => {
   const { A, V } = boot(505);
-  const s = V.State.create(4242);
+  const s = V.State.create(4242, { classicPlate: true });
   const id = s.stash[0];
   s.stash.push(id); /* 同一件出现两次 */
   const r = V.Storage.decode(V.Storage.encode(s, 0));
@@ -92,7 +92,7 @@ test('重复归属被拒绝', () => {
 
 test('板面越界 / 超负荷的状态被拒绝', () => {
   const { A, V } = boot(506);
-  const s = A.Veteran.State.create(4242);
+  const s = A.Veteran.State.create(4242, { classicPlate: true });
   s.roster[0].board.placements[0].x = 9;
   const r = V.Storage.decode(V.Storage.encode(s, 0));
   assert.ok(!r.ok);
@@ -101,18 +101,18 @@ test('板面越界 / 超负荷的状态被拒绝', () => {
 
 test('角色 ID 重复与压力越界被拒绝', () => {
   const { A, V } = boot(507);
-  const s = V.State.create(4242);
+  const s = V.State.create(4242, { classicPlate: true });
   s.roster.push(V.State.clone(s.roster[0]));
   assert.ok(!V.Storage.decode(V.Storage.encode(s, 0)).ok);
 
-  const s2 = V.State.create(4242);
+  const s2 = V.State.create(4242, { classicPlate: true });
   s2.roster[1].stress = 400;
   assert.ok(!V.Storage.decode(V.Storage.encode(s2, 0)).ok);
 });
 
 test('导入导出：先校验再替换，失败不覆盖', () => {
   const { A, V } = boot(508);
-  const st = V.State.create(4242);
+  const st = V.State.create(4242, { classicPlate: true });
   st.gold = 777;
   const raw = V.Storage.exportText(st);
   const imp = V.Storage.importText(raw);
@@ -129,7 +129,7 @@ test('旧存档 key 不被触碰', () => {
   assert.equal(V.Storage.KEY, 'ashen_corridor_veteran_v1');
   assert.notEqual(V.Storage.KEY, 'ashen_corridor_v1');
   assert.notEqual(V.Storage.KEY, 'ashen_corridor_v2');
-  const raw = V.Storage.encode(V.State.create(1), 0);
+  const raw = V.Storage.encode(V.State.create(1, { classicPlate: true }), 0);
   assert.ok(raw.includes('veteran'));
   void A;
 });

@@ -10,7 +10,7 @@ const V = A.Veteran;
 const D = V.Data;
 
 function oneFight(seed, kind, floor) {
-  let st = V.State.create(seed);
+  let st = V.State.create(seed, { classicPlate: true });
   const started = V.Expedition.start(st, { seed });
   assert.ok(started.ok, JSON.stringify(started.error));
   st = started.state;
@@ -56,7 +56,7 @@ test('战斗回合数落在可玩区间（不出现一回合速通或无限拖�
 });
 
 test('七层流程能走到结算，且完成层数与战史自洽', () => {
-  let st = V.State.create(4242);
+  let st = V.State.create(4242, { classicPlate: true });
   st = V.Expedition.start(st, { seed: 4242 }).state;
   let guard = 0;
 
@@ -151,7 +151,7 @@ test('七层流程能走到结算，且完成层数与战史自洽', () => {
 });
 
 test('第 7 层没打首领不能算完成', () => {
-  let st = V.State.create(4242);
+  let st = V.State.create(4242, { classicPlate: true });
   st = V.Expedition.start(st, { seed: 4242 }).state;
   st.run.floor = 7;
   st.run.nodes = [
@@ -173,7 +173,7 @@ test('第 7 层没打首领不能算完成', () => {
 });
 
 test('战斗节点会被标记完成并记录层数', () => {
-  let st = V.State.create(55);
+  let st = V.State.create(55, { classicPlate: true });
   st = V.Expedition.start(st, { seed: 55 }).state;
   st.run.nodes = [{ id: 'nb', type: 'battle', consumed: false, name: '残响战斗', risk: 'low', artId: 'node.battle' }];
   st = V.Encounter.open(st, 'nb').state;

@@ -112,13 +112,38 @@
 
   /* ------------------------------ 默认档 ------------------------------ */
 
+  /** FNV-1a：把字符串稳定映射成 uint32，用来派生板面 seed。 */
+  function hashSeed(text) {
+    let h = 0x811C9DC5;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+  }
+
+  function classicPlateOf(body) {
+    const blocked = new Set((body.blocked || []).map((b) => b[0] + ',' + b[1]));
+    const cells = [];
+    for (let y = 0; y < D().DESIGN.gridSize; y++) {
+      for (let x = 0; x < D().DESIGN.gridSize; x++) {
+        if (!blocked.has(x + ',' + y)) cells.push([x, y]);
+      }
+    }
+    return { cells, terminals: D().TERMINALS };
+  }
+
   function makeUnit(st, spec) {
     const body = D().body(spec.bodyPreset);
+    const unitId = takeId(st, 'u');
     const unit = {
-      id: takeId(st, 'u'),
+      id: unitId,
       name: spec.name,
       skinId: spec.skinId,
       bodyPreset: body.id,
+      /* 板面 seed 由 id 稳定派生，不消耗玩法随机序列：
+         否则改一次板面规则就会打乱整局的随机，存档也对不上 */
+      plateSeed: spec.plateSeed != null ? (spec.plateSeed >>> 0) : hashSeed('plate:' + unitId),
       stress: 0,
       affliction: null,
       weaponId: null,
@@ -127,29 +152,59 @@
       logicSlots: D().DESIGN.logicSlots,
       history: { eligibleRunIds: [], records: [] },
     };
+    /* 经典板面必须早于 equipPreset 生效，否则预设会按随机板面平移 */
+    if (st.plateMode === 'classic') unit.plateOverride = classicPlateOf(body);
     return unit;
   }
 
   /** 给单位装配预设线路，构件写入 registry 并挂到 board。 */
+  /**
+   * 装上预设线路。
+   * 预设的坐标是「相对形状」，异形板面上不一定落在金属里，所以要找一个平移量
+   * 让整条线都铺得下；平移量按 |dx|+|dy| 从小到大试，(0,0) 优先，老板面结果不变。
+   */
   function equipPreset(st, unit, presetId) {
     const preset = D().PRESETS[presetId] || D().PRESETS.basic;
+    /* 板面只认 Circuit.plateOf，别处不要重复推导 */
+    const plateCells = A.Veteran.Circuit.plateOf(unit).cells;
+
+    const fits = (dx, dy) => preset.layout.every((slot) => {
+      const tpl = D().template(slot.templateId);
+      const tf = A.Veteran.Circuit.transformTemplate(tpl, slot.rotation || 0, !!slot.mirrorY);
+      return tf.cells.every((c) => plateCells.has((c.x + slot.x + dx) + ',' + (c.y + slot.y + dy)));
+    });
+
+    let off = null;
+    const span = 8;
+    for (let d = 0; d <= span && !off; d++) {
+      for (let dy = -d; dy <= d && !off; dy++) {
+        for (let dx = -d; dx <= d && !off; dx++) {
+          if (Math.abs(dx) + Math.abs(dy) !== d) continue;
+          if (fits(dx, dy)) off = [dx, dy];
+        }
+      }
+    }
+    if (!off) return unit; /* 板面太窄，先给空板面，玩家在工坊里自己铺 */
+
     preset.layout.forEach((slot) => {
       const part = makePart(st, { kind: 'circuit', templateId: slot.templateId });
       st.itemsById[part.id] = part;
       unit.board.placements.push({
-        itemId: part.id, x: slot.x, y: slot.y,
+        itemId: part.id, x: slot.x + off[0], y: slot.y + off[1],
         rotation: slot.rotation || 0, mirrorY: !!slot.mirrorY,
       });
     });
     return unit;
   }
 
-  function create(seed) {
+  function create(seed, opts) {
     const st = {
       version: VERSION,
       ruleset: RULESET,
       nextId: 1,
       rngState: (seed === undefined || seed === null) ? DEFAULT_SEED : (seed >>> 0),
+      /* classic = 固定 4x4（老存档与单测）；plate = 按 seed 生成的异形金属 */
+      plateMode: (opts && opts.classicPlate) ? 'classic' : 'plate',
       gold: 180,
       shards: 0,
       bestDepth: 0,
@@ -200,6 +255,7 @@
     });
 
     addLog(st, { kind: 'sys', text: '灰烬前哨。四位老兵在等下一次下潜。' });
+
     return st;
   }
 

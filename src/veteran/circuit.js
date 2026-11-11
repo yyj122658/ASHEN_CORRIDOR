@@ -67,6 +67,51 @@
   }
 
   /**
+   * 一个单位实际能放构件的板面：{cells:Set<'x,y'>, terminals, size, generated}
+   * - 底盘带 plate 配置 → 用 PlateGen 按 seed 生成异形板面，终端由板面派生；
+   * - 否则退回旧的 4x4 网格（老存档 / 测试用）。
+   * 这是唯一决定「哪一格能放」的地方，别处不要再写死 4。
+   */
+  function plateOf(unit) {
+    const body = D().body(unit && unit.bodyPreset);
+    /* 显式覆写优先：测试与老存档用固定几何 */
+    if (unit && unit.plateOverride && Array.isArray(unit.plateOverride.cells)) {
+      const cells = new Set(unit.plateOverride.cells.map((c) => c[0] + ',' + c[1]));
+      return {
+        cells,
+        terminals: unit.plateOverride.terminals || D().TERMINALS,
+        cellsList: unit.plateOverride.cells,
+        size: D().DESIGN.gridSize,
+        generated: false,
+      };
+    }
+    const conf = body && body.plate;
+    if (conf && V.PlateGen) {
+      const gen = V.PlateGen.generate({
+        seed: unit.plateSeed == null ? 1 : unit.plateSeed,
+        archetype: conf.archetype,
+        target: conf.target,
+      });
+      return {
+        cells: new Set(gen.cells.map((c) => c[0] + ',' + c[1])),
+        terminals: V.PlateGen.terminals(gen.cells),
+        cellsList: gen.cells,
+        size: V.PlateGen.SIZE,
+        generated: true,
+      };
+    }
+    const size = D().DESIGN.gridSize;
+    const blocked = blockedSet(body || {});
+    const cells = new Set();
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (!blocked.has(x + ',' + y)) cells.add(x + ',' + y);
+      }
+    }
+    return { cells, terminals: D().TERMINALS, size, generated: false };
+  }
+
+  /**
    * preview(st, unitId, placements) -> {ok, errors, occupied, load, graph, reachableOutputs}
    * 同一函数供 UI 预览与真实保存使用；非法时 state 不变（本函数不写 state）。
    */
@@ -75,8 +120,7 @@
     const unit = st.roster.find((u) => u.id === unitId);
     if (!unit) return { ok: false, errors: ['找不到角色'], occupied: [], load: 0, reachableOutputs: [] };
     const body = D().body(unit.bodyPreset);
-    const size = D().DESIGN.gridSize;
-    const blocked = blockedSet(body);
+    const plate = plateOf(unit);
 
     const list = placements || [];
     const seenItems = new Set();
@@ -104,13 +148,17 @@
       }));
 
       cells.forEach((c) => {
-        if (c.x < 0 || c.y < 0 || c.x >= size || c.y >= size) {
+        const key = c.x + ',' + c.y;
+        if (!plate.generated && (c.x < 0 || c.y < 0 || c.x >= plate.size || c.y >= plate.size)) {
           errors.push(`${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 越界`);
           return;
         }
-        const key = c.x + ',' + c.y;
-        if (blocked.has(key)) {
-          errors.push(`${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 是屏蔽格`);
+        if (!plate.cells.has(key)) {
+          /* 旧网格报「屏蔽格」，异形板面报「不在板面上」，措辞按来源区分 */
+          errors.push(plate.generated
+            ? `${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 不在板面上`
+            : `${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 是屏蔽格`);
+          return;
         }
         if (cellOwner.has(key)) {
           const other = cellOwner.get(key);
@@ -135,7 +183,7 @@
       return { ok: false, errors, occupied, load, reachableOutputs: [], graph: null };
     }
 
-    const graph = buildGraph(st, built);
+    const graph = buildGraph(st, built, plate.terminals);
     if (!graph.ok) {
       return { ok: false, errors: graph.errors, occupied, load, reachableOutputs: [], graph: null };
     }
@@ -155,13 +203,12 @@
    * 构造有向图：极 → 构件入口 → 内部 links → 出口 → 相邻构件入口 … → 输出极。
    * 节点使用 placementId(即 itemId)+portId，保证可序列化与稳定排序。
    */
-  function buildGraph(st, built) {
+  function buildGraph(st, built, terminalSet) {
     const errors = [];
     const nodes = new Map(); // key -> {key, kind, itemId, portId?, dir, cell, role}
     const edges = []; // {from, to}
 
-    D().DESIGN && null;
-    const terminals = D().TERMINALS;
+    const terminals = terminalSet || D().TERMINALS;
 
     Object.values(terminals).forEach((t) => {
       nodes.set('T:' + t.id, {
@@ -307,11 +354,11 @@
    * layout(st, placements)：容错版布局，供 UI 画格子/端口/连线。
    * 不做合法性判断（非法摆放也照画），权威校验仍走 preview。
    */
-  function layout(st, placements) {
+  function layout(st, placements, terminalsIn) {
     const cells = [];
     const ports = [];
     const edges = [];
-    const terminals = D().TERMINALS;
+    const terminals = terminalsIn || D().TERMINALS;
     const built = [];
 
     (placements || []).forEach((p) => {
@@ -614,6 +661,7 @@
   }
 
   V.Circuit = {
+    plateOf,
     opposite, rotateDir, flipNS, transformTemplate, preview, compile, saveLoadout, layout,
     buildGraph, route, emptyRuntime, pulse, token, outputTokens,
     hasSurge, hasEmber, consumeOutput, refund, portKey,

@@ -24,7 +24,7 @@ function atCamp(A, s) {
 
 test('背包按占格累计，主手占 4，满包不静默吞件', () => {
   const { A, V } = boot(301);
-  let s = startRun(A, V.State.create(4242), 301);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 301);
   assert.equal(V.Expedition.bagUsed(s), 0);
 
   /* 填到接近上限 */
@@ -46,7 +46,7 @@ test('背包按占格累计，主手占 4，满包不静默吞件', () => {
 
 test('掉落可以替换掉背包里的一件', () => {
   const { A, V } = boot(302);
-  let s = startRun(A, V.State.create(4242), 302);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 302);
   const keep = addNewPart(A, s, 'straight', 1);
   const incoming = addNewPart(A, s, 'elbow', 2);
   s.run.pendingLoot.push(incoming.id);
@@ -61,7 +61,7 @@ test('掉落可以替换掉背包里的一件', () => {
 
 test('营火烙印未提交时不扣生命与压力', () => {
   const { A, V } = boot(303);
-  let s = startRun(A, V.State.create(4242), 303);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 303);
   const before = s.run.party.map((p) => p.hp);
   s = atCamp(A, s);
   assert.equal(s.run.stage, 'camp');
@@ -71,7 +71,7 @@ test('营火烙印未提交时不扣生命与压力', () => {
 
 test('营火烙印：生命 ×0.8、当前 HP 等比、压力 +40，每角色每局一次', () => {
   const { A, V } = boot(304);
-  let s = startRun(A, V.State.create(4242), 304);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 304);
   s = atCamp(A, s);
   const unit = s.roster[0];
   const maxBefore = V.Roster.stats(s, unit).maxHp;
@@ -108,7 +108,7 @@ test('营火烙印：生命 ×0.8、当前 HP 等比、压力 +40，每角色每
 
 test('烙印不能丢掉原构件，也不能塞两件新件', () => {
   const { A, V } = boot(305);
-  let s = startRun(A, V.State.create(4242), 305);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 305);
   s = atCamp(A, s);
   const unit = s.roster[0];
   const p1 = addNewPart(A, s, 'straight', 1);
@@ -129,7 +129,7 @@ test('烙印不能丢掉原构件，也不能塞两件新件', () => {
 
 test('ember 默认替换线在三个底盘上都能接通主手', () => {
   const { A, V } = boot(306);
-  let s = startRun(A, V.State.create(4242), 306);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 306);
   s = atCamp(A, s);
   ['sturdy', 'agile', 'conduit'].forEach((body) => {
     const unit = s.roster.find((u) => u.bodyPreset === body) || s.roster[1];
@@ -147,7 +147,7 @@ test('ember 默认替换线在三个底盘上都能接通主手', () => {
 
 test('紧急撤退保留一半新件、全部带入件，压力入场 +10', () => {
   const { A, V } = boot(307);
-  let s = startRun(A, V.State.create(4242), 307);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 307);
   const broughtIds = V.State.ownItemIds(s).slice();
   [1, 2, 3, 4].forEach((i) => addNewPart(A, s, 'straight', i));
   s.run.goldFound = 100;
@@ -171,7 +171,7 @@ test('紧急撤退保留一半新件、全部带入件，压力入场 +10', () =
 
 test('确认败退：新收获全失、带入资产保留、压力 +20', () => {
   const { A, V } = boot(308);
-  let s = startRun(A, V.State.create(4242), 308);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 308);
   const broughtIds = V.State.ownItemIds(s).slice();
   const newParts = [1, 2, 3].map((i) => addNewPart(A, s, 'straight', i));
   s.run.goldFound = 90;
@@ -187,7 +187,7 @@ test('确认败退：新收获全失、带入资产保留、压力 +20', () => {
 
 test('烙印不能把本局新件洗成安全资产：撤退后板面回到入场状态', () => {
   const { A, V } = boot(309);
-  let s = startRun(A, V.State.create(4242), 309);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 309);
   s = atCamp(A, s);
   const unit = s.roster[0];
   const original = JSON.stringify(unit.board.placements);
@@ -215,7 +215,7 @@ test('烙印不能把本局新件洗成安全资产：撤退后板面回到入�
 
 test('正常撤离是幂等事务：板面固化、背包入仓、清修正、战史只计一次', () => {
   const { A, V } = boot(310);
-  let s = startRun(A, V.State.create(4242), 310);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 310);
   s = atCamp(A, s);
   const unit = s.roster[0];
   const newPart = addNewPart(A, s, 'ember', 1);
@@ -261,7 +261,7 @@ test('正常撤离是幂等事务：板面固化、背包入仓、清修正、�
 
 test('0 完成层正常撤离没有收益也不算合格', () => {
   const { A, V } = boot(311);
-  let s = startRun(A, V.State.create(4242), 311);
+  let s = startRun(A, V.State.create(4242, { classicPlate: true }), 311);
   const goldBefore = s.gold;
   const r = V.Expedition.extract(s);
   assert.ok(r.ok);

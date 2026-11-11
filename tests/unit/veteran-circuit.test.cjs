@@ -17,7 +17,7 @@ function mk(st, layout) {
   });
 }
 
-function fresh() { return V.State.create(4242); }
+function fresh() { return V.State.create(4242, { classicPlate: true }); }
 
 test('基础线路在三个底盘上都接通主手，5 格 / load 2', () => {
   const st = fresh();

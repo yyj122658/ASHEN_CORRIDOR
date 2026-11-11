@@ -45,18 +45,22 @@
       id: 'sturdy', name: '厚铸躯壳',
       hp: 160, atk: 28, def: 18, spd: 8,
       loadCap: 8, blocked: [[2, 3], [3, 3]],
+      /* 板面：由 seed 生成的异形金属，格数与形状解耦 */
+      plate: { archetype: 'full', target: 28 },
       desc: '厚甲慢步。能扛住贯穿，但上手慢。',
     },
     agile: {
       id: 'agile', name: '轻量骨架',
       hp: 120, atk: 28, def: 8, spd: 14,
       loadCap: 6, blocked: [[0, 0], [2, 3]],
+      plate: { archetype: 'bar', target: 22 },
       desc: '出手快、皮薄。能量周转快，容错低。',
     },
     conduit: {
       id: 'conduit', name: '导流腔体',
       hp: 140, atk: 28, def: 12, spd: 10,
       loadCap: 7, blocked: [[0, 0], [3, 3]],
+      plate: { archetype: 'square', target: 28 },
       desc: '居中。屏蔽格偏角，两条基础线路都能过。',
     },
   };
