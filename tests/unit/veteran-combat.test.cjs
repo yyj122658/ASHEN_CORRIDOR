@@ -36,23 +36,6 @@ test('身体与外观不限制主手：换底盘仍能用同一把主手', () =>
   });
 });
 
-test('塔盾会让目标跳过行动，护盾有 30% 上限', () => {
-  const { A, V } = boot(103);
-  let s = startRun(A, s0(V), 103);
-  s = setNodes(A, s, ['battle']);
-  const f = fight(A, s, 'normal');
-  s = f.st;
-  const guard = s.run.battle.allies.find((u) => u.weaponId === 'towerShield');
-  const enemy = s.run.battle.enemies[0];
-  assert.ok(guard && enemy);
-  V.Combat._internal.applyDamage;
-  /* 直接给目标叠满护盾，检查上限 */
-  const I = V.Combat._internal;
-  const gained = I.addShield(enemy, 9999);
-  assert.equal(enemy.shield, Math.round(enemy.maxHp * 0.30));
-  assert.ok(gained <= Math.round(enemy.maxHp * 0.30));
-});
-
 test('受击脉冲只在真实 HP 伤害时记录，护盾/自伤/DOT 不刷', () => {
   const { A, V } = boot(104);
   let s = startRun(A, s0(V), 104);

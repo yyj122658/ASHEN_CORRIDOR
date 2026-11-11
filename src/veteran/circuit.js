@@ -232,10 +232,6 @@
     const cap = (plate.generated && body.plate && body.plate.loadCap) ? body.plate.loadCap : body.loadCap;
     if (load > cap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${cap}`);
 
-    /* 主手本身不计负荷，但必须存在且是主手 */
-    const weapon = unit.weaponId ? st.itemsById[unit.weaponId] : null;
-    if (!weapon) errors.push('没有装备主手');
-
     if (errors.length) {
       return { ok: false, errors, occupied, load, reachableOutputs: [], graph: null };
     }

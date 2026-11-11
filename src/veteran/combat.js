@@ -103,8 +103,6 @@
 
   function buildAlly(st, partyEntry, unit) {
     const body = D().body(unit.bodyPreset);
-    const weapon = st.itemsById[unit.weaponId];
-    const weaponId = weapon ? weapon.templateId : 'shortBlade';
     const placements = (st.run.fieldLayouts && st.run.fieldLayouts[unit.id]) || unit.board.placements;
     const cc = V.Circuit.compile(st, unit.id, placements);
     /* 功法状态：覆盖率台阶 + 贯通。没有功法时是空效果，不影响老存档 */
@@ -141,10 +139,9 @@
       skinId: unit.skinId,
       enemyType: null,
       name: unit.name,
-      weaponId,
-      modId: weapon ? weapon.modId : null,
-      traitId: (weapon && weapon.attunements && weapon.attunements[unit.id]
-        && weapon.attunements[unit.id].traitId) || null,
+      /* 武器已移除：位移与调谐效果改由功法提供 */
+      modId: (unit.manuscript && unit.manuscript.modId) || null,
+      traitId: (unit.manuscript && unit.manuscript.traitId) || null,
       bodyPreset: unit.bodyPreset,
       maxHp, hp,
       atk: body.atk,
@@ -406,28 +403,6 @@
 
   /* ------------------------------ 能量 ------------------------------ */
 
-  function routeEnergy(b, u, extraInputs) {
-    if (!u.circuit) return;
-    const inputs = { clock: V.Circuit.pulse(D().DESIGN.energyPulse) };
-    if (u.pendingDamagePulse > 0) {
-      inputs.damage = V.Circuit.pulse(u.pendingDamagePulse);
-      u.pendingDamagePulse = 0;
-    }
-    if (extraInputs) Object.assign(inputs, extraInputs);
-
-    const r = V.Circuit.route(u.circuit, u.runtime, inputs, { hpPct: hpPct(u) });
-    u.runtime = r.runtime;
-    r.events.forEach((ev) => {
-      if (ev.type === 'capacitorSurge') {
-        log(b, { type: 'surge', actorId: u.id, text: `${u.name} 的储能腔放出 4 单位脉冲` });
-      } else if (ev.type === 'gateBlocked') {
-        log(b, { type: 'blocked', actorId: u.id, text: `${u.name} 的阈值闸未满足，能量消散` });
-      } else if (ev.type === 'energyOverflow') {
-        log(b, { type: 'blocked', actorId: u.id, text: `${u.name} 的输出储存溢出，${ev.amount} 单位消散` });
-      }
-    });
-  }
-
   /* ------------------------------ 目标 ------------------------------ */
 
   function targetsFor(b, actor, targetId) {
@@ -481,169 +456,7 @@
   }
 
   /** 消耗输出能量，返回 {tokens, surge} 或 null。 */
-  function spend(u, outputId, cost) {
-    const got = V.Circuit.consumeOutput(u.runtime, outputId, cost);
-    if (!got) return null;
-    u.runtime = got.runtime;
-    const surge = got.used.filter((t) => t.tags.includes('surge')).length >= D().DESIGN.surgeSize;
-    const ember = got.used.some((t) => t.tags.includes('ember'));
-    return { tokens: got.used, surge: !!surge, ember };
-  }
-
   /** 主手动作。返回 {dealtDamage, action} */
-  function doMain(b, actor, targetId) {
-    const w = D().weapon(actor.weaponId);
-    const m = w.main;
-    const cost = V.Tactics.mainCost(actor.weaponId, actor.slot);
-    const spent = spend(actor, 'main', cost);
-    if (!spent) {
-      /* 理论上 evaluate 已挡；保险起见退回基础攻击 */
-      const r = doBasicAttack(b, actor, targetId, { label: '基础攻击' });
-      return { dealtDamage: r.dealtDamage, action: 'basic' };
-    }
-
-    let mult = m.mult || 1;
-    /* 功法：覆盖率台阶与贯通给乘算。这是唯一的功法数值入口 */
-    if (actor.ms && actor.ms.effects && actor.ms.effects.mainMult) {
-      mult *= actor.ms.effects.mainMult;
-    }
-    let stress = 0;
-    if (spent.surge) {
-      mult *= D().DESIGN.surgeMult;
-      stress += D().DESIGN.surgeStress;
-      log(b, { type: 'surge', actorId: actor.id, text: `${actor.name} 打出 surge，倍率翻倍` });
-    }
-
-    const dmgBonus = (b.dmgBonus || 0);
-    let dealt = false;
-
-    if (m.healMult) {
-      const mates = alive(b.allies).sort((a, c) => hpPct(a) - hpPct(c) || a.slot - c.slot);
-      const worst = mates[0];
-      if (worst && hpPct(worst) < 0.999) {
-        const amount = actor.atk * m.healMult * mult * (1 + (b.healBonus || 0));
-        const r = healUnit(b, actor, worst, amount);
-        if (r.overheal > 0 && !actor.overflowUsed) {
-          actor.overflowUsed = true;
-          const gained = addShield(worst, Math.min(r.overheal, Math.round(worst.maxHp * 0.1)));
-          if (gained) log(b, { type: 'shield', actorId: actor.id, targetId: worst.id, amount: gained, text: `溢出治疗转为 ${gained} 护盾` });
-        }
-        dealt = false;
-      } else {
-        const tgt = targetsFor(b, actor, targetId)[0] || frontOf(b.enemies);
-        if (tgt) {
-          const r = doBasicAttack(b, actor, tgt.id, {
-            mult: m.fallbackMult * mult, label: '法术', dmgBonus, ember: spent.ember,
-          });
-          dealt = r.dealtDamage;
-        }
-      }
-    } else if (m.slotTargets) {
-      const mode = m.slotTargets[actor.slot] || 'frontFoe';
-      if (mode === 'pierceFront2') {
-        const foes = alive(b.enemies).sort((a, c) => a.slot - c.slot).slice(0, 2);
-        let any = false;
-        foes.forEach((tgt) => {
-          if (!rngChance(b, clamp(actor.hits - tgt.dodge, 0.05, 1))) {
-            log(b, { type: 'miss', actorId: actor.id, targetId: tgt.id, text: `${actor.name} 的贯穿被闪开` });
-            return;
-          }
-          const crit = rngChance(b, actor.crit);
-          const dmg = actor.atk * m.mult * mult * (1 + dmgBonus) * (1 - mitigation(tgt.def)) * (crit ? 1.75 : 1);
-          const res = applyDamage(b, actor, tgt, dmg, {});
-          any = any || res.dealt > 0;
-          log(b, {
-            type: crit ? 'crit' : 'hit', actorId: actor.id, targetId: tgt.id, amount: res.dealt,
-            text: `${actor.name} 贯穿 ${tgt.name}${crit ? '（暴击）' : ''} -${res.dealt}`,
-          });
-        });
-        dealt = any;
-      } else {
-        const tgt = targetsFor(b, actor, targetId)[0];
-        if (tgt) {
-          const r = doBasicAttack(b, actor, tgt.id, {
-            mult: m.mult * mult, label: '突刺', dmgBonus, ember: spent.ember,
-          });
-          dealt = r.dealtDamage;
-        }
-      }
-    } else {
-      const tgt = targetsFor(b, actor, targetId)[0];
-      if (tgt) {
-        if (m.skipTarget) {
-          const r = doBasicAttack(b, actor, tgt.id, {
-            mult: m.mult * mult, label: '盾击', dmgBonus, stun: 1, ember: spent.ember,
-          });
-          dealt = r.dealtDamage;
-        } else {
-          const r = doBasicAttack(b, actor, tgt.id, {
-            mult: m.mult * mult, label: w.name, dmgBonus, ember: spent.ember,
-          });
-          dealt = r.dealtDamage;
-        }
-      }
-    }
-
-    /* 重炮在 1 号位自伤：不产生受击脉冲 */
-    if (m.slot0SelfDamage && actor.slot === 0) {
-      const self = Math.max(1, Math.round(actor.maxHp * m.slot0SelfDamage));
-      applyDamage(b, null, actor, self, { selfInflicted: true, pierce: true });
-      log(b, { type: 'hit', actorId: actor.id, targetId: actor.id, amount: self, text: `${actor.name} 被后坐力撕开 ${self}` });
-    }
-
-    /* 塔盾 1 号位：自身减伤到下次行动 */
-    if (m.slot0Reduce && actor.slot === 0) {
-      actor.buffs = (actor.buffs || []).filter((x) => x.k !== 'dmgReduce');
-      actor.buffs.push({ k: 'dmgReduce', v: m.slot0Reduce, d: 1, stackKey: 'shieldStance' });
-      log(b, { type: 'guard', actorId: actor.id, text: `${actor.name} 举盾，减伤至下次行动` });
-    }
-
-    /* 调谐：首次主手输出返还 1 能量 */
-    const trait = actor.traitId;
-    if (trait === 'refund' && !actor.refundUsed) {
-      actor.refundUsed = true;
-      actor.runtime = V.Circuit.refund(actor.runtime, 'main', ['refund']);
-      log(b, { type: 'energy', actorId: actor.id, text: `${actor.name} 回手，返还 1 点能量` });
-    }
-
-    if (stress) {
-      actor.stress = Math.min(100, actor.stress + stress);
-      log(b, { type: 'stress', actorId: actor.id, amount: stress, text: `${actor.name} 压力 +${stress}` });
-    }
-
-    return { dealtDamage: dealt, action: 'main' };
-  }
-
-  function doSupport(b, actor, targetId) {
-    const cost = D().SUPPORT.energy;
-    const spent = spend(actor, 'support', cost);
-    if (!spent) return { dealtDamage: false, action: 'basic' };
-    const tgt = byId(b.allies, targetId) || byId(b.enemies, targetId);
-    if (!tgt || tgt.alive === false) return { dealtDamage: false, action: 'support' };
-    let pct = D().SUPPORT.shieldPct;
-    if (actor.ms && actor.ms.effects && actor.ms.effects.supportMult) {
-      pct *= actor.ms.effects.supportMult;
-    }
-    if (spent.surge) {
-      pct *= D().DESIGN.surgeMult;
-      actor.stress = Math.min(100, actor.stress + D().DESIGN.surgeStress);
-    }
-    const amount = Math.round(tgt.maxHp * pct);
-    const gained = addShield(tgt, amount);
-    log(b, {
-      type: 'shield', actorId: actor.id, targetId: tgt.id, amount: gained,
-      text: `${actor.name} 给 ${tgt.name} ${gained} 护盾`,
-    });
-    return { dealtDamage: false, action: 'support' };
-  }
-
-  function doGuard(b, actor) {
-    actor.buffs = (actor.buffs || []).filter((x) => x.k !== 'guard');
-    actor.buffs.push({ k: 'guard', v: D().GUARD.reduce, d: 1 });
-    log(b, { type: 'guard', actorId: actor.id, text: `${actor.name} 防御，下次受击减伤 20%` });
-    return { dealtDamage: false, action: 'guard' };
-  }
-
   /* ------------------------------ 时间轴 ------------------------------ */
 
   /** 选目标：沿用战前指令的目标偏好（frontFoe / lowestHpFoe / ...） */
@@ -658,7 +471,6 @@
           alive: u.alive !== false, charging: !!u.charging,
         })),
         energy: { main: Math.floor(actor.energy || 0), support: 0 },
-        weaponId: actor.weaponId || null,
       };
       const d = V.Tactics.evaluate(ctx, actor.gambits);
       targetId = d && d.targetIds && d.targetIds[0];
@@ -1119,8 +931,8 @@
         const pick = A.Random.next((r.state + i * 7919) >>> 0);
         const isWeapon = (i === 0 && pick.value < 0.25);
         if (isWeapon) {
-          const idx = Math.floor(pick.value * 100) % D().WEAPON_ORDER.length;
-          rewardSpec.drops.push({ kind: 'weapon', templateId: D().WEAPON_ORDER[idx] });
+          /* 武器已移除：奖励只给构件，功法走自己的掉落表 */
+          rewardSpec.drops.push({ kind: 'circuit' });
         } else {
           const idx = Math.floor((pick.value * 1000) % D().TEMPLATE_ORDER.length);
           rewardSpec.drops.push({ kind: 'circuit', templateId: D().TEMPLATE_ORDER[idx] });
@@ -1154,7 +966,7 @@
     generateEncounter, create, step, report, prepareResult, setTactic,
     TICK_LIMIT,
     _internal: {
-      applyDamage, healUnit, checkBossPhase, routeEnergy, buildAlly, buildEnemy,
+      applyDamage, healUnit, checkBossPhase, buildAlly, buildEnemy,
       mitigation, addShield, rngValue, log,
     },
   };

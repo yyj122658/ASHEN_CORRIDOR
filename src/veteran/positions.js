@@ -112,9 +112,11 @@
     /* ① 主动换位：只处理我方，且要求这次根行动完成了主手伤害 */
     const actorId = rootAction.actorId;
     const actor = byId(allies, actorId);
-    if (actor && rootAction.side !== 'enemy' && rootAction.action === 'main' && rootAction.dealtDamage) {
-      const weapon = (actor.weaponId && D().WEAPONS[actor.weaponId]) ? D().WEAPONS[actor.weaponId] : null;
-      const modId = actor.modId || (weapon && weapon.modId) || null;
+    const dealt = rootAction.action === 'attack' || rootAction.action === 'main';
+    if (actor && rootAction.side !== 'enemy' && dealt && rootAction.dealtDamage) {
+      /* 武器已移除：位移类效果改由功法声明 */
+      const msSpec = (actor.ms && actor.ms.spec) || null;
+      const modId = actor.modId || (msSpec && msSpec.modId) || null;
 
       if (modId === 'shadowAdvance' && actor.slot >= 2) {
         if (actor.movementUsedRound !== round) {
