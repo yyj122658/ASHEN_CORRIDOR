@@ -954,5 +954,23 @@
       data-act="go" data-v="${v}" ${state.run ? 'disabled' : ''}>${n}</button>`).join('');
   }
 
-  V.UI = { screen, hud, nav, boardSvg, esc, btn, bar, partName, partMeta, logClass, battleBar, ruleText };
+  /** 拖拽幽灵用：某件构件在给定旋转/翻转下的相对格与配色（真实几何，不另写一套） */
+  function partShape(state, itemId, rotation, mirrorY) {
+    const L = V.Circuit.layout(state, [{ itemId, x: 0, y: 0, rotation: rotation || 0, mirrorY: !!mirrorY }]);
+    const b = L.built && L.built[0];
+    if (!b) return null;
+    const xs = b.abs.map((c) => c.x);
+    const ys = b.abs.map((c) => c.y);
+    return {
+      name: b.tpl.name,
+      color: TEMPLATE_COLOR[b.tpl.id] || '#4A4A5A',
+      cells: b.abs.map((c) => ({ x: c.x, y: c.y })),
+      minX: Math.min.apply(null, xs),
+      minY: Math.min.apply(null, ys),
+      maxX: Math.max.apply(null, xs),
+      maxY: Math.max.apply(null, ys),
+    };
+  }
+
+  V.UI = { screen, hud, nav, boardSvg, esc, btn, bar, partName, partMeta, logClass, battleBar, ruleText, partShape };
 })(globalThis.Ashen ||= {});

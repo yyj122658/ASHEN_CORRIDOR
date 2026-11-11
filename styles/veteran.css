@@ -523,13 +523,28 @@ img.art-broken, .art-broken { display: none !important; }
 .part-item[data-act="wsPick"] { cursor: grab; }
 .part-item[data-act="wsPick"].on { cursor: grabbing; }
 body.is-dragging { user-select: none; -webkit-user-select: none; }
+/* 跟随指针的构件虚影：按真实格子数与配色拼，比例和板面一致 */
 .drag-ghost {
   position: fixed; left: 0; top: 0; z-index: 9999; pointer-events: none;
+  opacity: .58; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .6));
+}
+.drag-ghost.snapped { opacity: .72; }
+.drag-ghost i {
+  position: absolute; display: block; box-sizing: border-box;
+  border: 1px solid rgba(232, 196, 106, .8);
+}
+.drag-ghost-name {
+  position: absolute; left: 50%; bottom: -19px; transform: translateX(-50%);
+  white-space: nowrap; font-size: 11px; letter-spacing: .06em; color: #EFD082;
+  text-shadow: 0 1px 3px #000, 0 0 6px #000;
+}
+/* 退化形态（拿不到几何时）：一个写着名字的小牌子 */
+.drag-ghost-text {
   padding: 4px 10px; font-size: 12px; letter-spacing: .06em; color: #EFD082;
   background: rgba(20, 16, 28, .94); border: 1px solid #5E7285;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .55);
 }
-.drop-hint {
-  fill: rgba(232, 196, 106, .18); stroke: #E8C46A; stroke-width: 1.5;
-  stroke-dasharray: 5 3; pointer-events: none;
+/* 板面上的吸附预览 */
+.drop-ghost-cell {
+  fill-opacity: .1; stroke: rgba(232, 196, 106, .55); stroke-width: 1.2;
+  stroke-dasharray: 4 3; pointer-events: none;
 }
