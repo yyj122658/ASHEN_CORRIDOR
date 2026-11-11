@@ -27,11 +27,19 @@
     wsMode: 'workshop',
     wsLocked: [],
     inscribeItem: null,
+    wsMsId: 'ember12',
+    wsMsRot: 0,
+    wsMsMir: false,
+    wsMsSpotIdx: 0,
+    wsMsOx: null,
+    wsMsOy: null,
     prepSlot: null,
     replaceFor: null,
     histUnit: null,
     shopMsg: '',
     importOpen: false,
+    modal: null,
+    modalSaveText: '',
     toast: '',
   };
 
@@ -78,15 +86,28 @@
 
   /* ------------------------------ 渲染 ------------------------------ */
 
+  function renderModal() {
+    let root = document.getElementById('modalRoot');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'modalRoot';
+      const appEl = document.getElementById('app') || document.body;
+      appEl.appendChild(root);
+    }
+    root.innerHTML = V.UI && V.UI.modalHtml ? V.UI.modalHtml(state, ui) : '';
+  }
+
   function render() {
     const hudEl = document.getElementById('hud');
     const navEl = document.getElementById('nav');
     const stageEl = document.getElementById('stage');
+    document.body.classList.toggle('reduced-motion', !!(state && state.settings && state.settings.reducedMotion));
 
     if (ui.screen === 'title') {
       if (hudEl) hudEl.innerHTML = '';
       if (navEl) navEl.innerHTML = '';
       if (stageEl) stageEl.innerHTML = V.UI.screen(state, ui);
+      renderModal();
       lastScreen = 'title';
       return;
     }
@@ -94,6 +115,7 @@
     if (hudEl) hudEl.innerHTML = V.UI.hud(state, ui);
     if (navEl) navEl.innerHTML = V.UI.nav(state, ui);
     if (stageEl) stageEl.innerHTML = V.UI.screen(state, ui);
+    renderModal();
 
     /* 场景图按页面加载；加载完成后重画一次，让 <img> 真正进 DOM */
     if (V.Art && !artPreloaded.has(ui.screen)) {
@@ -101,6 +123,9 @@
       V.Art.preloadFor(ui.screen).then((r) => {
         if (r.loaded.length && ui.screen === lastScreen) render();
       });
+      if ((ui.screen === 'workshop' || ui.screen === 'camp') && V.RuneArt && V.RuneArt.preload) {
+        V.RuneArt.preload();
+      }
     }
 
     if (ui.screen === 'battle') {
@@ -148,9 +173,50 @@
     }
   }
 
+  let audioCtx = null;
+  let lastSfxAt = 0;
+
+  /** 轻量 WebAudio 合成短音：遵循 settings.sound，绝不抛错阻断主流程。 */
+  function playSfx(kind) {
+    if (!state || !state.settings || state.settings.sound === false) return;
+    if (typeof window === 'undefined') return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const nowMs = Date.now();
+    if (kind === 'hit' && nowMs - lastSfxAt < 45) return;
+    lastSfxAt = nowMs;
+    try {
+      if (!audioCtx) audioCtx = new Ctx();
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      const t = audioCtx.currentTime;
+      const tone = (freq, endFreq, dur, type, vol) => {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = type || 'triangle';
+        osc.frequency.setValueAtTime(freq, t);
+        if (endFreq) osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), t + dur);
+        g.gain.setValueAtTime(vol || 0.05, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        osc.connect(g);
+        g.connect(audioCtx.destination);
+        osc.start(t);
+        osc.stop(t + dur + 0.01);
+      };
+      if (kind === 'click') tone(440, 260, 0.035, 'triangle', 0.035);
+      else if (kind === 'snap') tone(320, 480, 0.055, 'sine', 0.045);
+      else if (kind === 'hit') tone(165, 65, 0.075, 'sawtooth', 0.045);
+      else if (kind === 'crit') { tone(560, 220, 0.12, 'square', 0.045); tone(180, 70, 0.14, 'sawtooth', 0.05); }
+      else if (kind === 'heal' || kind === 'shield') tone(520, 680, 0.11, 'sine', 0.04);
+      else if (kind === 'victory') { tone(440, 554, 0.14, 'triangle', 0.05); setTimeout(() => tone(659, 659, 0.2, 'triangle', 0.05), 110); }
+      else if (kind === 'defeat') { tone(240, 150, 0.18, 'sawtooth', 0.045); setTimeout(() => tone(165, 110, 0.25, 'sawtooth', 0.045), 140); }
+    } catch (e) { /* 忽略浏览器自动播放限制 */ }
+  }
+
   function dispatch(action, el) {
     if (!action || !action.type) return;
     const t = action.type;
+    if (t === 'wsDrop' || t === 'wsSave' || t === 'wsInscribe') playSfx('snap');
+    else if (t !== 'closeModal') playSfx('click');
 
     switch (t) {
       /* ---------- 标题 ---------- */
@@ -167,13 +233,103 @@
         return;
 
       case 'resetSave':
-        if (!window.confirm('确定抹去存档？\n\n会清空 ashen_corridor_veteran_v1 里的全部进度。')) return;
+        ui.modal = 'confirmReset';
+        renderModal();
+        return;
+
+      case 'confirmResetSave':
         V.Storage.clear();
         state = V.State.create();
         ui.hadSave = false;
+        ui.modal = null;
         ui.screen = 'title';
         render();
+        toast('存档已清空');
         return;
+
+      case 'openSettings':
+        ui.modal = 'settings';
+        ui.modalSaveText = V.Storage.exportText(state);
+        renderModal();
+        return;
+
+      case 'closeModal':
+        ui.modal = null;
+        renderModal();
+        return;
+
+      case 'toggleSound': {
+        const next = V.State.clone(state);
+        next.settings = next.settings || { sound: true, speed: 1, reducedMotion: false };
+        next.settings.sound = next.settings.sound === false;
+        state = next;
+        persistSoon();
+        renderModal();
+        return;
+      }
+
+      case 'setDefaultSpeed': {
+        const sp = Number(action.id) || 1;
+        const next = V.State.clone(state);
+        next.settings = next.settings || { sound: true, speed: 1, reducedMotion: false };
+        next.settings.speed = sp;
+        state = next;
+        ui.speed = sp;
+        persistSoon();
+        renderModal();
+        if (ui.screen === 'battle') V.View.updateHud(state);
+        return;
+      }
+
+      case 'toggleMotion': {
+        const next = V.State.clone(state);
+        next.settings = next.settings || { sound: true, speed: 1, reducedMotion: false };
+        next.settings.reducedMotion = !next.settings.reducedMotion;
+        state = next;
+        persistSoon();
+        document.body.classList.toggle('reduced-motion', !!next.settings.reducedMotion);
+        renderModal();
+        return;
+      }
+
+      case 'modalExport': {
+        ui.modalSaveText = V.Storage.exportText(state);
+        renderModal();
+        toast('已生成最新存档文本');
+        return;
+      }
+
+      case 'copySaveText': {
+        const box = document.getElementById('modalSaveBox');
+        const txt = (box && box.value) || V.Storage.exportText(state);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(() => toast('已复制到剪贴板')).catch(() => toast('请手动全选复制文本框'));
+        } else if (box) {
+          box.select();
+          toast('请按 Ctrl+C 复制选中文本');
+        }
+        return;
+      }
+
+      case 'modalImportConfirm': {
+        const box = document.getElementById('modalSaveBox');
+        const raw = box ? box.value : '';
+        const r = V.Storage.importText(raw);
+        if (!r.ok) {
+          toast('导入失败：' + (r.errors[0] || '存档不合法'));
+          return;
+        }
+        state = r.state;
+        ui.hadSave = true;
+        ui.modal = null;
+        ui.importOpen = false;
+        syncScreen();
+        if (ui.screen === 'title') ui.screen = 'camp';
+        persist();
+        render();
+        toast('导入成功');
+        return;
+      }
 
       case 'exportSave': {
         const raw = V.Storage.exportText(state);
@@ -246,6 +402,21 @@
         return;
       }
 
+      case 'teamMove': {
+        const from = Number(action.from);
+        const to = Number(action.to);
+        if (from < 0 || from > 3 || to < 0 || to > 3 || from === to) return;
+        const next = V.State.clone(state);
+        const tmp = next.team[from];
+        next.team[from] = next.team[to];
+        next.team[to] = tmp;
+        state = next;
+        ui.teamPickSlot = null;
+        persistSoon();
+        render();
+        return;
+      }
+
       case 'inspectUnit':
         ui.teamUnit = action.id;
         if (ui.screen !== 'team') ui.screen = 'team';
@@ -272,11 +443,48 @@
         if (!id) return;
         ui.screen = 'rules';
         ui.ruleUnit = id;
-        ui.ruleDraft = V.State.clone((state.roster.find((u) => u.id === id) || {}).gambits || []);
+        const prepRules = state.run && state.run.encounter && state.run.encounter.preparation && state.run.encounter.preparation.rules;
+        const src = (prepRules && prepRules[id]) || (state.roster.find((u) => u.id === id) || {}).gambits || [];
+        ui.ruleDraft = V.State.clone(src);
         ui.ruleErrors = [];
         render();
         return;
       }
+
+      case 'ruleMoveUp': {
+        const i = Number(action.id);
+        if (i <= 0 || i >= ui.ruleDraft.length) return;
+        const tmp = ui.ruleDraft[i - 1];
+        ui.ruleDraft[i - 1] = ui.ruleDraft[i];
+        ui.ruleDraft[i] = tmp;
+        render();
+        return;
+      }
+
+      case 'ruleMoveDown': {
+        const i = Number(action.id);
+        if (i < 0 || i >= ui.ruleDraft.length - 1) return;
+        const tmp = ui.ruleDraft[i + 1];
+        ui.ruleDraft[i + 1] = ui.ruleDraft[i];
+        ui.ruleDraft[i] = tmp;
+        render();
+        return;
+      }
+
+      case 'ruleToggle': {
+        const i = Number(action.id);
+        if (!ui.ruleDraft[i]) return;
+        ui.ruleDraft[i].enabled = ui.ruleDraft[i].enabled === false;
+        render();
+        return;
+      }
+
+      case 'ruleCancel':
+        ui.ruleErrors = [];
+        if (state.run) syncScreen();
+        else ui.screen = 'team';
+        render();
+        return;
 
       case 'ruleAdd': {
         const u = state.roster.find((x) => x.id === ui.ruleUnit);
@@ -334,6 +542,22 @@
       }
 
       case 'ruleSave': {
+        if (state.run && state.run.encounter) {
+          const r = V.Encounter.editPreparation(state, { rules: { [ui.ruleUnit]: ui.ruleDraft } });
+          if (!r.ok) {
+            ui.ruleErrors = r.details || [r.error.message];
+            render();
+            toast('指令不合法');
+            return;
+          }
+          state = r.state;
+          persistSoon();
+          ui.ruleErrors = [];
+          syncScreen();
+          render();
+          toast('整备指令已保存');
+          return;
+        }
         const r = V.Roster.setGambits(state, ui.ruleUnit, ui.ruleDraft);
         if (!r.ok) {
           ui.ruleErrors = r.details || [r.error.message];
@@ -346,6 +570,7 @@
         ui.ruleErrors = [];
         ui.screen = 'team';
         render();
+        toast('指令已保存');
         return;
       }
 
@@ -357,6 +582,12 @@
 
       case 'wsPick': {
         const id = action.id;
+        if (action.stash && ui.wsPick === id) {
+          ui.wsPick = null;
+          ui.wsErrors = [];
+          render();
+          return;
+        }
         const placed = (ui.wsDraft || []).find((p) => p.itemId === id);
         ui.wsPick = id;
         ui.wsRot = placed ? placed.rotation : 0;
@@ -366,12 +597,27 @@
         return;
       }
 
+      case 'wsCancelPick':
+        ui.wsPick = null;
+        ui.wsErrors = [];
+        render();
+        return;
+
       case 'wsRotate': {
         if (!ui.wsPick) { toast('先选一件构件'); return; }
+        const step = Number(action.step) === 3 ? 3 : 1;
         const placed = ui.wsDraft.find((p) => p.itemId === ui.wsPick);
+        const nextRot = ((placed ? placed.rotation : ui.wsRot) + step) % 4;
+        const nextMir = placed ? !!placed.mirrorY : !!ui.wsMirror;
         pushHistory();
-        if (placed) placed.rotation = (placed.rotation + 1) % 4;
-        ui.wsRot = (ui.wsRot + 1) % 4;
+        if (placed) {
+          const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, ui.wsPick, nextRot, nextMir) : null;
+          const nudge = shape ? findNudgeFit(ui.wsPick, shape, placed.x, placed.y) : null;
+          if (nudge) { placed.x = nudge.x; placed.y = nudge.y; }
+          else toast('旋转后与板边或构件冲突，可拖移或再转一次');
+          placed.rotation = nextRot;
+        }
+        ui.wsRot = nextRot;
         ui.wsErrors = [];
         render();
         return;
@@ -380,11 +626,81 @@
       case 'wsFlip': {
         if (!ui.wsPick) { toast('先选一件构件'); return; }
         const placed = ui.wsDraft.find((p) => p.itemId === ui.wsPick);
+        const nextRot = placed ? placed.rotation : ui.wsRot;
+        const nextMir = !(placed ? placed.mirrorY : ui.wsMirror);
         pushHistory();
-        if (placed) placed.mirrorY = !placed.mirrorY;
-        ui.wsMirror = !ui.wsMirror;
+        if (placed) {
+          const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, ui.wsPick, nextRot, nextMir) : null;
+          const nudge = shape ? findNudgeFit(ui.wsPick, shape, placed.x, placed.y) : null;
+          if (nudge) { placed.x = nudge.x; placed.y = nudge.y; }
+          else toast('翻转后与板边或构件冲突，可拖移调整');
+          placed.mirrorY = nextMir;
+        }
+        ui.wsMirror = nextMir;
         ui.wsErrors = [];
         render();
+        return;
+      }
+
+      case 'wsClear': {
+        const locked = new Set(ui.wsLocked || []);
+        const next = (ui.wsDraft || []).filter((p) => locked.has(p.itemId));
+        if (next.length === (ui.wsDraft || []).length) { toast('没有可清空的构件'); return; }
+        pushHistory();
+        ui.wsDraft = next;
+        ui.wsPick = null;
+        ui.wsErrors = [];
+        render();
+        toast('已清空板面（可 Ctrl+Z 撤销）');
+        return;
+      }
+
+      case 'wsRevert': {
+        const unit = state.roster.find((u) => u.id === ui.wsUnit);
+        if (!unit) return;
+        pushHistory();
+        ui.wsDraft = V.State.clone(unit.board.placements);
+        ui.wsPick = null;
+        ui.wsErrors = [];
+        render();
+        toast('已还原为上次保存的板面');
+        return;
+      }
+
+      case 'wsQuickPlace': {
+        const id = action.id;
+        if (!id || (ui.wsDraft || []).some((p) => p.itemId === id)) return;
+        const spot = findQuickPlaceSpot(id, ui.wsPick === id ? ui.wsRot : 0, ui.wsPick === id ? !!ui.wsMirror : false);
+        if (!spot) { toast('当前板面放不下这件构件'); return; }
+        pushHistory();
+        ui.wsDraft.push({ itemId: id, x: spot.x, y: spot.y, rotation: spot.rotation, mirrorY: spot.mirrorY });
+        ui.wsPick = id;
+        ui.wsRot = spot.rotation;
+        ui.wsMirror = spot.mirrorY;
+        ui.wsErrors = [];
+        render();
+        return;
+      }
+
+      case 'wsAutoConnect': {
+        const unit = state.roster.find((u) => u.id === ui.wsUnit);
+        if (!unit) return;
+        const plate = V.Circuit.plateOf(unit);
+        const body = D().body(unit.bodyPreset);
+        const cap = body ? body.loadCap : 99;
+        const stashCircuits = state.stash.filter((id) => state.itemsById[id] && state.itemsById[id].kind === 'circuit');
+        const allIds = [...new Set([...(ui.wsDraft || []).map((p) => p.itemId), ...stashCircuits])];
+        const found = findSmartConnectLayout(state, unit, plate, allIds, cap);
+        if (!found) {
+          toast('现有可用构件在当前负荷/板面下暂无法直接连通输出');
+          return;
+        }
+        pushHistory();
+        ui.wsDraft = found;
+        ui.wsPick = null;
+        ui.wsErrors = [];
+        render();
+        toast('已用现有构件自动接通输出');
         return;
       }
 
@@ -417,37 +733,140 @@
         return;
       }
 
-      /* 拖拽落点：选中 + 放置一次完成，只重绘一次。已放置的构件保留自身旋转。 */
+      /* 拖拽落点：选中 + 放置一次完成，只重绘一次。支持拖拽中按 R/F 旋转翻转。 */
       case 'wsDrop': {
         const id = action.id;
         const cell = String(action.cell || '').split(',').map(Number);
         if (!id || cell.length !== 2 || !Number.isFinite(cell[0]) || !Number.isFinite(cell[1])) return;
         const existing = (ui.wsDraft || []).find((p) => p.itemId === id);
-        const rot = existing ? existing.rotation : ui.wsRot;
-        const mir = existing ? !!existing.mirrorY : ui.wsMirror;
+        const rot = action.rot != null ? Number(action.rot) : (existing ? existing.rotation : ui.wsRot);
+        const mir = action.mir != null ? !!action.mir : (existing ? !!existing.mirrorY : ui.wsMirror);
 
-        /* 按真实几何把整块构件夹在 4x4 内：拖到角落也不会半个身子出界 */
-        const probe = V.Circuit.layout(state, [{ itemId: id, x: 0, y: 0, rotation: rot, mirrorY: mir }]);
-        const abs = (probe.built && probe.built[0] && probe.built[0].abs) || [{ x: 0, y: 0 }];
-        const xs = abs.map((c) => c.x);
-        const ys = abs.map((c) => c.y);
-        const nx = Math.max(-Math.min.apply(null, xs), Math.min(3 - Math.max.apply(null, xs), cell[0]));
-        const ny = Math.max(-Math.min.apply(null, ys), Math.min(3 - Math.max.apply(null, ys), cell[1]));
+        /* 按板面真实包围盒夹取，不写死 4x4 的 3 */
+        const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, id, rot, mir) : null;
+        const anchored = shape ? clampAnchor(shape, { x: cell[0], y: cell[1] }, activePlate()) : { x: cell[0], y: cell[1] };
+        const nx = anchored.x;
+        const ny = anchored.y;
 
         pushHistory();
         ui.wsPick = id;
         if (existing) {
           existing.x = nx;
           existing.y = ny;
-          ui.wsRot = existing.rotation;
-          ui.wsMirror = !!existing.mirrorY;
+          existing.rotation = rot;
+          existing.mirrorY = mir;
         } else {
           ui.wsDraft.push({ itemId: id, x: nx, y: ny, rotation: rot, mirrorY: mir });
         }
+        ui.wsRot = rot;
+        ui.wsMirror = mir;
         ui.wsErrors = [];
         render();
         return;
       }
+
+      /* 把仓库里的功法装到当前角色身上：先用拖好的位置，压到构件上就自动挪开 */
+      case 'wsMsEquip': {
+        const vault = state.manuscriptVault || [];
+        const idx = vault.findIndex((m) => m.id === ui.wsMsId);
+        if (idx < 0) { toast('仓库里没有这套功法'); return; }
+
+        const attempt = (useDragPos) => {
+          const next = V.State.clone(state);
+          const u2 = next.roster.find((u) => u.id === ui.wsUnit);
+          if (!u2) return null;
+          const spec = next.manuscriptVault[idx];
+          u2.manuscript = Object.assign({}, spec, {
+            x: useDragPos && Number.isFinite(ui.wsMsOx) ? ui.wsMsOx : 0,
+            y: useDragPos && Number.isFinite(ui.wsMsOy) ? ui.wsMsOy : 0,
+            rotation: (((ui.wsMsRot | 0) % 4) + 4) % 4,
+            mirrorY: !!ui.wsMsMir,
+          });
+          if (!useDragPos) {
+            u2.manuscript = null;
+            V.State.equipManuscript(next, u2, ui.wsMsId);
+            if (!u2.manuscript) return null;
+          }
+          const check = V.State.validate(next);
+          if (!check.ok) return null;
+          next.manuscriptVault.splice(idx, 1);
+          return next;
+        };
+
+        const next = attempt(true) || attempt(false);
+        if (!next) {
+          ui.wsErrors = ['这套功法在这块板面上摆不下，或者被构件挡住了'];
+          render();
+          toast('装不上：先挪开构件或换块板面');
+          return;
+        }
+        const autoMoved = !attempt(true);
+        state = next;
+        persistSoon();
+        openWorkshop(ui.wsUnit);
+        render();
+        toast(autoMoved ? '位置被占，已自动挪到空位' : '功法已装上');
+        return;
+      }
+
+      /* 卸下功法：回到仓库，位置留在 UI 里方便再调 */
+      case 'wsMsUnequip': {
+        const next = V.State.clone(state);
+        const u2 = next.roster.find((u) => u.id === ui.wsUnit);
+        if (!u2 || !u2.manuscript) return;
+        const spec = {};
+        Object.keys(u2.manuscript).forEach((k) => {
+          if (k === 'x' || k === 'y' || k === 'rotation' || k === 'mirrorY') return;
+          spec[k] = u2.manuscript[k];
+        });
+        next.manuscriptVault.push(spec);
+        u2.manuscript = null;
+        state = next;
+        persistSoon();
+        render();
+        toast('功法已卸下');
+        return;
+      }
+
+      case 'wsMsMove':
+        ui.wsMsOx = Number(action.ox);
+        ui.wsMsOy = Number(action.oy);
+        ui.wsMsSpotIdx = 0;
+        render();
+        return;
+
+      case 'wsMsPick':
+        ui.wsMsId = action.id;
+        ui.wsMsRot = 0;
+        ui.wsMsMir = false;
+        ui.wsMsSpotIdx = 0;
+        ui.wsMsOx = null;
+        ui.wsMsOy = null;
+        render();
+        return;
+
+      case 'wsMsRotate':
+        ui.wsMsRot = (ui.wsMsRot + 1) % 4;
+        ui.wsMsSpotIdx = 0;
+        ui.wsMsOx = null;
+        ui.wsMsOy = null;
+        render();
+        return;
+
+      case 'wsMsFlip':
+        ui.wsMsMir = !ui.wsMsMir;
+        ui.wsMsSpotIdx = 0;
+        ui.wsMsOx = null;
+        ui.wsMsOy = null;
+        render();
+        return;
+
+      case 'wsMsShift':
+        ui.wsMsSpotIdx = (ui.wsMsSpotIdx || 0) + 1;
+        ui.wsMsOx = null;
+        ui.wsMsOy = null;
+        render();
+        return;
 
       /* 点一下构件（没有拖动）：等同于选中，之后可用旋转/翻转/点空格移动 */
       case 'wsGrab':
@@ -458,6 +877,7 @@
         if (!ui.wsHist.length) return;
         ui.wsRedo.push(V.State.clone(ui.wsDraft));
         ui.wsDraft = ui.wsHist.pop();
+        if (ui.wsPick && !ui.wsDraft.some((p) => p.itemId === ui.wsPick)) ui.wsPick = null;
         render();
         return;
       }
@@ -466,6 +886,7 @@
         if (!ui.wsRedo.length) return;
         ui.wsHist.push(V.State.clone(ui.wsDraft));
         ui.wsDraft = ui.wsRedo.pop();
+        if (ui.wsPick && !ui.wsDraft.some((p) => p.itemId === ui.wsPick)) ui.wsPick = null;
         render();
         return;
       }
@@ -487,11 +908,30 @@
       }
 
       case 'wsSave': {
-        const r = V.Roster.saveBoard(state, ui.wsUnit, ui.wsDraft);
+        /* 功法膜的位置也要一起落盘：它和构件一样是被摆上去的 */
+        let base = state;
+        const cur = state.roster.find((u) => u.id === ui.wsUnit);
+        if (cur && cur.manuscript && Number.isFinite(ui.wsMsOx) && Number.isFinite(ui.wsMsOy)) {
+          const next = V.State.clone(state);
+          const u2 = next.roster.find((u) => u.id === ui.wsUnit);
+          u2.manuscript.x = ui.wsMsOx;
+          u2.manuscript.y = ui.wsMsOy;
+          u2.manuscript.rotation = (((ui.wsMsRot | 0) % 4) + 4) % 4;
+          u2.manuscript.mirrorY = !!ui.wsMsMir;
+          base = next;
+        }
+        const r = V.Roster.saveBoard(base, ui.wsUnit, ui.wsDraft);
         if (!r.ok) {
           ui.wsErrors = r.details || [r.error.message];
           render();
           toast('板面不合法');
+          return;
+        }
+        const check = V.State.validate(r.state);
+        if (!check.ok) {
+          ui.wsErrors = check.errors.slice(0, 4);
+          render();
+          toast('功法没有落在板面上');
           return;
         }
         state = r.state;
@@ -525,26 +965,40 @@
       case 'wsAutoLayout': {
         const unit = state.roster.find((u) => u.id === ui.wsUnit);
         if (!unit || !ui.inscribeItem) return;
-        const draft = V.State.clone(ui.wsDraft);
-        const park = D().STRAIGHT_PARK[unit.bodyPreset] || { x: 0, y: 0 };
-        const occupant = draft.find((p) => p.x === 0 && p.y === 1 && p.itemId !== ui.inscribeItem);
-        if (occupant) {
-          occupant.x = park.x;
-          occupant.y = park.y;
-          occupant.rotation = 0;
-          occupant.mirrorY = false;
+        const plate = V.Circuit.plateOf(unit);
+        if (!plate.generated) {
+          const draft = V.State.clone(ui.wsDraft);
+          const park = D().STRAIGHT_PARK[unit.bodyPreset] || { x: 0, y: 0 };
+          const occupant = draft.find((p) => p.x === 0 && p.y === 1 && p.itemId !== ui.inscribeItem);
+          if (occupant) {
+            occupant.x = park.x;
+            occupant.y = park.y;
+            occupant.rotation = 0;
+            occupant.mirrorY = false;
+          }
+          const existing = draft.find((p) => p.itemId === ui.inscribeItem);
+          if (existing) {
+            existing.x = 0;
+            existing.y = 1;
+            existing.rotation = 0;
+            existing.mirrorY = false;
+          } else {
+            draft.push({ itemId: ui.inscribeItem, x: 0, y: 1, rotation: 0, mirrorY: false });
+          }
+          pushHistory();
+          ui.wsDraft = draft;
+          ui.wsErrors = [];
+          render();
+          return;
         }
-        const existing = draft.find((p) => p.itemId === ui.inscribeItem);
-        if (existing) {
-          existing.x = 0;
-          existing.y = 1;
-          existing.rotation = 0;
-          existing.mirrorY = false;
-        } else {
-          draft.push({ itemId: ui.inscribeItem, x: 0, y: 1, rotation: 0, mirrorY: false });
+        const needIds = [...new Set([...(ui.wsDraft || []).map((p) => p.itemId), ui.inscribeItem])];
+        const found = findAutoInscribeLayout(state, unit, plate, needIds);
+        if (!found) {
+          toast('当前板面与既有构件无法直接连通输出，请手调或换角色烙印');
+          return;
         }
         pushHistory();
-        ui.wsDraft = draft;
+        ui.wsDraft = found;
         ui.wsErrors = [];
         render();
         return;
@@ -638,6 +1092,23 @@
         const tmp = formation[a];
         formation[a] = formation[b];
         formation[b] = tmp;
+        const r = V.Encounter.editPreparation(state, { formation });
+        if (!r.ok) { toast(r.error.message); return; }
+        state = r.state;
+        persistSoon();
+        ui.prepSlot = null;
+        render();
+        return;
+      }
+
+      case 'prepMove': {
+        const from = Number(action.from);
+        const to = Number(action.to);
+        const formation = state.run.encounter.preparation.formation.slice();
+        if (from < 0 || from > 3 || to < 0 || to > 3 || from === to) return;
+        const tmp = formation[from];
+        formation[from] = formation[to];
+        formation[to] = tmp;
         const r = V.Encounter.editPreparation(state, { formation });
         if (!r.ok) { toast(r.error.message); return; }
         state = r.state;
@@ -820,12 +1291,176 @@
     ui.wsRedo = [];
     ui.wsErrors = [];
     ui.wsLocked = [];
+    const ms = unit.manuscript;
+    ui.wsMsId = ms ? ms.id : ui.wsMsId;
+    ui.wsMsRot = ms ? (ms.rotation || 0) : 0;
+    ui.wsMsMir = ms ? !!ms.mirrorY : false;
+    ui.wsMsSpotIdx = 0;
+    ui.wsMsOx = ms ? (ms.x || 0) : null;
+    ui.wsMsOy = ms ? (ms.y || 0) : null;
   }
 
   function pushHistory() {
     ui.wsHist.push(V.State.clone(ui.wsDraft));
     if (ui.wsHist.length > 40) ui.wsHist.shift();
     ui.wsRedo = [];
+  }
+
+  const DIR_DELTA = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+  const DIR_OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
+
+  /** 快速在异形板面上找一组保留既有件或可选子集且连通输出的摆法，全走 Circuit.preview 校验。 */
+  function findAutoInscribeLayout(st, unit, plate, itemIds, opts) {
+    const o = opts || {};
+    const packAll = o.packAll !== false;
+    const maxLoad = o.maxLoad != null ? o.maxLoad : Infinity;
+    const terms = Object.values(plate.terminals || {});
+    const inTerms = terms.filter((t) => t.role === 'in');
+    const outTerms = terms.filter((t) => t.role === 'out');
+    const candsByItem = itemIds.map((id) => {
+      const it = st.itemsById[id];
+      const tpl = D().template(it.templateId);
+      const list = [];
+      for (let m = 0; m < 2; m++) {
+        for (let r = 0; r < 4; r++) {
+          const tf = V.Circuit.transformTemplate(tpl, r, !!m);
+          for (let y = 0; y < plate.size; y++) {
+            for (let x = 0; x < plate.size; x++) {
+              if (!tf.cells.every((c) => plate.cells.has((c.x + x) + ',' + (c.y + y)))) continue;
+              const cellKeys = tf.cells.map((c) => (c.x + x) + ',' + (c.y + y));
+              const ports = tf.ports.map((p) => ({
+                role: p.role, dir: p.dir,
+                x: p.cell[0] + x, y: p.cell[1] + y,
+              }));
+              const isStart = ports.some((p) => p.role === 'in' && inTerms.some((t) => t.cell[0] === p.x && t.cell[1] === p.y && t.dir === p.dir));
+              const isEnd = ports.some((p) => p.role === 'out' && outTerms.some((t) => t.cell[0] === p.x && t.cell[1] === p.y && t.dir === p.dir));
+              list.push({ pl: { itemId: id, x, y, rotation: r, mirrorY: !!m }, cellKeys, ports, isStart, isEnd, load: tpl.load || 0 });
+            }
+          }
+        }
+      }
+      return list;
+    });
+
+    const disjoint = (used, cellKeys) => cellKeys.every((k) => !used.has(k));
+    const packRest = (chosenIdx, chosenList, used) => {
+      const restIds = itemIds.map((_, i) => i).filter((i) => !chosenIdx.includes(i));
+      const fill = (ri) => {
+        if (ri >= restIds.length) {
+          const draft = chosenList.map((c) => c.pl);
+          const pv = V.Circuit.preview(st, unit.id, draft);
+          return pv.ok && pv.reachableOutputs.length ? draft : null;
+        }
+        const cands = candsByItem[restIds[ri]];
+        for (let i = 0; i < cands.length; i++) {
+          const cand = cands[i];
+          if (!disjoint(used, cand.cellKeys)) continue;
+          cand.cellKeys.forEach((k) => used.add(k));
+          chosenList.push(cand);
+          const hit = fill(ri + 1);
+          if (hit) return hit;
+          chosenList.pop();
+          cand.cellKeys.forEach((k) => used.delete(k));
+        }
+        return null;
+      };
+      return fill(0);
+    };
+
+    const canFollow = (a, b) => a.ports.some((op) => {
+      if (op.role !== 'out') return false;
+      const [dx, dy] = DIR_DELTA[op.dir];
+      const nx = op.x + dx;
+      const ny = op.y + dy;
+      return b.ports.some((ip) => ip.role === 'in' && ip.x === nx && ip.y === ny && ip.dir === DIR_OPP[op.dir]);
+    });
+
+    const searchChain = (idxList, chosen, used, loadSum) => {
+      if (loadSum > maxLoad) return null;
+      const last = chosen[chosen.length - 1];
+      if (last.isEnd) {
+        if (!packAll) {
+          const draft = chosen.map((c) => c.pl);
+          const pv = V.Circuit.preview(st, unit.id, draft);
+          if (pv.ok && pv.reachableOutputs.length) return draft;
+        } else {
+          const res = packRest(idxList, chosen.slice(), new Set(used));
+          if (res) return res;
+        }
+      }
+      if (chosen.length >= itemIds.length) return null;
+      for (let ni = 0; ni < itemIds.length; ni++) {
+        if (idxList.includes(ni)) continue;
+        const cands = candsByItem[ni];
+        for (let ci = 0; ci < cands.length; ci++) {
+          const c = cands[ci];
+          if (loadSum + c.load > maxLoad) continue;
+          if (!disjoint(used, c.cellKeys) || !canFollow(last, c)) continue;
+          idxList.push(ni);
+          chosen.push(c);
+          c.cellKeys.forEach((k) => used.add(k));
+          const hit = searchChain(idxList, chosen, used, loadSum + c.load);
+          if (hit) return hit;
+          c.cellKeys.forEach((k) => used.delete(k));
+          chosen.pop();
+          idxList.pop();
+        }
+      }
+      return null;
+    };
+
+    for (let si = 0; si < itemIds.length; si++) {
+      const starts = candsByItem[si].filter((c) => c.isStart);
+      for (let i = 0; i < starts.length; i++) {
+        const used = new Set(starts[i].cellKeys);
+        const hit = searchChain([si], [starts[i]], used, starts[i].load);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  /** 工坊智能接通：在当前板面+仓库可用构件中寻一条最省件的连通方案（受负荷上限约束）。 */
+  function findSmartConnectLayout(st, unit, plate, itemIds, loadCap) {
+    return findAutoInscribeLayout(st, unit, plate, itemIds, { packAll: false, maxLoad: loadCap });
+  }
+
+  /** 原地旋转/翻转若踩出板边或与构件碰撞，附近 ±2 格内寻找最近的合法落点让位。 */
+  function findNudgeFit(itemId, shape, x0, y0) {
+    const offsets = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]];
+    for (let i = 0; i < offsets.length; i++) {
+      const ax = x0 + offsets[i][0];
+      const ay = y0 + offsets[i][1];
+      if (checkDropValid({ id: itemId, shape }, { x: ax, y: ay }).ok) return { x: ax, y: ay };
+    }
+    return null;
+  }
+
+  /** 双击仓库构件时寻找最佳落点（优先当前朝向，其次旋转/翻转）。 */
+  function findQuickPlaceSpot(itemId, prefRot, prefMir) {
+    const unit = state.roster.find((u) => u.id === ui.wsUnit);
+    if (!unit) return null;
+    const plate = V.Circuit.plateOf(unit);
+    const cells = plate.cellsList || [...plate.cells].map((k) => k.split(',').map(Number));
+    const orients = [{ rot: prefRot, mir: prefMir }];
+    for (let m = 0; m < 2; m++) {
+      for (let r = 0; r < 4; r++) {
+        if (r === prefRot && !!m === !!prefMir) continue;
+        orients.push({ rot: r, mir: !!m });
+      }
+    }
+    for (let oi = 0; oi < orients.length; oi++) {
+      const { rot, mir } = orients[oi];
+      const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, itemId, rot, mir) : null;
+      if (!shape) continue;
+      for (let ci = 0; ci < cells.length; ci++) {
+        const [x, y] = cells[ci];
+        if (checkDropValid({ id: itemId, shape }, { x, y }).ok) {
+          return { x, y, rotation: rot, mirrorY: mir };
+        }
+      }
+    }
+    return null;
   }
 
   /** 预设需要现造构件实例（只在营地里用，会写进 state）。 */
@@ -839,29 +1474,48 @@
       if (!next.stash.includes(p.itemId)) next.stash.push(p.itemId);
     });
 
-    const placements = [];
+    const basePlacements = [];
     for (const slot of preset.layout) {
       let part = next.stash.map((id) => next.itemsById[id])
         .find((it) => it && it.kind === 'circuit' && it.templateId === slot.templateId
           && !created.some((c) => c.itemId === it.id)
-          && !placements.some((p) => p.itemId === it.id));
+          && !basePlacements.some((p) => p.itemId === it.id));
       if (!part) {
         part = V.State.makePart(next, { kind: 'circuit', templateId: slot.templateId });
         next.itemsById[part.id] = part;
         next.stash.push(part.id);
       }
-      placements.push({
+      basePlacements.push({
         itemId: part.id, x: slot.x, y: slot.y,
         rotation: slot.rotation || 0, mirrorY: !!slot.mirrorY,
       });
       created.push({ itemId: part.id });
     }
 
-    const pv = V.Circuit.preview(next, unit.id, placements);
+    const plate = V.Circuit.plateOf(u);
+    let chosen = basePlacements;
+    let pv = V.Circuit.preview(next, unit.id, chosen);
+    if (!pv.ok && plate.generated) {
+      let found = null;
+      for (let d = 1; d <= 8 && !found; d++) {
+        for (let dy = -d; dy <= d && !found; dy++) {
+          for (let dx = -d; dx <= d && !found; dx++) {
+            if (Math.abs(dx) + Math.abs(dy) !== d) continue;
+            const shifted = basePlacements.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
+            const testPv = V.Circuit.preview(next, unit.id, shifted);
+            if (testPv.ok) found = { shifted, testPv };
+          }
+        }
+      }
+      if (found) {
+        chosen = found.shifted;
+        pv = found.testPv;
+      }
+    }
     if (!pv.ok) return { ok: false, reason: pv.errors.join('；') };
 
     state = next;
-    return { ok: true, placements };
+    return { ok: true, placements: chosen };
   }
 
   /* ------------------------------ 事件绑定 ------------------------------ */
@@ -880,17 +1534,40 @@
   let drag = null;
   let suppressClick = false;
 
+  function activePlate() {
+    const unit = state && (state.roster.find((u) => u.id === ui.wsUnit) || state.roster[0]);
+    return unit ? V.Circuit.plateOf(unit) : null;
+  }
+
+  function plateBounds(plate) {
+    if (!plate) return { minX: 0, maxX: 3, minY: 0, maxY: 3 };
+    if (!plate.generated) {
+      const n = (plate.size || 4) - 1;
+      return { minX: 0, maxX: n, minY: 0, maxY: n };
+    }
+    const cells = plate.cellsList || [...plate.cells].map((k) => k.split(',').map(Number));
+    if (!cells.length) return { minX: 0, maxX: 6, minY: 0, maxY: 6 };
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    cells.forEach(([x, y]) => {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    });
+    return { minX, maxX, minY, maxY };
+  }
+
   function boardGrid(svg) {
     return {
       cell: Number(svg.dataset.cell) || 60,
       gx: Number(svg.dataset.gx) || 0,
       gy: Number(svg.dataset.gy) || 0,
-      n: Number(svg.dataset.n) || 4,
+      n: Number(svg.dataset.n) || 7,
     };
   }
 
-  /** 屏幕坐标 → 板面格子；落在板外返回 null */
-  function cellFromPoint(svg, clientX, clientY) {
+  /** 屏幕坐标 → 原始网格坐标（0..n-1），不筛空格，供悬停与多格边界拖拽使用 */
+  function cellFromPointRaw(svg, clientX, clientY) {
     if (!svg || !svg.getScreenCTM || !svg.createSVGPoint) return null;
     const ctm = svg.getScreenCTM();
     if (!ctm) return null;
@@ -905,16 +1582,91 @@
     return { x, y };
   }
 
-  /** 落点夹在 4x4 内：按构件真实包围盒，拖到角落会自己贴回来 */
-  function clampAnchor(shape, cell) {
+  /** 屏幕坐标 → 板面格子；异形板面只认 plate.cells，经典模式认 0..n-1 */
+  function cellFromPoint(svg, clientX, clientY) {
+    const raw = cellFromPointRaw(svg, clientX, clientY);
+    if (!raw) return null;
+    const plate = activePlate();
+    if (plate && plate.generated && !plate.cells.has(raw.x + ',' + raw.y)) return null;
+    return raw;
+  }
+
+  /** 拖拽落点智能吸附：先试理想锚点，若边角贴空或撞邻件，则在半径 1 格内找最近合法贴位 */
+  function bestDragAnchor(itemId, shape, rawCell, grabDx, grabDy) {
+    if (!shape || !rawCell) return null;
+    const plate = activePlate();
+    const raw = { x: rawCell.x - grabDx, y: rawCell.y - grabDy };
+    const clamped = clampAnchor(shape, raw, plate);
+    const direct = checkDropValid({ id: itemId, shape }, clamped);
+    if (direct.ok) return { anchor: clamped, valid: direct };
+
+    /* 某些异形空角（如分流器左上角为空）未夹取反而能合法落子，亦纳入候选 */
+    const rawValid = (raw.x !== clamped.x || raw.y !== clamped.y)
+      ? checkDropValid({ id: itemId, shape }, raw)
+      : null;
+    if (rawValid && rawValid.ok) return { anchor: raw, valid: rawValid };
+
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+    for (let i = 0; i < dirs.length; i++) {
+      const cand = { x: raw.x + dirs[i][0], y: raw.y + dirs[i][1] };
+      const v = checkDropValid({ id: itemId, shape }, cand);
+      if (v.ok) return { anchor: cand, valid: v };
+    }
+    return { anchor: clamped, valid: direct };
+  }
+
+  /** 按当前板面实际包围盒夹取锚点，不再写死 4x4 的 3 */
+  function clampAnchor(shape, cell, plateIn) {
+    const b = plateBounds(plateIn || activePlate());
     return {
-      x: Math.max(-shape.minX, Math.min(3 - shape.maxX, cell.x)),
-      y: Math.max(-shape.minY, Math.min(3 - shape.maxY, cell.y)),
+      x: Math.max(b.minX - shape.minX, Math.min(b.maxX - shape.maxX, cell.x)),
+      y: Math.max(b.minY - shape.minY, Math.min(b.maxY - shape.maxY, cell.y)),
     };
   }
 
-  /** 吸附预览：在板面上按构件真实形状画出半透明虚影 */
-  function showDropGhost(svg, shape, anchor) {
+  /** 实时判断悬停锚点是否合法（不改 state，异形板面只查 plate.cells 与已占格）。 */
+  function checkDropValid(d, anchor) {
+    if (!d || !d.shape || !anchor) return { ok: false, conflicts: new Set(), reason: '' };
+    const unit = state.roster.find((u) => u.id === ui.wsUnit);
+    const plate = unit ? V.Circuit.plateOf(unit) : null;
+    const body = unit ? D().body(unit.bodyPreset) : null;
+    const blocked = new Set(plate && !plate.generated && body && body.blocked ? body.blocked.map(([x, y]) => x + ',' + y) : []);
+    const others = (ui.wsDraft || []).filter((p) => p.itemId !== d.id);
+    const L = V.Circuit.layout(state, others, plate && plate.terminals);
+    const used = new Set(L.cells.map((c) => c.x + ',' + c.y));
+
+    const conflicts = new Set();
+    let hitBlocked = false;
+    let hitOverlap = false;
+    let hitOutside = false;
+    d.shape.cells.forEach((c) => {
+      const ax = c.x + anchor.x;
+      const ay = c.y + anchor.y;
+      const k = ax + ',' + ay;
+      if (plate && !plate.cells.has(k)) {
+        conflicts.add(k);
+        if (!plate.generated && blocked.has(k)) hitBlocked = true;
+        else hitOutside = true;
+      } else if (!plate && (ax < 0 || ay < 0 || ax >= 4 || ay >= 4)) {
+        conflicts.add(k);
+        hitOutside = true;
+      } else if (used.has(k)) {
+        conflicts.add(k);
+        hitOverlap = true;
+      }
+    });
+    const reason = hitBlocked
+      ? '踩中屏蔽格'
+      : hitOverlap
+        ? '与其他构件重叠'
+        : hitOutside
+          ? (plate && plate.generated ? '不在板面上' : '超出板面')
+          : conflicts.size ? '不在板面上' : '';
+    return { ok: conflicts.size === 0, conflicts, reason };
+  }
+
+  /** 吸附预览：在板面上按构件真实形状与端口朝向画出半透明虚影，并区分合法/冲突格。 */
+  function showDropGhost(svg, shape, anchor, valid) {
     if (!svg) return;
     let g = svg.querySelector('.drop-ghost');
     if (!shape || !anchor) {
@@ -924,16 +1676,30 @@
     if (!g) {
       g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.setAttribute('class', 'drop-ghost');
+      g.setAttribute('pointer-events', 'none');
       svg.appendChild(g);
     }
     g.style.display = '';
     const grid = boardGrid(svg);
-    const html = shape.cells.map((c) => {
-      const x = grid.gx + (c.x + anchor.x) * grid.cell;
-      const y = grid.gy + (c.y + anchor.y) * grid.cell;
-      return `<rect class="drop-ghost-cell" x="${x + 2}" y="${y + 2}"
-        width="${grid.cell - 4}" height="${grid.cell - 4}" rx="2" fill="${shape.color}"/>`;
+    const conflicts = (valid && valid.conflicts) || new Set();
+    const cellsHtml = shape.cells.map((c) => {
+      const ax = c.x + anchor.x;
+      const ay = c.y + anchor.y;
+      const bad = conflicts.has(ax + ',' + ay);
+      const x = grid.gx + ax * grid.cell;
+      const y = grid.gy + ay * grid.cell;
+      return `<rect class="drop-ghost-cell ${bad ? 'bad' : 'ok'}" x="${x + 2}" y="${y + 2}"
+        width="${grid.cell - 4}" height="${grid.cell - 4}" rx="2" fill="${bad ? '#D36A65' : shape.color}"/>`;
     }).join('');
+    const dvec = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+    const portsHtml = (shape.ports || []).map((pt) => {
+      const [dx, dy] = dvec[pt.dir] || [0, 0];
+      const cx = grid.gx + (pt.cell[0] + anchor.x + 0.5) * grid.cell + dx * (grid.cell * 0.42);
+      const cy = grid.gy + (pt.cell[1] + anchor.y + 0.5) * grid.cell + dy * (grid.cell * 0.42);
+      const fill = pt.role === 'in' ? '#7FBBC8' : '#F2CF7E';
+      return `<circle class="drop-ghost-port-svg" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.6" fill="${fill}"/>`;
+    }).join('');
+    const html = cellsHtml + portsHtml;
     if (g.dataset.key !== html) {
       g.innerHTML = html;
       g.dataset.key = html;
@@ -960,7 +1726,7 @@
     return (rect.width / vb.width) * boardGrid(svg).cell;
   }
 
-  /** 跟着指针走的构件虚影：按真实格子数与配色拼出来 */
+  /** 跟着指针走的构件虚影：按真实格子数、端口方向与配色拼出来 */
   function buildFloatGhost(shape, cellPx, label) {
     const el = document.createElement('div');
     el.className = 'drag-ghost';
@@ -970,16 +1736,53 @@
       document.body.appendChild(el);
       return el;
     }
-    el.style.width = (shape.maxX - shape.minX + 1) * cellPx + 'px';
-    el.style.height = (shape.maxY - shape.minY + 1) * cellPx + 'px';
+    const gw = (shape.maxX - shape.minX + 1) * cellPx;
+    const gh = (shape.maxY - shape.minY + 1) * cellPx;
+    el.style.width = gw + 'px';
+    el.style.height = gh + 'px';
     shape.cells.forEach((c) => {
       const i = document.createElement('i');
+      i.dataset.cx = c.x;
+      i.dataset.cy = c.y;
       i.style.left = (c.x - shape.minX) * cellPx + 'px';
       i.style.top = (c.y - shape.minY) * cellPx + 'px';
       i.style.width = cellPx + 'px';
       i.style.height = cellPx + 'px';
       i.style.background = shape.color;
+      if (shape.edgeColor) i.style.borderColor = shape.edgeColor;
       el.appendChild(i);
+    });
+    if (shape.templateId && V.RuneArt && V.RuneArt.image) {
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('class', 'drag-ghost-rune');
+      svg.setAttribute('viewBox', `0 0 ${gw} ${gh}`);
+      svg.innerHTML = V.RuneArt.image(shape.templateId, {
+        x: 0, y: 0, cell: cellPx, rotation: shape.rot || 0, mirrorY: !!shape.mir,
+      });
+      el.appendChild(svg);
+    }
+    shape.cells.forEach((c) => {
+      const ov = document.createElement('b');
+      ov.className = 'drag-ghost-cell-ov';
+      ov.dataset.cx = c.x;
+      ov.dataset.cy = c.y;
+      ov.style.left = (c.x - shape.minX) * cellPx + 'px';
+      ov.style.top = (c.y - shape.minY) * cellPx + 'px';
+      ov.style.width = cellPx + 'px';
+      ov.style.height = cellPx + 'px';
+      el.appendChild(ov);
+    });
+    const dvec = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+    (shape.ports || []).forEach((pt) => {
+      const dot = document.createElement('b');
+      dot.className = 'drag-ghost-port ' + (pt.role === 'in' ? 'in' : 'out');
+      const [dx, dy] = dvec[pt.dir] || [0, 0];
+      const cx = (pt.cell[0] - shape.minX + 0.5 + dx * 0.44) * cellPx;
+      const cy = (pt.cell[1] - shape.minY + 0.5 + dy * 0.44) * cellPx;
+      dot.style.left = cx + 'px';
+      dot.style.top = cy + 'px';
+      el.appendChild(dot);
     });
     const name = document.createElement('span');
     name.className = 'drag-ghost-name';
@@ -989,25 +1792,131 @@
     return el;
   }
 
+  function updateDragVisuals(clientX, clientY) {
+    if (!drag) return;
+    const rawCell = cellFromPointRaw(drag.svg, clientX, clientY);
+    const hitCell = cellFromPoint(drag.svg, clientX, clientY);
+    const best = rawCell && drag.shape
+      ? bestDragAnchor(drag.id, drag.shape, rawCell, drag.grabDx, drag.grabDy)
+      : null;
+    /* 光标完全落在空洞上且周围也没有可吸贴位时，若从板内拖出则显示松手卸下 */
+    const anchor = best && (best.valid.ok || hitCell) ? best.anchor : null;
+    const valid = anchor ? best.valid : (best ? best.valid : null);
+    drag.anchor = anchor;
+    drag.valid = valid;
+
+    if (drag.ghost) {
+      const nameEl = drag.ghost.querySelector('.drag-ghost-name');
+      drag.ghost.classList.toggle('bad', !!(valid && !valid.ok));
+      drag.ghost.querySelectorAll('.drag-ghost-cell-ov').forEach((ov) => {
+        if (!anchor || !valid) { ov.classList.remove('bad'); return; }
+        const k = (Number(ov.dataset.cx) + anchor.x) + ',' + (Number(ov.dataset.cy) + anchor.y);
+        ov.classList.toggle('bad', valid.conflicts.has(k));
+      });
+      if (anchor && drag.shape && drag.cellPx) {
+        const p = boardPointToScreen(drag.svg, anchor.x + drag.shape.minX, anchor.y + drag.shape.minY);
+        if (p) drag.ghost.style.transform = `translate(${p.x}px, ${p.y}px)`;
+        drag.ghost.classList.add('snapped');
+        if (nameEl) nameEl.textContent = valid && !valid.ok ? `${drag.shape.name} · ${valid.reason}` : drag.shape.name;
+      } else if (drag.shape && drag.cellPx) {
+        const ox = (drag.grabDx - drag.shape.minX + 0.5) * drag.cellPx;
+        const oy = (drag.grabDy - drag.shape.minY + 0.5) * drag.cellPx;
+        drag.ghost.style.transform = `translate(${clientX - ox}px, ${clientY - oy}px)`;
+        drag.ghost.classList.remove('snapped');
+        const outside = drag.from === 'board' && !ui.wsLocked.includes(drag.id) && isWayOutsideBoard(drag.svg, clientX, clientY);
+        if (nameEl) nameEl.textContent = outside ? `${drag.shape.name} · 松手卸下` : drag.shape.name;
+      } else {
+        drag.ghost.style.transform = `translate(${clientX + 12}px, ${clientY + 12}px)`;
+      }
+    }
+    showDropGhost(drag.svg, drag.shape, anchor, valid);
+  }
+
+  function isWayOutsideBoard(svg, clientX, clientY) {
+    if (!svg) return false;
+    const r = svg.getBoundingClientRect();
+    return clientX < r.left - 18 || clientX > r.right + 18 || clientY < r.top - 18 || clientY > r.bottom + 18;
+  }
+
   function endDrag() {
     if (!drag) return;
     if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
     if (drag.group) drag.group.classList.remove('dragging');
-    showDropGhost(drag.svg, null, null);
+    showDropGhost(drag.svg, null, null, null);
     document.body.classList.remove('is-dragging');
-    if (drag.moved) suppressClick = true;
+    if (drag.moved) {
+      suppressClick = true;
+      /* 浏览器跨元素拖拽不一定触发 click；同帧后必须复位，避免吞掉用户下一次真实点击 */
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
     drag = null;
   }
 
+  function rotateInDrag(step) {
+    if (!drag || !drag.moved) return;
+    drag.rot = (drag.rot + (step === 3 ? 3 : 1)) % 4;
+    drag.shape = V.UI && V.UI.partShape ? V.UI.partShape(state, drag.id, drag.rot, drag.mir) : drag.shape;
+    if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+    drag.ghost = buildFloatGhost(drag.shape, drag.cellPx, drag.label);
+    updateDragVisuals(drag.lastX, drag.lastY);
+  }
+
+  function updateHoverGhost(clientX, clientY) {
+    const svg = document.querySelector('svg.board');
+    if (!svg) return;
+    if (!ui.wsPick) { showDropGhost(svg, null, null, null); return; }
+    const cell = cellFromPoint(svg, clientX, clientY);
+    if (!cell) { showDropGhost(svg, null, null, null); return; }
+    const placed = (ui.wsDraft || []).find((p) => p.itemId === ui.wsPick);
+    const rot = placed ? placed.rotation : ui.wsRot;
+    const mir = placed ? !!placed.mirrorY : !!ui.wsMirror;
+    const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, ui.wsPick, rot, mir) : null;
+    if (!shape) { showDropGhost(svg, null, null, null); return; }
+    /* 鼠标悬停在本件已占据的格子上时不重绘叠影 */
+    if (placed && shape.cells.some((c) => c.x + placed.x === cell.x && c.y + placed.y === cell.y)) {
+      showDropGhost(svg, null, null, null);
+      return;
+    }
+    showDropGhost(svg, shape, cell, checkDropValid({ id: ui.wsPick, shape }, cell));
+  }
+
+  let lastClick = { key: '', ts: 0 };
+
   function bind() {
     document.addEventListener('click', (e) => {
-      if (suppressClick) { suppressClick = false; return; }
+      /* 只吞掉拖拽落在板面上产生的那一次合成点击；
+         否则拖完再点「取消选中」之类的按钮会被白白吃掉一次 */
+      if (suppressClick) {
+        suppressClick = false;
+        const onBoard = e.target && e.target.closest && e.target.closest('svg.board');
+        if (onBoard) return;
+      }
       const el = findAction(e.target);
       if (!el) return;
       const act = el.dataset.act;
       const id = el.dataset.id;
-      if (act && act.startsWith('rule')) return; /* select 用 change */
-      if (el.tagName === 'SELECT') return;
+      if (el.tagName === 'SELECT') return; /* select 用 change，不阻断 rule 按钮 */
+
+      /* 整页 innerHTML 重绘会打断原生 dblclick；用短时双击识别实现可靠的快速装/卸 */
+      if ((ui.screen === 'workshop' || ui.screen === 'campNode') && id && (act === 'wsPick' || act === 'wsGrab')) {
+        const now = Date.now();
+        const key = (el.dataset.stash ? 'stash:' : 'board:') + id;
+        if (lastClick.key === key && now - lastClick.ts < 380) {
+          lastClick = { key: '', ts: 0 };
+          if (el.dataset.stash && !el.hasAttribute('disabled')) {
+            dispatch({ type: 'wsQuickPlace', id });
+            return;
+          }
+          if (!el.dataset.stash && !ui.wsLocked.includes(id)) {
+            dispatch({ type: 'wsRemove', id });
+            return;
+          }
+        }
+        lastClick = { key, ts: now };
+      } else {
+        lastClick = { key: '', ts: 0 };
+      }
+
       const action = { type: act, id };
       Object.keys(el.dataset).forEach((k) => {
         if (k === 'act' || k === 'id') return;
@@ -1016,18 +1925,96 @@
       dispatch(action, el);
     });
 
+    /* 右键：拖曳中旋手中构件 / 板上构件快转 / 已选构件在板面上就地旋转 */
+    document.addEventListener('contextmenu', (e) => {
+      if (ui.screen !== 'workshop' && ui.screen !== 'campNode') return;
+      if (drag && drag.moved) {
+        e.preventDefault();
+        rotateInDrag(1);
+        return;
+      }
+      const group = e.target && e.target.closest && e.target.closest('[data-act="wsGrab"]');
+      if (group) {
+        e.preventDefault();
+        const id = group.dataset.id;
+        if (!id) return;
+        ui.wsPick = id;
+        dispatch({ type: 'wsRotate' });
+        return;
+      }
+      if (ui.wsPick && e.target && e.target.closest && e.target.closest('svg.board')) {
+        e.preventDefault();
+        dispatch({ type: 'wsRotate' });
+        updateHoverGhost(e.clientX, e.clientY);
+      }
+    });
+
+    /* 滚轮：指针在板面上且已选或正拖拽构件时直接旋转 */
+    document.addEventListener('wheel', (e) => {
+      if (ui.screen !== 'workshop' && ui.screen !== 'campNode') return;
+      if (drag && drag.moved) {
+        e.preventDefault();
+        rotateInDrag(e.deltaY > 0 ? 1 : 3);
+        return;
+      }
+      if (!ui.wsPick || !e.target || !e.target.closest || !e.target.closest('svg.board')) return;
+      e.preventDefault();
+      dispatch({ type: 'wsRotate', step: e.deltaY > 0 ? '1' : '3' });
+      updateHoverGhost(e.clientX, e.clientY);
+    }, { passive: false });
+
     /* ---- 拖拽装配：从构件库拖到板面，或拖动板面上已有的构件 ---- */
     document.addEventListener('pointerdown', (e) => {
       if (ui.screen !== 'workshop' && ui.screen !== 'campNode') return;
       if (e.button != null && e.button !== 0) return;
       const t = e.target;
-      if (!t || !t.closest) return;
+      if (!t || !t.closest || t.closest('[data-act="wsRemove"]')) return;
+      const msGrab = t.closest('[data-act="wsMsGrab"]');
       const group = t.closest('[data-act="wsGrab"]');
-      const stash = t.closest('.part-item[data-act="wsPick"]');
-      if (!group && !stash) return;
+      const stash = t.closest('.part-item[data-stash="1"]');
+      if (!msGrab && !group && !stash) return;
       if (stash && stash.hasAttribute('disabled')) return;
       const svg = document.querySelector('svg.board');
       if (!svg) return;
+
+      /* 功法膜：和构件同一条拖拽通道，只是落点写回 wsMsOx/Oy */
+      if (msGrab) {
+        const raw = (svg.dataset.msCells || '').split(';').filter(Boolean);
+        if (!raw.length) return;
+        const cells = raw.map((k) => k.split(',').map(Number));
+        const ox = Number(svg.dataset.msOx);
+        const oy = Number(svg.dataset.msOy);
+        const cell = cellFromPoint(svg, e.clientX, e.clientY);
+        drag = {
+          kind: 'ms',
+          id: 'ms',
+          svg,
+          cells,
+          grabDx: cell ? cell.x - (Number.isFinite(ox) ? ox : 0) : 0,
+          grabDy: cell ? cell.y - (Number.isFinite(oy) ? oy : 0) : 0,
+          x0: e.clientX,
+          y0: e.clientY,
+          moved: false,
+          ghost: null,
+          shape: (function () {
+            const xs = cells.map((c) => c[0]);
+            const ys = cells.map((c) => c[1]);
+            const minX = Math.min.apply(null, xs);
+            const minY = Math.min.apply(null, ys);
+            return {
+              name: '功法膜',
+              color: '#7E6BB8',
+              cells: cells.map((c) => ({ x: c[0] - minX, y: c[1] - minY })),
+              minX, minY,
+              maxX: Math.max.apply(null, xs) - minX,
+              maxY: Math.max.apply(null, ys) - minY,
+            };
+          })(),
+          label: '功法膜',
+        };
+        return;
+      }
+
       const src = group || stash;
       const id = src.dataset.id;
       if (!id) return;
@@ -1044,18 +2031,22 @@
       }
       const nameEl = group ? group.querySelector('.part-label') : stash.querySelector('.part-name');
       const placed = (ui.wsDraft || []).find((p) => p.itemId === id);
-      const shape = V.UI && V.UI.partShape
-        ? V.UI.partShape(state, id, placed ? placed.rotation : ui.wsRot, placed ? placed.mirrorY : ui.wsMirror)
-        : null;
+      const rot = placed ? placed.rotation : (ui.wsPick === id ? ui.wsRot : 0);
+      const mir = placed ? !!placed.mirrorY : (ui.wsPick === id ? !!ui.wsMirror : false);
+      const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, id, rot, mir) : null;
       drag = {
         id,
         from: group ? 'board' : 'stash',
         svg,
         group,
+        rot,
+        mir,
         grabDx,
         grabDy,
         x0: e.clientX,
         y0: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
         moved: false,
         ghost: null,
         shape,
@@ -1065,7 +2056,14 @@
     });
 
     document.addEventListener('pointermove', (e) => {
-      if (!drag) return;
+      if (!drag) {
+        if ((ui.screen === 'workshop' || ui.screen === 'campNode') && ui.wsPick) {
+          updateHoverGhost(e.clientX, e.clientY);
+        }
+        return;
+      }
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
       if (!drag.moved) {
         if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) return;
         drag.moved = true;
@@ -1074,42 +2072,43 @@
         drag.ghost = buildFloatGhost(drag.shape, drag.cellPx, drag.label);
       }
       e.preventDefault();
-      const cell = cellFromPoint(drag.svg, e.clientX, e.clientY);
-      const anchor = cell && drag.shape
-        ? clampAnchor(drag.shape, { x: cell.x - drag.grabDx, y: cell.y - drag.grabDy })
-        : null;
-      drag.anchor = anchor;
-
-      if (drag.ghost) {
-        if (anchor && drag.shape && drag.cellPx) {
-          /* 进了板面就吸附到格子上：看到的就是落下去的样子 */
-          const p = boardPointToScreen(drag.svg, anchor.x + drag.shape.minX, anchor.y + drag.shape.minY);
-          if (p) drag.ghost.style.transform = `translate(${p.x}px, ${p.y}px)`;
-          drag.ghost.classList.add('snapped');
-        } else if (drag.shape && drag.cellPx) {
-          /* 板面外：跟手，抓着的那一格停在指针下 */
-          const ox = (drag.grabDx - drag.shape.minX + 0.5) * drag.cellPx;
-          const oy = (drag.grabDy - drag.shape.minY + 0.5) * drag.cellPx;
-          drag.ghost.style.transform = `translate(${e.clientX - ox}px, ${e.clientY - oy}px)`;
-          drag.ghost.classList.remove('snapped');
-        } else {
-          drag.ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 12}px)`;
-        }
-      }
-      showDropGhost(drag.svg, drag.shape, anchor);
+      updateDragVisuals(e.clientX, e.clientY);
     }, { passive: false });
 
     document.addEventListener('pointerup', (e) => {
       if (!drag) return;
       const d = drag;
-      const target = d.svg ? cellFromPoint(d.svg, e.clientX, e.clientY) : null;
+      const rawTarget = d.svg ? cellFromPointRaw(d.svg, e.clientX, e.clientY) : null;
+      const best = rawTarget && d.shape
+        ? bestDragAnchor(d.id, d.shape, rawTarget, d.grabDx, d.grabDy)
+        : null;
       const moved = d.moved;
-      const anchor = d.anchor || (target && d.shape
-        ? clampAnchor(d.shape, { x: target.x - d.grabDx, y: target.y - d.grabDy })
-        : null);
+      const anchor = d.anchor || (best && best.anchor) || null;
+      const valid = d.valid || (best && best.valid) || null;
+      const dropOutside = moved && d.from === 'board' && !ui.wsLocked.includes(d.id)
+        && (!valid || !valid.ok) && isWayOutsideBoard(d.svg, e.clientX, e.clientY);
       endDrag();
-      if (!moved || !anchor) return;
-      dispatch({ type: 'wsDrop', id: d.id, cell: anchor.x + ',' + anchor.y });
+      if (!moved) return;
+
+      /* 功法膜：吸附到格子后写回 UI 状态，保存时再落盘 */
+      if (d.kind === 'ms') {
+        const raw = rawTarget || (d.svg ? cellFromPoint(d.svg, e.clientX, e.clientY) : null);
+        if (!raw) return;
+        const snapped = clampAnchor(d.shape, { x: raw.x - d.grabDx, y: raw.y - d.grabDy });
+        dispatch({ type: 'wsMsMove', ox: snapped.x, oy: snapped.y });
+        return;
+      }
+
+      if (dropOutside) {
+        dispatch({ type: 'wsRemove', id: d.id });
+        return;
+      }
+      if (!anchor) return;
+      if (!valid || !valid.ok) {
+        toast('无法放置：' + (valid && valid.reason ? valid.reason : '不在板面上'));
+        return;
+      }
+      dispatch({ type: 'wsDrop', id: d.id, cell: anchor.x + ',' + anchor.y, rot: d.rot, mir: d.mir });
     });
 
     document.addEventListener('pointercancel', () => { endDrag(); });
@@ -1123,13 +2122,70 @@
     });
 
     document.addEventListener('keydown', (e) => {
+      const tag = document.activeElement && document.activeElement.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
       if (ui.screen === 'battle' && e.code === 'Space') {
         e.preventDefault();
         dispatch({ type: 'cycleSpeed' });
+        return;
+      }
+      if (e.code === 'Escape' && ui.modal) {
+        ui.modal = null;
+        renderModal();
+        return;
       }
       if (e.code === 'Escape' && ui.screen === 'rules') {
-        ui.screen = 'team';
-        render();
+        dispatch({ type: 'ruleCancel' });
+        return;
+      }
+      if (ui.screen === 'workshop' || ui.screen === 'campNode') {
+        const k = (e.key || '').toLowerCase();
+        if (e.code === 'Escape') {
+          if (drag) { endDrag(); return; }
+          if (ui.wsPick) { dispatch({ type: 'wsCancelPick' }); return; }
+        }
+        if (drag && drag.moved && (k === 'r' || k === 'f')) {
+          e.preventDefault();
+          if (k === 'r') rotateInDrag(1);
+          else {
+            drag.mir = !drag.mir;
+            drag.shape = V.UI && V.UI.partShape ? V.UI.partShape(state, drag.id, drag.rot, drag.mir) : drag.shape;
+            if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+            drag.ghost = buildFloatGhost(drag.shape, drag.cellPx, drag.label);
+            updateDragVisuals(drag.lastX, drag.lastY);
+          }
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && k === 'z') {
+          e.preventDefault();
+          dispatch({ type: e.shiftKey ? 'wsRedo' : 'wsUndo' });
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && k === 'y') {
+          e.preventDefault();
+          dispatch({ type: 'wsRedo' });
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && k === 's' && ui.wsMode !== 'inscribe') {
+          e.preventDefault();
+          dispatch({ type: 'wsSave' });
+          return;
+        }
+        if (k === 'r' && ui.wsPick) {
+          e.preventDefault();
+          dispatch({ type: 'wsRotate' });
+          return;
+        }
+        if (k === 'f' && ui.wsPick) {
+          e.preventDefault();
+          dispatch({ type: 'wsFlip' });
+          return;
+        }
+        if ((e.code === 'Delete' || e.code === 'Backspace') && ui.wsPick && (ui.wsDraft || []).some((p) => p.itemId === ui.wsPick)) {
+          e.preventDefault();
+          dispatch({ type: 'wsRemove', id: ui.wsPick });
+        }
       }
     });
   }
@@ -1199,6 +2255,7 @@
     get state() { return state; },
     get ui() { return ui; },
     dispatch,
+    playSfx,
     render,
     boot,
     /** 测试与调试用：直接替换状态并重画。 */

@@ -67,6 +67,81 @@
   }
 
   /**
+   * 一个单位实际能放构件的板面：{cells:Set<'x,y'>, terminals, size, generated}
+   * - 底盘带 plate 配置 → 用 PlateGen 按 seed 生成异形板面，终端由板面派生；
+   * - 否则退回旧的 4x4 网格（老存档 / 测试用）。
+   * 这是唯一决定「哪一格能放」的地方，别处不要再写死 4。
+   */
+  function plateOf(unit) {
+    const body = D().body(unit && unit.bodyPreset);
+    /* 显式覆写优先：测试与老存档用固定几何 */
+    if (unit && unit.plateOverride && Array.isArray(unit.plateOverride.cells)) {
+      const cells = new Set(unit.plateOverride.cells.map((c) => c[0] + ',' + c[1]));
+      return {
+        cells,
+        terminals: unit.plateOverride.terminals || D().TERMINALS,
+        cellsList: unit.plateOverride.cells,
+        size: D().DESIGN.gridSize,
+        generated: false,
+      };
+    }
+    const conf = body && body.plate;
+    if (conf && V.PlateGen) {
+      const gen = V.PlateGen.generate({
+        seed: unit.plateSeed == null ? 1 : unit.plateSeed,
+        archetype: conf.archetype,
+        target: conf.target,
+      });
+      /* 能量经济住在功法里：四个具名点由装备的功法给，板面不再决定。
+         没有功法 → 没有终端 → 板面只是一块带槽位的金属。 */
+      const terminals = {};
+      if (unit.manuscript && V.Manuscript) {
+        const oriented = V.Manuscript.orient(
+          V.Manuscript.normalize(unit.manuscript),
+          unit.manuscript.rotation || 0,
+          !!unit.manuscript.mirrorY,
+        );
+        const ox = unit.manuscript.x || 0;
+        const oy = unit.manuscript.y || 0;
+        const LABEL = { clock: '时钟', damage: '受击', main: '攻势', support: '守势' };
+        Object.keys((oriented && oriented.io) || {}).forEach((id) => {
+          const p = oriented.io[id];
+          const isIn = id === 'clock' || id === 'damage';
+          terminals[id] = {
+            id,
+            cell: [p.cell[0] + ox, p.cell[1] + oy],
+            dir: p.dir,
+            role: isIn ? 'in' : 'out',
+            kind: isIn ? 'input' : 'output',
+            name: LABEL[id] || id,
+            fromManuscript: true,
+          };
+        });
+      }
+      return {
+        cells: new Set(gen.cells.map((c) => c[0] + ',' + c[1])),
+        terminals,
+        cellsList: gen.cells,
+        size: V.PlateGen.SIZE,
+        generated: true,
+        manuscript: !!unit.manuscript,
+      };
+    }
+    const size = D().DESIGN.gridSize;
+    const blocked = blockedSet(body || {});
+    const cells = new Set();
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (!blocked.has(x + ',' + y)) cells.add(x + ',' + y);
+      }
+    }
+    return {
+      cells, cellsList: [...cells].map((k) => k.split(',').map(Number)),
+      terminals: D().TERMINALS, size, generated: false,
+    };
+  }
+
+  /**
    * preview(st, unitId, placements) -> {ok, errors, occupied, load, graph, reachableOutputs}
    * 同一函数供 UI 预览与真实保存使用；非法时 state 不变（本函数不写 state）。
    */
@@ -75,8 +150,24 @@
     const unit = st.roster.find((u) => u.id === unitId);
     if (!unit) return { ok: false, errors: ['找不到角色'], occupied: [], load: 0, reachableOutputs: [] };
     const body = D().body(unit.bodyPreset);
-    const size = D().DESIGN.gridSize;
-    const blocked = blockedSet(body);
+    const plate = plateOf(unit);
+
+    /* 功法自己占格：构件不许压上去 */
+    const msCells = new Set();
+    if (plate.generated && unit.manuscript && V.Manuscript) {
+      const or = V.Manuscript.orient(
+        V.Manuscript.normalize(unit.manuscript),
+        unit.manuscript.rotation || 0,
+        !!unit.manuscript.mirrorY,
+      );
+      const ox = unit.manuscript.x || 0;
+      const oy = unit.manuscript.y || 0;
+      if (V.Manuscript.fits(or, plate.cellsList, ox, oy)) {
+        or.cells.forEach((c) => msCells.add((c[0] + ox) + ',' + (c[1] + oy)));
+      } else {
+        errors.push(`功法「${unit.manuscript.name || unit.manuscript.id}」没有完整落在板面上`);
+      }
+    }
 
     const list = placements || [];
     const seenItems = new Set();
@@ -104,13 +195,20 @@
       }));
 
       cells.forEach((c) => {
-        if (c.x < 0 || c.y < 0 || c.x >= size || c.y >= size) {
+        const key = c.x + ',' + c.y;
+        if (!plate.generated && (c.x < 0 || c.y < 0 || c.x >= plate.size || c.y >= plate.size)) {
           errors.push(`${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 越界`);
           return;
         }
-        const key = c.x + ',' + c.y;
-        if (blocked.has(key)) {
-          errors.push(`${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 是屏蔽格`);
+        if (!plate.cells.has(key)) {
+          /* 旧网格报「屏蔽格」，异形板面报「不在板面上」，措辞按来源区分 */
+          errors.push(plate.generated
+            ? `${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 不在板面上`
+            : `${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 是屏蔽格`);
+          return;
+        }
+        if (msCells.has(key)) {
+          errors.push(`${tpl.name}（${item.id}）压在了功法上（${c.x},${c.y}）`);
         }
         if (cellOwner.has(key)) {
           const other = cellOwner.get(key);
@@ -125,17 +223,20 @@
       built.push({ itemId: item.id, templateId: item.templateId, tpl, x: p.x, y: p.y, rotation: p.rotation || 0, mirrorY: !!p.mirrorY, cells, ports });
     });
 
-    if (load > body.loadCap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${body.loadCap}`);
-
-    /* 主手本身不计负荷，但必须存在且是主手 */
-    const weapon = unit.weaponId ? st.itemsById[unit.weaponId] : null;
-    if (!weapon) errors.push('没有装备主手');
+    /* 功法也吃负荷：多修一套就少放构件，这是唯一的平衡阀 */
+    if (unit.manuscript) {
+      const msLoad = Number(unit.manuscript.load) || 0;
+      load += msLoad;
+    }
+    /* 异形板面格数多，负荷上限单独给；经典模式沿用老值 */
+    const cap = (plate.generated && body.plate && body.plate.loadCap) ? body.plate.loadCap : body.loadCap;
+    if (load > cap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${cap}`);
 
     if (errors.length) {
       return { ok: false, errors, occupied, load, reachableOutputs: [], graph: null };
     }
 
-    const graph = buildGraph(st, built);
+    const graph = buildGraph(st, built, plate.terminals);
     if (!graph.ok) {
       return { ok: false, errors: graph.errors, occupied, load, reachableOutputs: [], graph: null };
     }
@@ -155,13 +256,12 @@
    * 构造有向图：极 → 构件入口 → 内部 links → 出口 → 相邻构件入口 … → 输出极。
    * 节点使用 placementId(即 itemId)+portId，保证可序列化与稳定排序。
    */
-  function buildGraph(st, built) {
+  function buildGraph(st, built, terminalSet) {
     const errors = [];
     const nodes = new Map(); // key -> {key, kind, itemId, portId?, dir, cell, role}
     const edges = []; // {from, to}
 
-    D().DESIGN && null;
-    const terminals = D().TERMINALS;
+    const terminals = terminalSet || D().TERMINALS;
 
     Object.values(terminals).forEach((t) => {
       nodes.set('T:' + t.id, {
@@ -307,11 +407,11 @@
    * layout(st, placements)：容错版布局，供 UI 画格子/端口/连线。
    * 不做合法性判断（非法摆放也照画），权威校验仍走 preview。
    */
-  function layout(st, placements) {
+  function layout(st, placements, terminalsIn) {
     const cells = [];
     const ports = [];
     const edges = [];
-    const terminals = D().TERMINALS;
+    const terminals = terminalsIn || D().TERMINALS;
     const built = [];
 
     (placements || []).forEach((p) => {
@@ -403,17 +503,74 @@
   function saveLoadout(st, unitId, placements) {
     const unit = st.roster.find((u) => u.id === unitId);
     if (!unit) return { ok: false, errors: ['找不到角色'] };
+    /* 只校验几何与负荷：不连通也能存盘。
+       连通与否是玩法结果，不是保存条件——半成品板面必须能随时存下来。 */
     const p = preview(st, unitId, placements);
     if (!p.ok) return { ok: false, errors: p.errors };
-    if (!p.reachableOutputs.length) {
-      return { ok: false, errors: ['没有任何输出连通：至少要让 clock 或 damage 接到主手或保护'] };
-    }
     const next = V.State.clone(st);
     const u2 = next.roster.find((u) => u.id === unitId);
     u2.board.placements = (placements || []).map((x) => ({
       itemId: x.itemId, x: x.x, y: x.y, rotation: x.rotation || 0, mirrorY: !!x.mirrorY,
     }));
     return { ok: true, state: next, events: [], load: p.load, reachableOutputs: p.reachableOutputs };
+  }
+
+  /**
+   * 功法状态：覆盖率台阶 + 是否贯通 → 战斗要用的效果。
+   * 覆盖率给「量」（乘算、起手能量），贯通只给额外乘算，不解锁机制——
+   * 这样「只填满不管流向」也玩得下去，懂路由的人多吃一档。
+   */
+  function manuscriptState(st, unitId, placementsIn) {
+    const EMPTY = { mainMult: 1, supportMult: 1, startEnergy: 0 };
+    const unit = (st.roster || []).find((u) => u.id === unitId);
+    if (!unit || !unit.manuscript || !V.Manuscript) {
+      return { ok: false, reason: '没有功法', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
+    }
+    const plate = plateOf(unit);
+    const oriented = V.Manuscript.orient(
+      V.Manuscript.normalize(unit.manuscript),
+      unit.manuscript.rotation || 0,
+      !!unit.manuscript.mirrorY,
+    );
+    const ox = unit.manuscript.x || 0;
+    const oy = unit.manuscript.y || 0;
+    if (!V.Manuscript.fits(oriented, plate.cellsList, ox, oy)) {
+      return { ok: false, reason: '功法没落在板面上', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
+    }
+    const lay = layout(st, placementsIn || unit.board.placements || [], plate.terminals);
+    const idx = V.Manuscript.pieceIndex(lay);
+    const cov = V.Manuscript.coverage(oriented, ox, oy, idx);
+    const rt = V.Manuscript.route(oriented, ox, oy, idx);
+
+    /* 构件增益：只要它压到一格「已对齐」的功法格，就计入 */
+    const alignedSet = new Set(cov.alignedCells || []);
+    const boost = { regen: 0, max: 0, skillCostCut: 0, attackMult: 0, skillMult: 0, lowHpRegen: 0 };
+    ((lay && lay.built) || []).forEach((b) => {
+      const hit = (b.abs || []).some((c) => alignedSet.has(c.x + ',' + c.y));
+      if (!hit) return;
+      const bo = (b.tpl && b.tpl.boost) || {};
+      Object.keys(bo).forEach((k) => {
+        if (typeof bo[k] === 'number') boost[k] = (boost[k] || 0) + bo[k];
+      });
+    });
+
+    const eff = Object.assign({ mainMult: 1, supportMult: 1, startEnergy: 0 }, (cov.tier && cov.tier.effect) || {});
+    eff.boost = boost;
+    if (rt.ok) {
+      eff.mainMult = Math.round(eff.mainMult * 1.1 * 100) / 100;
+      eff.supportMult = Math.round(eff.supportMult * 1.1 * 100) / 100;
+    }
+    return {
+      ok: true,
+      spec: unit.manuscript,
+      pct: cov.pct,
+      aligned: cov.aligned,
+      total: cov.total,
+      tierId: cov.tier ? cov.tier.id : null,
+      tierName: cov.tier ? cov.tier.name : '',
+      routed: rt.ok,
+      effects: eff,
+    };
   }
 
   /* ------------------------------ 能量路由 ------------------------------ */
@@ -614,6 +771,7 @@
   }
 
   V.Circuit = {
+    plateOf, manuscriptState,
     opposite, rotateDir, flipNS, transformTemplate, preview, compile, saveLoadout, layout,
     buildGraph, route, emptyRuntime, pulse, token, outputTokens,
     hasSurge, hasEmber, consumeOutput, refund, portKey,

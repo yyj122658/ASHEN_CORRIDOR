@@ -8,6 +8,18 @@
   /* ------------------------------ 全局参数 ------------------------------ */
   const DESIGN = {
     gridSize: 4,
+    /* 时间轴：一步 0.24s，战斗按秒推进 */
+    stepSeconds: 0.24,
+    autoAttack: { interval: 0.5, mult: 0.55 },
+    energyBase: { regen: 1.0, max: 20 },
+    energyPerHit: 0,
+    baseSpeed: 10,
+    /* 功法稀有度直接抬角色面板：这是除乘算之外唯一的成长维度 */
+    rarityStat: { atk: 0.06, hp: 0.07, def: 0.04 },
+    /* 敌人仍走旧的行动逻辑，伤害按平A 的新量级统一缩放，避免一边倒 */
+    enemyDamageScale: 0.13,
+    /* 我方平A 归一化后，敌人血池要相应拉长，否则一场只有 10 秒 */
+    enemyHpScale: 2.6,
     baseHit: 0.94,
     baseCrit: 0.10,
     baseDodge: 0.05,
@@ -34,7 +46,7 @@
     emergency: { stress: 10, keepRatio: 0.5 },
     defeat: { stress: 20 },
     recruitCost: { min: 55, max: 80 },
-    scaling: { hpPerFloor: 0.20, atkPerFloor: 0.12, defPerFloor: 0.10, minionHpMult: 0.72, bossMinionHpMult: 0.40 },
+    scaling: { hpPerFloor: 0.15, atkPerFloor: 0.09, defPerFloor: 0.06, minionHpMult: 0.72, bossMinionHpMult: 0.40 },
     floorRecovery: 0.12,
   };
 
@@ -45,18 +57,22 @@
       id: 'sturdy', name: '厚铸躯壳',
       hp: 160, atk: 28, def: 18, spd: 8,
       loadCap: 8, blocked: [[2, 3], [3, 3]],
+      /* 板面：由 seed 生成的异形金属，格数与形状解耦 */
+      plate: { archetype: 'full', target: 28, loadCap: 16 },
       desc: '厚甲慢步。能扛住贯穿，但上手慢。',
     },
     agile: {
       id: 'agile', name: '轻量骨架',
       hp: 120, atk: 28, def: 8, spd: 14,
       loadCap: 6, blocked: [[0, 0], [2, 3]],
+      plate: { archetype: 'bar', target: 22, loadCap: 13 },
       desc: '出手快、皮薄。能量周转快，容错低。',
     },
     conduit: {
       id: 'conduit', name: '导流腔体',
       hp: 140, atk: 28, def: 12, spd: 10,
       loadCap: 7, blocked: [[0, 0], [3, 3]],
+      plate: { archetype: 'square', target: 28, loadCap: 15 },
       desc: '居中。屏蔽格偏角，两条基础线路都能过。',
     },
   };
@@ -137,6 +153,7 @@
         { id: 'out', cell: [1, 0], dir: 'E', role: 'out' },
       ],
       links: [['in', 'out']],
+      boost: { regen: 0.10 },
       desc: '1 负荷，直通。',
     },
     elbow: {
@@ -147,6 +164,7 @@
         { id: 'out', cell: [1, 1], dir: 'E', role: 'out' },
       ],
       links: [['in', 'out']],
+      boost: { regen: 0.04 },
       desc: '1 负荷，转向。',
     },
     splitter: {
@@ -160,6 +178,7 @@
       ],
       links: [['in', 'outA'], ['in', 'outB']],
       split: ['outA', 'outB'],
+      boost: { regen: 0.06, skillCostCut: 1 },
       desc: '2 负荷。输入轮流分给两个出口，2 单位分成 1+1，绝不复制。',
     },
     capacitor: {
@@ -171,6 +190,7 @@
       ],
       links: [['in', 'out']],
       capacitor: true,
+      boost: { regen: -0.20, skillMult: 0.25 },
       desc: '2 负荷。积满 4 单位后一次性发出 4 单位（带 surge）。',
     },
     threshold: {
@@ -182,6 +202,7 @@
       ],
       links: [['in', 'out']],
       gate: { hpBelow: 0.5 },
+      boost: { lowHpRegen: 0.50 },
       desc: '1 负荷。生命低于 50% 才导通；未满足时本次能量消散。',
     },
     ember: {
@@ -193,6 +214,7 @@
       ],
       links: [['in', 'out']],
       ember: true,
+      boost: { attackMult: 0.10 },
       desc: '2 负荷。流经的能量附 ember，主手命中附 2 回合灼烧。',
     },
   };
@@ -392,6 +414,215 @@
     boss: { id: 'boss', name: '回廊尽头', risk: 'deadly', icon: 'skull', artId: 'node.boss', desc: '门后面有东西。' },
   };
 
+  /* ------------------------------ 功法谱 ------------------------------ */
+  /* 功法是压在生命金属上的「管道」：自己占格、自带纹路要求与出入口。
+     有功法才谈得上能量路由；没有功法，板面只是一块带槽位的金属。
+     cells/veins/entry/exits 与 src/veteran/manuscript.js 的判定口径一致。 */
+  const MANUSCRIPTS = {
+    /* 一阶：微功法，占地 2 格、负荷 1，任何板面都塞得下。只有攻势，没有守势 */
+    spark: {
+      id: 'spark', name: '星火', rarity: 1, load: 1,
+      desc: '最短的一门功课：平A 快一点，只喂得出一条攻势。',
+      cells: [[0, 0], [1, 0]],
+      veins: { '0,0': ['W'], '1,0': ['E'] },
+      io: { clock: { cell: [0, 0], dir: 'W' }, main: { cell: [1, 0], dir: 'E' } },
+      entry: [0, 0], exits: [[1, 0]],
+      attack: { intervalScale: 0.85, mult: 1.0, extraHits: 0 },
+      energy: { regen: 1.0, max: 16 },
+      positions: [0, 1],
+      skills: [],
+      tiers: [
+        { at: 50, id: 't1', name: '一阶 · 起手', effect: { mainMult: 1.06 } },
+        { at: 100, id: 't2', name: '二阶 · 顺手', effect: { mainMult: 1.14, startEnergy: 1 } },
+      ],
+    },
+
+    /* 二阶：第一个无条件技能 */
+    corridor5: {
+      id: 'corridor5', name: '直贯五脉', rarity: 2, load: 2,
+      desc: '窄型五格拓片。招式不挑时机，攒够能量就能放。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [3, 1]],
+      veins: { '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['W'], '3,1': ['E'] },
+      entry: [0, 0], exits: [[3, 1]],
+      io: {
+        clock: { cell: [0, 0], dir: 'W' },
+        damage: { cell: [2, 0], dir: 'W' },
+        main: { cell: [3, 1], dir: 'E' },
+        support: { cell: [3, 0], dir: 'W' },
+      },
+      attack: { intervalScale: 1.0, mult: 1.05, extraHits: 0 },
+      energy: { regen: 1.0, max: 20 },
+      positions: [0, 1, 2],
+      skills: [{
+        id: 'pierce', name: '一线穿心', cost: 6, castTime: 0.6, cooldown: 4,
+        cond: {}, target: 'frontFoe', effect: { mult: 1.8, pierce: 2 },
+      }],
+      tiers: [
+        { at: 40, id: 't1', name: '一阶 · 初鸣', effect: { mainMult: 1.08 } },
+        { at: 80, id: 't2', name: '二阶 · 共振', effect: { mainMult: 1.16, startEnergy: 1 } },
+        { at: 100, id: 't3', name: '三阶 · 贯通', effect: { mainMult: 1.24, startEnergy: 1 } },
+      ],
+    },
+
+    /* 三阶：技能带条件 */
+    ember12: {
+      id: 'ember12', name: '余烬十二脉', rarity: 3, load: 3,
+      desc: '4×3 古老回流拓片。招式要等纹路贯通才出手。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [3, 2]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
+        '0,1': ['W'], '1,1': ['E'], '2,1': ['W'], '3,1': ['E'],
+        '0,2': ['W'], '1,2': ['E'], '2,2': ['W'], '3,2': ['E'],
+      },
+      entry: [0, 0], exits: [[3, 2]],
+      io: {
+        clock: { cell: [0, 1], dir: 'W' },
+        damage: { cell: [0, 2], dir: 'W' },
+        main: { cell: [3, 0], dir: 'E' },
+        support: { cell: [3, 2], dir: 'E' },
+      },
+      attack: { intervalScale: 1.0, mult: 1.0, extraHits: 0 },
+      energy: { regen: 1.15, max: 22 },
+      positions: [0, 1, 2, 3],
+      skills: [{
+        id: 'emberBurst', name: '余烬回响', cost: 10, castTime: 0.7, cooldown: 6,
+        cond: { routed: true }, target: 'frontFoe',
+        effect: { mult: 2.0, dot: { turns: 3, dmgMult: 0.25 }, shield: 0.22 },
+      }],
+      tiers: [
+        { at: 40, id: 't1', name: '一阶 · 初鸣', effect: { mainMult: 1.10 } },
+        { at: 75, id: 't2', name: '二阶 · 共振', effect: { mainMult: 1.18, startEnergy: 1 } },
+        { at: 100, id: 't3', name: '三阶 · 圆满', effect: { mainMult: 1.26, startEnergy: 1, supportMult: 1.2 } },
+      ],
+    },
+
+    /* 四阶：改写能量来源 */
+    wide14: {
+      id: 'wide14', name: '重铸阔卷', rarity: 4, load: 4,
+      desc: '5×3 重型拓片。挨打也在回气，越被围越凶。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [4, 2]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'], '4,0': ['W'],
+        '0,1': ['E'], '1,1': ['W'], '2,1': ['E'], '3,1': ['W'], '4,1': ['E'],
+        '1,2': ['W'], '2,2': ['E'], '3,2': ['W'], '4,2': ['E'],
+      },
+      entry: [0, 0], exits: [[4, 2]],
+      io: {
+        clock: { cell: [0, 0], dir: 'W' },
+        damage: { cell: [0, 1], dir: 'E' },
+        main: { cell: [4, 0], dir: 'W' },
+        support: { cell: [4, 1], dir: 'E' },
+      },
+      attack: { intervalScale: 1.1, mult: 1.15, extraHits: 0 },
+      energy: { regen: 0.9, max: 26, onHit: 0.6 },
+      positions: [0, 1],
+      skills: [{
+        id: 'quake', name: '重铸震击', cost: 12, castTime: 0.8, cooldown: 7,
+        cond: { foeHpBelow: 0.6 }, target: 'frontFoe', effect: { mult: 2.4, splash: 0.4, shield: 0.18 },
+      }],
+      tiers: [
+        { at: 35, id: 't1', name: '一阶 · 余温', effect: { mainMult: 1.12 } },
+        { at: 70, id: 't2', name: '二阶 · 灼脉', effect: { mainMult: 1.22, supportMult: 1.15 } },
+        { at: 100, id: 't3', name: '三阶 · 圆满', effect: { mainMult: 1.34, startEnergy: 2, supportMult: 1.3 } },
+      ],
+    },
+
+    /* 五阶：技能改写平A */
+    flurry: {
+      id: 'flurry', name: '连刺', rarity: 5, load: 3,
+      desc: '六格密集拓片。放完招式后一段时间，平A 多打一下。',
+      cells: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'],
+        '0,1': ['E'], '1,1': ['W'], '2,1': ['E'],
+      },
+      entry: [0, 0], exits: [[2, 1]],
+      io: {
+        clock: { cell: [0, 0], dir: 'W' },
+        damage: { cell: [0, 1], dir: 'E' },
+        main: { cell: [2, 1], dir: 'E' },
+        support: { cell: [2, 0], dir: 'W' },
+      },
+      attack: { intervalScale: 0.9, mult: 0.95, extraHits: 0 },
+      energy: { regen: 1.2, max: 20 },
+      positions: [1, 2, 3],
+      skills: [{
+        id: 'flurry', name: '连刺', cost: 9, castTime: 0.5, cooldown: 5,
+        cond: { attackCount: 4 }, target: 'frontFoe',
+        effect: { mult: 1.2, buffAttack: { mult: 1.6, seconds: 3 } },
+      }],
+      tiers: [
+        { at: 40, id: 't1', name: '一阶 · 起势', effect: { mainMult: 1.10 } },
+        { at: 90, id: 't2', name: '二阶 · 疾风', effect: { mainMult: 1.2, startEnergy: 1 } },
+      ],
+    },
+
+    /* 六阶：双技能 + 独特能量 */
+    twinflow: {
+      id: 'twinflow', name: '双流', rarity: 6, load: 4,
+      desc: '八格双线拓片。两个招式共享冷却，能量上限更高、回得更快。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
+        '0,1': ['E'], '1,1': ['W'], '2,1': ['E'], '3,1': ['W'],
+      },
+      entry: [0, 0], exits: [[3, 1]],
+      io: {
+        clock: { cell: [0, 0], dir: 'W' },
+        damage: { cell: [0, 1], dir: 'E' },
+        main: { cell: [3, 0], dir: 'E' },
+        support: { cell: [3, 1], dir: 'W' },
+      },
+      attack: { intervalScale: 0.9, mult: 1.15, extraHits: 0 },
+      energy: { regen: 1.6, max: 28 },
+      positions: [0, 1, 2, 3],
+      skills: [{
+        id: 'flowA', name: '左流', cost: 10, castTime: 0.5, cooldown: 5,
+        cond: {}, target: 'frontFoe', effect: { mult: 1.9 },
+      }, {
+        id: 'flowB', name: '右流', cost: 10, castTime: 0.5, cooldown: 5, sharedCooldown: true,
+        cond: { energyAbove: 14 }, target: 'ally', effect: { heal: 1.9 },
+      }],
+      tiers: [
+        { at: 40, id: 't1', name: '一阶 · 分流', effect: { mainMult: 1.12 } },
+        { at: 80, id: 't2', name: '二阶 · 合流', effect: { mainMult: 1.22, startEnergy: 2 } },
+      ],
+    },
+
+    /* 七阶：改写规则 */
+    inverse: {
+      id: 'inverse', name: '逆脉', rarity: 7, load: 5,
+      desc: '十格逆流拓片。平A 也吃贯通加成，护盾溢出转伤害。',
+      cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1]],
+      veins: {
+        '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
+        '0,1': ['E'], '1,1': ['W'], '2,1': ['E'], '3,1': ['W'],
+      },
+      entry: [0, 0], exits: [[3, 1]],
+      io: {
+        clock: { cell: [0, 0], dir: 'W' },
+        damage: { cell: [0, 1], dir: 'E' },
+        main: { cell: [3, 0], dir: 'E' },
+        support: { cell: [3, 1], dir: 'W' },
+      },
+      attack: { intervalScale: 0.8, mult: 1.3, extraHits: 0, routedBonus: 0.25 },
+      energy: { regen: 1.7, max: 32, onAttack: 0.2 },
+      positions: [0, 1, 2, 3],
+      skills: [{
+        id: 'inverse', name: '逆脉', cost: 10, castTime: 0.8, cooldown: 6,
+        cond: {}, target: 'frontFoe',
+        effect: { mult: 2.8, pierce: 3, shield: 0.3 },
+      }],
+      tiers: [
+        { at: 40, id: 't1', name: '一阶 · 逆流', effect: { mainMult: 1.15 } },
+        { at: 75, id: 't2', name: '二阶 · 倒灌', effect: { mainMult: 1.28, startEnergy: 2 } },
+        { at: 100, id: 't3', name: '三阶 · 无回', effect: { mainMult: 1.42, startEnergy: 2, supportMult: 1.35 } },
+      ],
+    },
+  };
+  const MANUSCRIPT_ORDER = ['spark', 'corridor5', 'ember12', 'wide14', 'flurry', 'twinflow', 'inverse'];
+  function manuscript(id) { return MANUSCRIPTS[id] || null; }
+
   /* ------------------------------ 祝福 ------------------------------ */
   const BLESSINGS = {
     edge: { id: 'edge', name: '锐利', desc: '主手伤害 +15%。', effect: { mainDmg: 0.15 } },
@@ -485,6 +716,7 @@
     TEMPLATES, TEMPLATE_ORDER, TERMINALS, PRESETS, EMBER_FIXTURE, STRAIGHT_PARK,
     CONDITIONS, THRESHOLDS, TARGETS, ACTIONS, defaultGambits,
     MODS, ENEMIES, ENEMY_ORDER, BOSS_ORDER, encounterTemplate,
+    MANUSCRIPTS, MANUSCRIPT_ORDER, manuscript,
     NODE_TYPES, BLESSINGS, BLESSING_ORDER, EVENTS, EVENT_ORDER,
     SKINS, NAMES,
     body, weapon, template, enemy, nodeType, blessing, event,

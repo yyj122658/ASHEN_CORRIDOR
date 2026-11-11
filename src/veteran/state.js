@@ -89,7 +89,7 @@
 
     st.stash.forEach((id) => push(id, 'stash'));
     st.roster.forEach((u) => {
-      push(u.weaponId, 'weapon', u.id);
+      /* 武器槽已移除 */
       (u.board && u.board.placements || []).forEach((p) => push(p.itemId, 'board', u.id));
     });
     (st.shop || []).forEach((o) => push(o.itemId, 'merchant', o.id));
@@ -112,48 +112,148 @@
 
   /* ------------------------------ 默认档 ------------------------------ */
 
+  /**
+   * 装上一套功法：放在板面上第一个能容纳它的位置。
+   * 功法是占格的「管道」，摆不下就先空着（玩家自己找位置）。
+   */
+  function equipManuscript(st, unit, msId) {
+    const spec = D().manuscript(msId);
+    if (!spec || !A.Veteran.Manuscript) return unit;
+    const base = A.Veteran.Manuscript.normalize(spec);
+    if (!base) return unit;
+    const plate = A.Veteran.Circuit.plateOf(unit);
+    /* 已放构件占住的格不能让出来给功法 */
+    const occupied = new Set();
+    (unit.board.placements || []).forEach((pl) => {
+      const item = st.itemsById[pl.itemId];
+      if (!item) return;
+      const tpl = D().template(item.templateId);
+      const tf = A.Veteran.Circuit.transformTemplate(tpl, pl.rotation || 0, !!pl.mirrorY);
+      tf.cells.forEach((c) => occupied.add((c.x + pl.x) + ',' + (c.y + pl.y)));
+    });
+    for (let r = 0; r < 4; r++) {
+      const oriented = A.Veteran.Manuscript.orient(base, r, false);
+      const spots = A.Veteran.Manuscript.placements(oriented, plate.cellsList)
+        .filter(([ox, oy]) => oriented.cells.every((c) => !occupied.has((c[0] + ox) + ',' + (c[1] + oy))));
+      if (spots.length) {
+        unit.manuscript = Object.assign({}, spec, {
+          x: spots[0][0], y: spots[0][1], rotation: r, mirrorY: false,
+        });
+        return unit;
+      }
+    }
+    return unit;
+  }
+
+  /** FNV-1a：把字符串稳定映射成 uint32，用来派生板面 seed。 */
+  function hashSeed(text) {
+    let h = 0x811C9DC5;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+  }
+
+  function classicPlateOf(body) {
+    const blocked = new Set((body.blocked || []).map((b) => b[0] + ',' + b[1]));
+    const cells = [];
+    for (let y = 0; y < D().DESIGN.gridSize; y++) {
+      for (let x = 0; x < D().DESIGN.gridSize; x++) {
+        if (!blocked.has(x + ',' + y)) cells.push([x, y]);
+      }
+    }
+    return { cells, terminals: D().TERMINALS };
+  }
+
   function makeUnit(st, spec) {
     const body = D().body(spec.bodyPreset);
+    const unitId = takeId(st, 'u');
     const unit = {
-      id: takeId(st, 'u'),
+      id: unitId,
       name: spec.name,
       skinId: spec.skinId,
       bodyPreset: body.id,
+      /* 板面 seed 由 id 稳定派生，不消耗玩法随机序列：
+         否则改一次板面规则就会打乱整局的随机，存档也对不上 */
+      plateSeed: spec.plateSeed != null ? (spec.plateSeed >>> 0) : hashSeed('plate:' + unitId),
       stress: 0,
       affliction: null,
-      weaponId: null,
       board: { placements: [] },
+      manuscript: null,
       gambits: D().defaultGambits(),
       logicSlots: D().DESIGN.logicSlots,
       history: { eligibleRunIds: [], records: [] },
     };
+    /* 经典板面必须早于 equipPreset 生效，否则预设会按随机板面平移 */
+    if (st.plateMode === 'classic') unit.plateOverride = classicPlateOf(body);
     return unit;
   }
 
   /** 给单位装配预设线路，构件写入 registry 并挂到 board。 */
+  /**
+   * 装上预设线路。
+   * 预设的坐标是「相对形状」，异形板面上不一定落在金属里，所以要找一个平移量
+   * 让整条线都铺得下；平移量按 |dx|+|dy| 从小到大试，(0,0) 优先，老板面结果不变。
+   */
   function equipPreset(st, unit, presetId) {
     const preset = D().PRESETS[presetId] || D().PRESETS.basic;
+    /* 板面只认 Circuit.plateOf，别处不要重复推导 */
+    const plateCells = A.Veteran.Circuit.plateOf(unit).cells;
+    /* 功法先铺好，构件给它让位 */
+    if (unit.manuscript && A.Veteran.Manuscript) {
+      const or = A.Veteran.Manuscript.orient(
+        A.Veteran.Manuscript.normalize(unit.manuscript),
+        unit.manuscript.rotation || 0, !!unit.manuscript.mirrorY,
+      );
+      const ox = unit.manuscript.x || 0;
+      const oy = unit.manuscript.y || 0;
+      or.cells.forEach((c) => plateCells.delete((c[0] + ox) + ',' + (c[1] + oy)));
+    }
+
+    const fits = (dx, dy) => preset.layout.every((slot) => {
+      const tpl = D().template(slot.templateId);
+      const tf = A.Veteran.Circuit.transformTemplate(tpl, slot.rotation || 0, !!slot.mirrorY);
+      return tf.cells.every((c) => plateCells.has((c.x + slot.x + dx) + ',' + (c.y + slot.y + dy)));
+    });
+
+    let off = null;
+    const span = 8;
+    for (let d = 0; d <= span && !off; d++) {
+      for (let dy = -d; dy <= d && !off; dy++) {
+        for (let dx = -d; dx <= d && !off; dx++) {
+          if (Math.abs(dx) + Math.abs(dy) !== d) continue;
+          if (fits(dx, dy)) off = [dx, dy];
+        }
+      }
+    }
+    if (!off) return unit; /* 板面太窄，先给空板面，玩家在工坊里自己铺 */
+
     preset.layout.forEach((slot) => {
       const part = makePart(st, { kind: 'circuit', templateId: slot.templateId });
       st.itemsById[part.id] = part;
       unit.board.placements.push({
-        itemId: part.id, x: slot.x, y: slot.y,
+        itemId: part.id, x: slot.x + off[0], y: slot.y + off[1],
         rotation: slot.rotation || 0, mirrorY: !!slot.mirrorY,
       });
     });
     return unit;
   }
 
-  function create(seed) {
+  function create(seed, opts) {
     const st = {
       version: VERSION,
       ruleset: RULESET,
       nextId: 1,
       rngState: (seed === undefined || seed === null) ? DEFAULT_SEED : (seed >>> 0),
+      /* classic = 固定 4x4（老存档与单测）；plate = 按 seed 生成的异形金属 */
+      plateMode: (opts && opts.classicPlate) ? 'classic' : 'plate',
       gold: 180,
       shards: 0,
       bestDepth: 0,
       roster: [],
+      /* 功法藏品：掉到的功法先进这里，工坊里再装到具体单位身上 */
+      manuscriptVault: [],
       team: [null, null, null, null],
       itemsById: {},
       stash: [],
@@ -171,17 +271,18 @@
     /* 四位老兵：短刃 / 塔盾 / 长矛 / 仪式杖 */
     const setup = [
       /* 顺序即初始站位：短刃必须 1 号位，长矛 2 号位可贯穿，塔盾与杖在后 */
-      { skinId: 'blade', bodyPreset: 'sturdy', weaponId: 'shortBlade', name: '铁鸦' },
-      { skinId: 'ranger', bodyPreset: 'agile', weaponId: 'longSpear', name: '灰烬' },
-      { skinId: 'warden', bodyPreset: 'sturdy', weaponId: 'towerShield', name: '磐石' },
-      { skinId: 'cleric', bodyPreset: 'conduit', weaponId: 'ritualStaff', name: '烛火' },
+      { skinId: 'blade', bodyPreset: 'sturdy', name: '铁鸦' },
+      { skinId: 'ranger', bodyPreset: 'agile', name: '灰烬' },
+      { skinId: 'warden', bodyPreset: 'sturdy', name: '磐石' },
+      { skinId: 'cleric', bodyPreset: 'conduit', name: '烛火' },
     ];
 
     setup.forEach((spec) => {
       const unit = makeUnit(st, spec);
-      const weapon = makePart(st, { kind: 'weapon', weaponId: spec.weaponId });
-      st.itemsById[weapon.id] = weapon;
-      unit.weaponId = weapon.id;
+      /* 开局就带一门微功法（经典模式除外，老存档沿用旧负荷） */
+      if (st.plateMode === 'plate') equipManuscript(st, unit, 'spark');
+      /* 开局不装功法：功法是副本掉落物，第一层必掉（见 expedition 掉落表）。
+         没有功法的单位只能基础攻击，这是「还没入门」的状态。 */
       equipPreset(st, unit, 'basic');
       st.roster.push(unit);
     });
@@ -189,17 +290,21 @@
     st.team = st.roster.map((u) => u.id);
 
     /* 仓库：一件重炮 + 一套可换的蓄能片（capacitor + straight） */
-    const cannon = makePart(st, { kind: 'weapon', weaponId: 'heavyCannon' });
-    st.itemsById[cannon.id] = cannon;
-    st.stash.push(cannon.id);
-
     ['capacitor', 'straight'].forEach((tpl) => {
       const part = makePart(st, { kind: 'circuit', templateId: tpl });
       st.itemsById[part.id] = part;
       st.stash.push(part.id);
     });
 
+    /* 开局身上没有功法，但仓库给一套入门的：玩家在工坊里自己装。
+       后续更稀有的功法走副本掉落与祭坛兑换。 */
+    if (st.manuscriptVault.length === 0) {
+      const starter = D().manuscript('corridor5');
+      if (starter) st.manuscriptVault.push(JSON.parse(JSON.stringify(starter)));
+    }
+
     addLog(st, { kind: 'sys', text: '灰烬前哨。四位老兵在等下一次下潜。' });
+
     return st;
   }
 
@@ -262,20 +367,39 @@
 
     /* 主手与回路本体 */
     (st.roster || []).forEach((u) => {
-      const w = u.weaponId ? st.itemsById[u.weaponId] : null;
-      if (u.weaponId && !w) err(`${u.id} 的主手不存在：${u.weaponId}`);
-      if (w && w.kind !== 'weapon') err(`${u.id} 的 weaponId 不是主手`);
-      if (w && !D().WEAPONS[w.templateId]) err(`${u.id} 的主手类型未知：${w.templateId}`);
+      const maxCoord = (V.Circuit && typeof V.Circuit.plateOf === 'function'
+        ? V.Circuit.plateOf(u).size
+        : (st.plateMode === 'classic' ? D().DESIGN.gridSize : (V.PlateGen ? V.PlateGen.SIZE : D().DESIGN.gridSize))) - 1;
       (u.board && u.board.placements || []).forEach((p) => {
         const it = st.itemsById[p.itemId];
         if (!it) return err(`${u.id} 的板面引用了不存在的构件 ${p.itemId}`);
         if (it.kind !== 'circuit') err(`${u.id} 的板面放了非回路构件 ${p.itemId}`);
-        if (!isInt(p.x) || !isInt(p.y) || p.x < 0 || p.y < 0 || p.x > 3 || p.y > 3) {
+        if (!isInt(p.x) || !isInt(p.y) || p.x < 0 || p.y < 0 || p.x > maxCoord || p.y > maxCoord) {
           err(`${u.id} 的构件 ${p.itemId} 坐标越界`);
         }
         if (![0, 1, 2, 3].includes(p.rotation)) err(`${u.id} 的构件 ${p.itemId} 旋转值非法`);
       });
     });
+
+    /* 功法藏品：只认已知谱目，避免坏档塞进任意对象 */
+    (st.manuscriptVault || []).forEach((m) => {
+      if (!m || !D().MANUSCRIPTS[m.id]) err(`功法藏品里有未知条目：${m && m.id}`);
+    });
+
+    /* 功法：必须整块落在板面上（占格由 preview 统一查） */
+    if (V.Manuscript && V.Circuit && typeof V.Circuit.plateOf === 'function') {
+      (st.roster || []).forEach((u) => {
+        if (!u.manuscript) return;
+        const plate = V.Circuit.plateOf(u);
+        const or = V.Manuscript.orient(
+          V.Manuscript.normalize(u.manuscript),
+          u.manuscript.rotation || 0, !!u.manuscript.mirrorY,
+        );
+        if (!V.Manuscript.fits(or, plate.cellsList, u.manuscript.x || 0, u.manuscript.y || 0)) {
+          err(`${u.name || u.id} 的功法没有完整落在板面上`);
+        }
+      });
+    }
 
     /* 几何与负荷：委托回路编译器（含屏蔽格、重叠、越界、超负荷、闭环） */
     if (V.Circuit && typeof V.Circuit.preview === 'function') {
@@ -318,7 +442,7 @@
   }
 
   V.State = {
-    VERSION, RULESET, SAVE_KEY, DEFAULT_SEED, MAX_FLOOR,
+    VERSION, RULESET, SAVE_KEY, DEFAULT_SEED, MAX_FLOOR, equipManuscript,
     clone, ok, fail, takeId, addLog,
     create, makeUnit, makePart, equipPreset, partCells, partLoad,
     validate, itemLocations, itemLocation, ownItemIds, itemById, unitById,
