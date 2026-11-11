@@ -83,14 +83,21 @@
 
 `artifacts/verification/`：
 
-- `veteran-desktop-title.png` / `veteran-desktop-camp.png` / `veteran-desktop-workshop.png`
-- `veteran-desktop-map.png` / `veteran-desktop-prebattle.png` / `veteran-desktop-battle.png` / `veteran-desktop-review.png`
-- `veteran-mobile-title.png` / `veteran-mobile-camp.png` / `veteran-mobile-workshop.png` / `veteran-mobile-map.png` / `veteran-mobile-battle.png`
+桌面 1440×900：`veteran-desktop-title.png`、`veteran-desktop-camp.png`、`veteran-desktop-workshop.png`、
+`veteran-desktop-campfire.png`、`veteran-desktop-history.png`、`veteran-desktop-map.png`、
+`veteran-desktop-prebattle.png`、`veteran-desktop-battle.png`、`veteran-desktop-review.png`
+
+手机 390×844：`veteran-mobile-title.png`、`veteran-mobile-camp.png`、`veteran-mobile-workshop.png`、
+`veteran-mobile-map.png`、`veteran-mobile-battle.png`
+
+美术接入后实测加载结果：场景横幅 1536×1024、板面底材 1254×1254、四类构件物件图 1254×1254，
+`naturalWidth` 全部非 0，无 404。
 
 ## 6. 未验证的部分
 
 1. **真人试玩**：没有实际计时。按 tick 推算，一场普通战 4–7 回合 ≈ 15–25 秒（1×），
    首领 9 回合 ≈ 35 秒；一整局七层约 10–15 分钟。这是推算，不是实测。
-2. **美术联调**：`assets/art/veteran-v1/` 未交付，工坊横幅/营火/收藏品缩略仍是降级底色。
+2. ~~美术联调~~：8/8 已接入并验证加载（见上方截图与 `naturalWidth` 检查）；
+   仍未完成的是新的武器/角色逐帧动画。
 3. **无障碍**：只有焦点样式与 `aria-live`，没有屏幕阅读器实测。
 4. **难度档位**：`deep` / `nightmare` 只存在于数据里，没有实际数值差异，也没有端到端验证。

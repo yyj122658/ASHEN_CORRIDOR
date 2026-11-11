@@ -41,6 +41,7 @@
   let acc = 0;
   let lastScreen = null;
   let saveTimer = null;
+  const artPreloaded = new Set();
 
   const STEP_MS = 240;
 
@@ -93,6 +94,14 @@
     if (hudEl) hudEl.innerHTML = V.UI.hud(state, ui);
     if (navEl) navEl.innerHTML = V.UI.nav(state, ui);
     if (stageEl) stageEl.innerHTML = V.UI.screen(state, ui);
+
+    /* 场景图按页面加载；加载完成后重画一次，让 <img> 真正进 DOM */
+    if (V.Art && !artPreloaded.has(ui.screen)) {
+      artPreloaded.add(ui.screen);
+      V.Art.preloadFor(ui.screen).then((r) => {
+        if (r.loaded.length && ui.screen === lastScreen) render();
+      });
+    }
 
     if (ui.screen === 'battle') {
       const entering = lastScreen !== 'battle';

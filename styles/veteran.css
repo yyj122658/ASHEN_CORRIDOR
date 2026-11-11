@@ -176,9 +176,20 @@ button.v-cta:active { transform: translate(5px, 5px); box-shadow: 0 0 0; }
   border: 1px solid var(--border); border-radius: var(--radius);
   background: linear-gradient(180deg, #191426, #0F0D16);
 }
-.v-banner.scene-camp {
-  background-image: linear-gradient(180deg, rgba(11,10,16,.35), rgba(11,10,16,.86)), url("../assets/art/v1/scenes/camp.png");
-  background-size: cover; background-position: center 42%;
+.v-banner { background: linear-gradient(180deg, #191426, #0F0D16); }
+.v-banner .banner-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: .92; display: block;
+}
+.v-banner::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(11,10,16,.10) 0%, rgba(11,10,16,.45) 58%, rgba(11,10,16,.90) 100%);
+}
+.v-banner-title, .v-banner-sub { z-index: 2; }
+.v-banner.no-art {
+  background-image:
+    radial-gradient(ellipse 60% 80% at 68% 45%, rgba(200,140,70,.14), transparent 70%),
+    linear-gradient(180deg, #191426, #0F0D16);
 }
 .v-banner-title {
   position: absolute; left: 18px; bottom: 34px;
@@ -409,4 +420,39 @@ img.art-broken, .art-broken { display: none !important; }
 .howto b { color: var(--text); font-weight: normal; }
 @media (max-width: 860px) {
   .camp-cols { grid-template-columns: 1fr; }
+}
+
+
+/* ---------------- 老兵版美术接入 ---------------- */
+
+/* 板面底材：图片在下，SVG 在上，格子仍由代码绘制 */
+.ws-board { position: relative; }
+/* 底材只覆盖 SVG 本体，不铺到下面的按钮区 */
+.board-stack { position: relative; }
+.board-surface {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  pointer-events: none; opacity: .74;
+}
+.board-surface-img {
+  width: 78%; height: auto; max-height: 106%; object-fit: contain;
+  filter: saturate(.85) brightness(.82);
+}
+.board-stack > svg { position: relative; z-index: 1; display: block; }
+.board-bg { fill: rgba(11,9,16,.62); }
+
+/* 构件物件图缩略 */
+.part-item { flex-direction: row; align-items: center; gap: 9px; }
+.part-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.relic-thumb {
+  flex: 0 0 44px; width: 44px; height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 45%, #1D1726, #0E0C14 70%);
+  border: 1px solid var(--border-soft); overflow: hidden;
+}
+.relic-thumb:empty { border-style: dashed; opacity: .5; }
+.relic-img { width: 100%; height: 100%; object-fit: contain; padding: 1px; filter: brightness(1.18) saturate(1.05); }
+
+@media (max-width: 480px) {
+  .relic-thumb { flex-basis: 34px; width: 34px; height: 34px; }
+  .board-surface-img { width: 86%; }
 }

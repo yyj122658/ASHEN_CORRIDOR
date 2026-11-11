@@ -18,6 +18,7 @@ src/veteran/encounter.js         检查点、重试、唯一确认
 src/veteran/expedition.js        七层节点、营火烙印、背包、撤离/撤退事务
 src/veteran/roster.js            招募、换主手、战史、一阶调谐、板面保存
 src/veteran/storage.js           独立存档 ashen_corridor_veteran_v1
+src/veteran/art.js               老兵版独立资源映射（场景 / 底材 / 构件物件图）
 src/veteran/ui.js                全部页面 + 板面 SVG
 src/veteran/view.js              Canvas 战场、位置插值、动画复用与降级
 src/veteran/app.js               唯一 dispatch、唯一循环、唯一存档
@@ -42,7 +43,7 @@ scripts/simulate-veteran.cjs     固定种子模拟
 | 8 招募/战史/调谐 | ✅ | 3 层以下不计合格；两次合格解锁第 3 槽；三次同主手解锁特性；换人不继承 |
 | 9 存档 | ✅ | 五阶段 roundtrip；坏档保留原串不覆盖；嵌套检查点、重复归属被拒 |
 | 10 界面 | ✅ | 工坊点选放置/旋转/翻转/撤销/重做/预设；战前整备；复盘；掉落；事件；营火；商人；祝福 |
-| 11 美术接入 | ⚠️ 部分 | 复用 v1 场景与肖像、battle-v1 剑士/骸骨兵动画；`assets/art/veteran-v1/` 八张图尚未交付，全部走降级 |
+| 11 美术接入 | ✅ | 8/8 张 `veteran-v1` 已接入：营地/工坊横幅、营火现场、战史横幅、板面底材、四类构件物件图；仍复用 v1 场景肖像与 battle-v1 两角色动画 |
 | 12 模拟与交付 | ✅ | 固定种子模拟、七层端到端、桌面与手机截图 |
 
 ## 开发中发现并修掉的真实 bug
@@ -76,12 +77,32 @@ scripts/simulate-veteran.cjs     固定种子模拟
 4. **营火/商人没有「紧急撤退」入口**：按 spec §7，紧急撤退只在 prebattle/battle/review 可用；
    营火节点用「继续前进」离开。
 
+## 美术接入细节（后续追加）
+
+`assets/art/veteran-v1/` 的 8 张图在开发完成后交付，已按 art-contract 接进界面：
+
+| 资源 | 消费位置 |
+|---|---|
+| `veteran.scene.workshop` | 营地横幅、工坊横幅 |
+| `veteran.scene.field` | 营火（现场烙印）横幅 |
+| `veteran.scene.recovery` | 战史页横幅 |
+| `veteran.surface.board` | 4×4 板面底材（只在 SVG 范围内，低对比，不盖格线） |
+| `veteran.relic.channel / capacitor / splitter / threshold` | 构件库、板面构件列表、仓库列表的物件图 |
+
+实现要点：
+- 用**独立的 `V.Art` 映射**（base = `assets/art/veteran-v1/`），不复用 `A.Art`——后者的 BASE 固定指向 v1，
+  拼新路径会 404。
+- 几何、端口、连线、按钮仍然全部由 SVG/HTML 绘制；物件图只用于收藏品缩略，
+  不参与任何占格/碰撞判断。
+- 按页面预取：`preloadFor(screen)`，加载完成后重画一次让 `<img>` 进 DOM；失败时该图返回空串，
+  外层保留渐变底。
+- 缩略图用 `loading="eager"`：这些图已被 preload 缓存，用 lazy 会让首屏外的缩略图显示成空框。
+
 ## 未完成 / 已知限制
 
-1. `assets/art/veteran-v1/` 八张图未交付，工坊横幅、营火烙印、收藏品缩略全部走渐变降级。
-   路径已按 art-contract 预留，图片到位后只需在 `view.js` / `ui.js` 里接 `A.Art.imgTag`。
-2. 事件只有 3 个、祝福 6 个、敌人 6 种（含 2 首领），长线重复感明显。
-3. 没有音效与音乐：新入口不加载旧 `Sfx`。
+1. 事件只有 3 个、祝福 6 个、敌人 6 种（含 2 首领），长线重复感明显。
+2. 没有音效与音乐：新入口不加载旧 `Sfx`。
+3. 没有新的武器/角色逐帧动画，只有 battle-v1 的剑士与骸骨兵两套；其余仍是程序绘制降级。
 4. `file://` 下 Canvas 仍无法读像素（跨源污染），不影响显示。
 5. 未做无障碍审计（有焦点样式与 aria-live，但没做屏幕阅读器实测）。
 6. 数值只做过固定种子模拟，没有真人试玩计时。

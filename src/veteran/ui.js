@@ -254,10 +254,8 @@
   function campScreen(state, ui) {
     const party = state.team.filter(Boolean);
     return `
-    <div class="v-banner scene-camp">
-      <div class="v-banner-title">灰烬前哨</div>
-      <div class="v-banner-sub">${state.roster.length} 位老兵 · 金币 ${state.gold} · 遗物 ${state.shards}</div>
-    </div>
+    ${V.Art.sceneBanner('veteran.scene.workshop', 'scene-camp', '灰烬前哨',
+    `${state.roster.length} 位老兵 · 金币 ${state.gold} · 遗物 ${state.shards}`)}
     <div class="camp-cols">
       <div class="camp-col">
       ${panel('四位老兵', `<div class="vet-grid">${state.team.map((uid, slot) => {
@@ -416,7 +414,9 @@
     const stashParts = state.stash.filter((id) => state.itemsById[id].kind === 'circuit');
     const locked = new Set(ui.wsLocked || []);
 
+    const surface = V.Art.imgTag('veteran.surface.board', 'board-surface-img');
     return `
+    ${V.Art.sceneBanner('veteran.scene.workshop', 'scene-workshop', '工坊', '可逆装配 · 停摆的构件不伪造连通')}
     <div class="ws-layout">
       <aside class="ws-left">
         ${panel('老兵', `<div class="row wrap">${state.roster.map((u) => btn(u.name, 'wsUnit', {
@@ -432,7 +432,10 @@
       </aside>
 
       <div class="ws-board">
-        ${boardSvg(state, unit.id, draft, { interactive: true })}
+        <div class="board-stack">
+          ${surface ? `<div class="board-surface">${surface}</div>` : ''}
+          ${boardSvg(state, unit.id, draft, { interactive: true })}
+        </div>
         <div class="row wrap mt2">
           ${btn('旋转 ⟳', 'wsRotate', { cls: 'ghost sm' })}
           ${btn('翻转 ⇅', 'wsFlip', { cls: 'ghost sm' })}
@@ -454,8 +457,11 @@
     const t = D().template(it.templateId);
     return `<button class="part-item ${ui.wsPick === id ? 'on' : ''}" data-act="wsPick" data-id="${id}"
       ${locked.has(id) ? 'disabled' : ''}>
-      <span class="part-name">${esc(t.name)}</span>
-      <span class="part-meta">${t.cells.length} 格 · load ${t.load}</span>
+      ${V.Art.relicThumb(t.id)}
+      <span class="part-text">
+        <span class="part-name">${esc(t.name)}</span>
+        <span class="part-meta">${t.cells.length} 格 · load ${t.load}</span>
+      </span>
     </button>`;
   }).join('') : '<div class="muted small">仓库里没有多余构件</div>'}</div>
         `)}
@@ -465,8 +471,11 @@
     const t = D().template(it.templateId);
     const isMine = unit.board.placements.some((x) => x.itemId === p.itemId);
     return `<div class="part-item static ${ui.wsPick === p.itemId ? 'on' : ''}">
-      <span class="part-name">${esc(t.name)}</span>
-      <span class="part-meta">(${p.x},${p.y}) 旋${p.rotation}${p.mirrorY ? ' 翻' : ''}</span>
+      ${V.Art.relicThumb(t.id)}
+      <span class="part-text">
+        <span class="part-name">${esc(t.name)}</span>
+        <span class="part-meta">(${p.x},${p.y}) 旋${p.rotation}${p.mirrorY ? ' 翻' : ''}</span>
+      </span>
       <span class="row tight">
         ${btn('选', 'wsPick', { cls: 'ghost xs', data: { id: p.itemId } })}
         ${isMine || ui.wsMode === 'inscribe' ? '' : btn('移', 'wsRemove', { cls: 'ghost xs danger', data: { id: p.itemId } })}
@@ -508,18 +517,26 @@
     const list = state.stash;
     return panel(`仓库（${list.length} 件）`, `
       <p class="muted small">远征里捡到的构件，活着回来后在这里。${btn('去工坊装配', 'go', { cls: 'ghost xs', data: { v: 'workshop' } })}</p>
-      <div class="part-list mt2">${list.length ? list.map((id) => `<div class="part-item static">
-        <span class="part-name">${esc(partName(state, id))}</span>
-        <span class="part-meta">${esc(partMeta(state, id))}</span>
+      <div class="part-list mt2">${list.length ? list.map((id) => {
+    const it = state.itemsById[id];
+    const tpl = it && it.kind === 'circuit' ? D().template(it.templateId) : null;
+    return `<div class="part-item static">
+        ${tpl ? V.Art.relicThumb(tpl.id) : '<span class="relic-thumb"></span>'}
+        <span class="part-text">
+          <span class="part-name">${esc(partName(state, id))}</span>
+          <span class="part-meta">${esc(partMeta(state, id))}</span>
+        </span>
         ${partIcon(state, id)}
-      </div>`).join('') : '<div class="muted">空的。</div>'}</div>
+      </div>`;
+  }).join('') : '<div class="muted">空的。</div>'}</div>
     `);
   }
 
   function historyScreen(state, ui) {
     const u = state.roster.find((x) => x.id === ui.histUnit) || state.roster[0];
     const h = u ? V.Roster.history(state, u.id) : null;
-    return `<div class="grid-2">
+    return `${V.Art.sceneBanner('veteran.scene.recovery', 'scene-recovery', '战史', '谁活下来了，谁没有')}
+    <div class="grid-2">
       ${panel('老兵', `<div class="row wrap">${state.roster.map((x) => btn(x.name, 'inspectHistory', {
     cls: x.id === (u && u.id) ? 'gold xs' : 'ghost xs', data: { id: x.id },
   })).join('')}</div>
@@ -780,7 +797,8 @@
 
   function campNodeScreen(state) {
     const r = state.run;
-    return panel('废弃营火', `
+    return `${V.Art.sceneBanner('veteran.scene.field', 'scene-field', '废弃营火', '铁在这里会变软一点')}
+    ${panel('废弃营火', `
       <div class="story">火还有余温。铁在这里会变软一点。</div>
       <div class="row wrap mt3">
         ${btn('休息（恢复 45% 生命，压力 -30）', 'campRest', { cls: 'gold' })}
@@ -800,7 +818,7 @@
     </div>`;
   }).join('')}</div>
       </div>
-    `);
+    `)}`;
   }
 
   function merchantScreen(state) {
