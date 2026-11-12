@@ -226,7 +226,8 @@
       r.event.pendingCombat = choice.combat.kind || 'normal';
       /* 事件战斗也走检查点：先锁节点再生成 */
       const nodeId = r.activeNodeId;
-      const open = V.Encounter.openForEvent(next, nodeId, choice.combat.kind || 'normal');
+      /* openForEvent 是本模块的函数（导出给外部用），内部别绕 V.Encounter 去取 */
+      const open = openForEvent(next, nodeId, choice.combat.kind || 'normal');
       if (!open.ok) return open;
       next = open.state;
       next.run.event = r.event;
@@ -407,11 +408,10 @@
     const extra = proposedIds.filter((id) => id !== itemId && !baseItemIds.includes(id));
     if (extra.length) return ST().fail(st, 'extra_items', '只能添加一件本局新构件');
 
+    /* 只校验几何与负荷：和 saveLoadout 一致，半成品板面也能烙印。
+       连通与否是玩法结果（覆盖率面板会提示），不是交易条件。 */
     const pv = V.Circuit.preview(st, unitId, proposedPlacements);
     if (!pv.ok) return ST().fail(st, 'bad_geometry', pv.errors.join('；'), { details: pv.errors });
-    if (!pv.reachableOutputs.length) {
-      return ST().fail(st, 'no_output', '烙印后没有任何输出连通');
-    }
 
     const next = ST().clone(st);
     const r = next.run;

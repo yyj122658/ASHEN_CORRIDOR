@@ -269,3 +269,31 @@ test('0 完成层正常撤离没有收益也不算合格', () => {
   assert.equal(r.state.settlement.eligible, false);
   assert.ok(r.state.settlement.reason.includes('0 层'));
 });
+
+test('事件里的战斗分支能正常开战（openForEvent 走本模块，不绕 V.Encounter）', () => {
+  const { A, V, st: base } = boot(7311);
+  let st = startRun(A, base);
+  st = setNodes(A, st, ['event']);
+  const r = V.Expedition.chooseNode(st, st.run.nodes[0].id);
+  assert.ok(r.ok, JSON.stringify(r.error));
+  st = r.state;
+  /* 强制用带战斗的那条事件：雾中的岔路 / 走血路 */
+  st.run.event.eventId = 'fogFork';
+  st.run.event.resolved = false;
+
+  const c = V.Expedition.chooseEvent(st, 'blood');
+  assert.ok(c.ok, JSON.stringify(c.error && c.error.message));
+  assert.equal(c.state.run.stage, 'battle', '应该直接进入战斗');
+  assert.ok(c.state.run.battle, '要生成战场');
+  assert.ok(c.state.run.encounter && c.state.run.encounter.enemyBlueprint, '要有敌人蓝图（说明检查点建好了）');
+
+  /* 打完一场，状态仍然合法 */
+  let s = c.state;
+  for (let i = 0; i < 2000 && !s.run.battle.over; i++) {
+    const step = V.Combat.step(s);
+    assert.ok(step.ok, JSON.stringify(step.error));
+    s = step.state;
+  }
+  assert.ok(s.run.battle.over, '战斗应能结束');
+  assert.ok(V.State.validate(s).ok, JSON.stringify(V.State.validate(s).errors));
+});

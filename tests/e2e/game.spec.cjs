@@ -239,7 +239,10 @@ async function launch() {
   }));
 
   /* ---------- B8~B9 拖拽装配 ---------- */
+  /* 落点不能随便取：异形板面上「第一个空格」多半摆不下 2 格构件，
+     拖过去会被几何校验拒回原位。所以按 preview 搜一个真能放下的落点。 */
   const dragGeo = await ev(() => {
+    const A = window.Ashen.Veteran;
     const svg = document.querySelector('svg.board');
     if (!svg) return null;
     const g = { cell: +svg.dataset.cell, gx: +svg.dataset.gx, gy: +svg.dataset.gy };
@@ -252,24 +255,34 @@ async function launch() {
       const p = pt.matrixTransform(ctm);
       return { x: p.x, y: p.y };
     };
+    const st = A.App.state;
+    const ui = A.App.ui;
+    const u = st.roster.find((x) => x.id === ui.wsUnit) || st.roster[0];
+    const plate = A.Circuit.plateOf(u);
     const part = svg.querySelector('.part-group');
-    const itemEl = document.querySelector('.part-item[data-act="wsPick"]');
-    const hit = svg.querySelector('.hit');
+    if (!part) return null;
+    const itemId = part.dataset.id;
+    const cur = (ui.wsDraft || []).find((x) => x.itemId === itemId);
+    if (!cur) return null;
+
+    const others = (ui.wsDraft || []).filter((x) => x.itemId !== itemId);
+    let target = null;
+    for (const [x, y] of plate.cellsList) {
+      if (x === cur.x && y === cur.y) continue;
+      const trial = others.concat([Object.assign({}, cur, { x, y })]);
+      if (A.Circuit.preview(st, u.id, trial).ok) { target = [x, y]; break; }
+    }
+    if (!target) return null;
+
     return {
-      part: part ? Object.assign({ id: part.dataset.id }, center(part)) : null,
-      item: itemEl ? Object.assign({ id: itemEl.dataset.id }, center(itemEl)) : null,
-      hit: hit ? (() => {
-        const [cx, cy] = hit.dataset.id.split(',').map(Number);
-        return Object.assign({ id: hit.dataset.id }, toScreen(cx, cy));
-      })() : null,
+      part: Object.assign({ id: itemId }, center(part)),
+      hit: Object.assign({ id: target.join(',') }, toScreen(target[0], target[1])),
+      cur: cur.x + ',' + cur.y,
     };
   });
 
   if (dragGeo && dragGeo.part && dragGeo.hit) {
-    const before = await ev((id) => {
-      const p = window.Ashen.Veteran.App.ui.wsDraft.find((x) => x.itemId === id);
-      return p ? p.x + ',' + p.y : null;
-    }, dragGeo.part.id);
+    const before = dragGeo.cur;
     await page.mouse.move(dragGeo.part.x, dragGeo.part.y);
     await page.mouse.down();
     await page.mouse.move(dragGeo.hit.x, dragGeo.hit.y, { steps: 8 });
@@ -279,10 +292,15 @@ async function launch() {
       const p = window.Ashen.Veteran.App.ui.wsDraft.find((x) => x.itemId === id);
       return p ? p.x + ',' + p.y : null;
     }, dragGeo.part.id);
-    const legalAfter = await ev(() => document.body.innerText.includes('板面合法'));
-    ok('B8 拖动已有构件智能吸附至合法位置', !!after && after !== before && legalAfter, `${before} -> ${after}`);
+    const geoOk = await ev((id) => {
+      const A = window.Ashen.Veteran;
+      const ui = A.App.ui;
+      const u = A.App.state.roster.find((x) => x.id === ui.wsUnit) || A.App.state.roster[0];
+      return A.Circuit.preview(A.App.state, u.id, ui.wsDraft).ok;
+    }, dragGeo.part.id);
+    ok('B8 拖动已有构件吸附到合法位置', !!after && after !== before && geoOk, `${before} -> ${after} 合法=${geoOk}`);
   } else {
-    ok('B8 跳过（没有可拖的构件或空格）', true);
+    ok('B8 跳过（没有可拖的构件或没有别的合法落点）', true);
   }
 
   const stashDropGeo = await ev(() => {
@@ -476,8 +494,15 @@ async function launch() {
       || document.querySelector('[data-act="inscribeStart"]');
     return btnEl ? btnEl.dataset.id : null;
   });
-  if (inscribeUid) await click(`[data-act="inscribeStart"][data-id="${inscribeUid}"]`);
-  ok('E2 进入烙印编辑', (await ev(() => window.Ashen.Veteran.App.ui.wsMode)) === 'inscribe');
+  const inscribeClick = inscribeUid ? await click(`[data-act="inscribeStart"][data-id="${inscribeUid}"]`) : false;
+  await wait(200); /* 进入烙印要重渲染一次板面，别抢在下一次绘制前断言 */
+  const inscribeDiag = await ev(() => ({
+    mode: window.Ashen.Veteran.App.ui.wsMode,
+    bag: (window.Ashen.Veteran.App.state.run.bag || []).length,
+    btns: [...document.querySelectorAll('[data-act="inscribeStart"]')].map((b) => b.dataset.id + (b.disabled ? '(禁)' : '')),
+    errs: window.Ashen.Veteran.App.ui.wsErrors,
+  }));
+  ok('E2 进入烙印编辑', inscribeDiag.mode === 'inscribe', JSON.stringify({ uid: inscribeUid, clicked: inscribeClick, ...inscribeDiag }));
   await click('[data-act="wsAutoLayout"]');
   await wait(200);
   ok('E3 推荐布局几何合法', await ev(() => {
@@ -487,9 +512,21 @@ async function launch() {
     return pv.ok;
   }));
 
+  const beforeInscribe = await ev(() => {
+    const A = window.Ashen.Veteran;
+    const uid = A.App.ui.wsUnit;
+    const p = A.App.state.run.party.find((x) => x.uid === uid) || {};
+    const u = A.App.state.roster.find((x) => x.id === uid);
+    return { uid, stress: p.stress || 0, maxHp: u ? A.Roster.stats(A.App.state, u).maxHp : null };
+  });
   await click('[data-act="wsInscribe"]');
   await wait(300);
-  ok('E4 烙印后压力 +40', (await ev(() => window.Ashen.Veteran.App.state.run.party[3].stress)) === 40);
+  /* 前面几段测试可能已经积累过压力，所以断言增量而不是绝对值 */
+  ok('E4 烙印后压力 +40', await ev((b) => {
+    const A = window.Ashen.Veteran;
+    const p = A.App.state.run.party.find((x) => x.uid === b.uid) || {};
+    return (p.stress || 0) - b.stress === 40;
+  }, beforeInscribe), JSON.stringify(beforeInscribe));
   ok('E5 烙印后生命上限 ×0.8', await ev(() => {
     const A = window.Ashen.Veteran;
     return A.Roster.stats(A.App.state, A.App.state.roster[3]).maxHp === 112;
