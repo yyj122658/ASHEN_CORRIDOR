@@ -8,6 +8,19 @@ function boot(seed) {
   return { A, V, st: V.State.create(seed == null ? 4242 : seed, { classicPlate: true }) };
 }
 
+function fullTeam(V, st) {
+  for (const [skinId, bodyPreset, name, method] of [
+    ['warden','sturdy','磐石','ward'], ['cleric','conduit','烛火','needle'],
+  ]) {
+    const unit = V.State.makeUnit(st,{skinId,bodyPreset,name});
+    V.State.equipPreset(st,unit,'basic');
+    if (st.plateMode === 'plate') V.State.equipManuscript(st,unit,method);
+    st.team[st.roster.length] = unit.id;
+    st.roster.push(unit);
+  }
+  return st;
+}
+
 function startRun(A, st, seed) {
   const r = A.Veteran.Expedition.start(st, { seed: seed == null ? 4242 : seed });
   if (!r.ok) throw new Error('start 失败：' + JSON.stringify(r.error));
@@ -72,4 +85,4 @@ function makePart(A, st, spec) {
   return part;
 }
 
-module.exports = { boot, startRun, setNodes, fight, stepUntilOver, makePart };
+module.exports = { fullTeam, boot, startRun, setNodes, fight, stepUntilOver, makePart };

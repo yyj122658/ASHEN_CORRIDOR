@@ -87,7 +87,7 @@ async function launch() {
   }));
   await click('[data-act="titleStart"]');
   ok('A4 进入营地', (await snap()).screen === 'camp');
-  ok('A5 四位老兵', await ev(() => window.Ashen.Veteran.App.state.roster.length === 4));
+  ok('A5 两位初始传奇', await ev(() => window.Ashen.Veteran.App.state.roster.length === 2));
 
   /* ---------- B 工坊（异形金属板面 + 蚀刻法膜） ---------- */
   await click('[data-act="go"][data-v="workshop"]');
@@ -639,7 +639,7 @@ async function launch() {
   }, beforeInscribe), JSON.stringify(beforeInscribe));
   ok('E5 烙印后生命上限 ×0.8', await ev(() => {
     const A = window.Ashen.Veteran;
-    return A.Roster.stats(A.App.state, A.App.state.roster[3]).maxHp === 112;
+    return A.Roster.stats(A.App.state, A.State.unitById(A.App.state,A.App.ui.wsUnit)).maxHp === 112;
   }));
 
   await click('[data-act="finishNode"]');

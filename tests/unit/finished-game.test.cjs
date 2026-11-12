@@ -19,11 +19,13 @@ test('蚀刻法拓片与纹路分层：异形板上合法覆盖并能达到100%�
   assert.equal(V.Circuit.manuscriptState(st, u.id).routed, true);
 });
 
-test('新队伍有快攻、追击与护持三种实际打法，开局已形成共鸣', () => {
+test('新队伍有铁鸦与灰烬两人，开局已形成共鸣', () => {
   const V = loadVeteran().Veteran;
   for (const seed of [1, 42, 20261112]) {
     const st = V.State.create(seed);
-    assert.equal(new Set(st.roster.map((u) => u.manuscript.id)).size, 3);
+    assert.deepEqual(Array.from(st.roster,u=>u.skinId),['blade','ranger']);
+    assert.deepEqual(Array.from(st.team),[...st.roster.map(u=>u.id),null,null]);
+    assert.equal(new Set(st.roster.map(u=>u.manuscript.id)).size,2);
     for (const u of st.roster) {
       assert.equal(V.Circuit.manuscriptState(st, u.id).pct, 100);
       assert.equal(V.Circuit.preview(st, u.id, u.board.placements).ok, true);

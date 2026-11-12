@@ -40,7 +40,7 @@ function customGambits(st) {
 }
 
 function fight(seed, kind, floor, cfg) {
-  let st = V.State.create(seed);
+  let st = require('../tests/helpers/veteran-run.cjs').fullTeam(V,V.State.create(seed));
   if (cfg.preset) {
     st = applyPreset(st, st.roster[0].id, cfg.preset);
     st = applyPreset(st, st.roster[1].id, cfg.preset);

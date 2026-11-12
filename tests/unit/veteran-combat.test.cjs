@@ -108,7 +108,7 @@ test('星火副修在前后位均缩短同一比例的平攻间隔', () => {
   function attacksDuring(state, slot) {
     const me = state.run.battle.allies[1];
     const other = state.run.battle.allies.find((u) => u.slot === slot);
-    other.slot = me.slot;
+    if (other) other.slot = me.slot;
     me.slot = slot;
     me.atkTimer = 0;
     const before = me.atkSinceSkill;
@@ -132,7 +132,7 @@ test('当前与旧档的主修在四个身位均能出招，原位标记不再�
   for (let slot = 0; slot < 4; slot++) {
     const state = V.State.clone(initial), b = state.run.battle;
     const actor = b.allies[0], other = b.allies[slot];
-    other.slot = 0;
+    if (other) other.slot = 0;
     actor.slot = slot;
     actor.positionAllowed = false;
     [...b.allies, ...b.enemies].forEach(u => { u.atkTimer = -1000; });

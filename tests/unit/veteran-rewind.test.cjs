@@ -100,7 +100,7 @@ test('rewind 保留上次阵型与指令供修改', () => {
   const rw = V.Encounter.rewind(s);
   assert.deepEqual(rw.state.run.encounter.preparation.formation, formation, '阵型要保留');
   const slots = rw.state.run.party.map((p) => p.slot).sort();
-  assert.deepEqual(slots, [0, 1, 2, 3], 'party 按阵型重排且槽位连续');
+  assert.deepEqual(slots, [2, 3], 'party 按阵型重排且槽位连续');
 });
 
 test('attemptNumber 增加但不推进养成', () => {

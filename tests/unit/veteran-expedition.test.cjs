@@ -329,7 +329,7 @@ test('正常撤离是幂等事务：板面固化、背包入仓、清修正、�
   assert.ok(!out.stash.includes(newPart.id), '固化后不该同时出现在仓库');
   assert.equal(V.Roster.stats(out, out.roster[0]).mod, 1, 'maxHp 修正必须清除');
   const records = out.roster.reduce((a, u) => a + u.history.records.length, 0);
-  assert.equal(records, 4, '每个参战角色一条战史');
+  assert.equal(records, s.run.party.length, '每个参战角色一条战史');
 
   /* 幂等：重复调用不能再来一次 */
   const again = V.Expedition.extract(out);

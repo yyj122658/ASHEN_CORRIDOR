@@ -1,4 +1,5 @@
 'use strict';
+const {fullTeam} = require('../helpers/veteran-run.cjs');
 /* 蚀刻法成长曲线：换更高阶的蚀刻法必须打得动更深的层。
    这条不成立的话，整个「按层掉落蚀刻法」的设计就是空的。 */
 const test = require('node:test');
@@ -9,7 +10,7 @@ const A = loadVeteran();
 const V = A.Veteran;
 
 function fightAt(seed, floor, msId) {
-  let st = V.State.create(20261112 + Math.ceil(floor / 7));
+  let st = fullTeam(V, V.State.create(20261112 + Math.ceil(floor / 7)));
   st.roster.slice(0, 4).forEach((u) => {
     u.manuscript = null;
     for (let seed = 1; !u.manuscript && seed < 200; seed++) {

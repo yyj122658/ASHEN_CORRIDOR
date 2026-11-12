@@ -1,11 +1,12 @@
 'use strict';
+const {fullTeam} = require('../helpers/veteran-run.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {loadVeteran} = require('../helpers/load-veteran.cjs');
 
 test('七章单趟可走完，每个已完成节点都能正常带走物资', () => {
   const V = loadVeteran().Veteran, E = V.Expedition;
-  let state = V.State.create(4242);
+  let state = fullTeam(V, V.State.create(4242));
   for (const u of state.roster) V.State.equipManuscript(state,u,'inverse');
   state = E.start(state,{seed:4242}).state;
   for (let floor=1;floor<=49;floor++) {

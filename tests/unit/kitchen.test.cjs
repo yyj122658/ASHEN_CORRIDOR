@@ -1,4 +1,5 @@
 'use strict';
+const {fullTeam} = require('../helpers/veteran-run.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadVeteran } = require('../helpers/load-veteran.cjs');
@@ -58,7 +59,7 @@ test('整张配方先留精确材料，再以同类补足余量，每份原料�
 
 test('营火制作不改变任何人的生命与压力，选定存活队员进食后只作用于该人', () => {
   const V = loadVeteran().Veteran;
-  const st = V.Expedition.start(V.State.create(41), { seed: 42 }).state;
+  const st = V.Expedition.start(fullTeam(V, V.State.create(41)), { seed: 42 }).state;
   st.run.stage = 'camp';
   st.run.ingredients = { lampKelp: 2, boneCap: 1 };
   st.pantry = { lampKelp: 3 };
@@ -93,8 +94,8 @@ test('前哨随时能备餐；目标无收益、战斗中或没有对应菜品�
   st.pantry = { lampKelp: 2 };
   assert.equal(K.canCook(st, 'kelpBroth'), true);
   st = K.cook(st, 'kelpBroth').state;
-  const uid = st.team[0], bench = st.team[3];
-  st.team[3] = null;
+  const uid = st.team[0], bench = st.team[1];
+  st.team[1] = null;
   assert.equal(K.eat(st, 'kelpBroth', uid).error.code, 'no_effect');
   V.State.unitById(st, bench).stress = 15;
   st = K.eat(st, 'kelpBroth', bench).state;
