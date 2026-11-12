@@ -303,6 +303,56 @@ async function launch() {
     ok('B8 跳过（没有可拖的构件或没有别的合法落点）', true);
   }
 
+  /* B12：仓库里的功法要能像构件一样「抓起来拖到板面上」 */
+  const msDrag = await ev(() => {
+    const A = window.Ashen.Veteran;
+    const ui = A.App.ui;
+    const chip = document.querySelector('.ms-chip[data-ms-drag="1"]');
+    const svg = document.querySelector('svg.board');
+    if (!chip || !svg) return null;
+    const msId = chip.dataset.id;
+    const u = A.App.state.roster.find((x) => x.id === ui.wsUnit) || A.App.state.roster[0];
+    const plate = A.Circuit.plateOf(u);
+    const norm = A.Manuscript.normalize(A.Data.manuscript(msId));
+    const spots = A.Manuscript.placements(norm, plate.cellsList);
+    const lay = A.Circuit.layout(A.App.state, ui.wsDraft || []);
+    const used = new Set(lay.cells.map((c) => c.x + ',' + c.y));
+    /* 落点要避开已放构件，否则会被几何校验拦住 */
+    const spot = spots.find(([ox, oy]) => norm.cells.every((c) => !used.has((ox + c[0]) + ',' + (oy + c[1]))));
+    if (!spot) return null;
+
+    const cell = +svg.dataset.cell, gx = +svg.dataset.gx, gy = +svg.dataset.gy;
+    const ctm = svg.getScreenCTM(); const pt = svg.createSVGPoint();
+    const xs = norm.cells.map((c) => c[0]);
+    const ys = norm.cells.map((c) => c[1]);
+    pt.x = gx + (spot[0] + Math.floor((Math.max.apply(null, xs) - Math.min.apply(null, xs)) / 2)) * cell + cell / 2;
+    pt.y = gy + (spot[1] + Math.floor((Math.max.apply(null, ys) - Math.min.apply(null, ys)) / 2)) * cell + cell / 2;
+    const p = pt.matrixTransform(ctm);
+    const r = chip.getBoundingClientRect();
+    return { msId, chip: { x: r.x + r.width / 2, y: r.y + r.height / 2 }, target: { x: p.x, y: p.y } };
+  });
+
+  if (msDrag) {
+    await page.mouse.move(msDrag.chip.x, msDrag.chip.y);
+    await page.mouse.down();
+    await page.mouse.move(msDrag.target.x, msDrag.target.y, { steps: 10 });
+    await page.mouse.up();
+    await wait(400);
+    const after = await ev(() => {
+      const A = window.Ashen.Veteran;
+      const u = A.App.state.roster.find((x) => x.id === A.App.ui.wsUnit) || A.App.state.roster[0];
+      return {
+        equipped: u.manuscript ? u.manuscript.id : null,
+        inVault: (A.App.state.manuscriptVault || []).some((m) => m.id === (u.manuscript && u.manuscript.id)),
+      };
+    });
+    ok('B15 功法可从谱表拖到板面装上', after.equipped === msDrag.msId, JSON.stringify({ want: msDrag.msId, ...after }));
+    ok('B15b 装上后不再留在仓库（不会被复制）', after.inVault === false, String(after.inVault));
+  } else {
+    ok('B15 跳过（仓库里没有可拖的功法）', true);
+    ok('B15b 跳过', true);
+  }
+
   const stashDropGeo = await ev(() => {
     const A = window.Ashen.Veteran;
     const svg = document.querySelector('svg.board');
@@ -362,7 +412,7 @@ async function launch() {
   } else {
     ok('B9 跳过（构件库为空或无合法空位）', true);
     ok('B12 跳过', true);
-    ok('B12b 跳过', true);
+    ok('B15b 跳过', true);
     ok('B13 跳过', true);
   }
   await click('[data-act="wsUndo"]');

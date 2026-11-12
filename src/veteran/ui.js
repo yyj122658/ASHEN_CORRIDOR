@@ -1130,13 +1130,34 @@
     const inVault = (id) => vault.some((m) => m.id === id);
     const equippedId = unit && unit.manuscript ? unit.manuscript.id : null;
 
-    const picker = `<div class="row wrap tight mb2">
-      ${catalog.map((m) => btn(`${m.name}${inVault(m.id) ? '' : '（未拥有）'}`, 'wsMsPick', {
-        cls: ms && !ms.disabled && ms.id === m.id ? 'gold xs' : 'ghost xs',
-        data: { id: m.id },
-      })).join('')}
+    /* 已在仓库里的功法可以「抓起来拖到板面」——和构件同一种手法；
+       未拥有的只显示名字，不给拖。 */
+    const picker = `<div class="row wrap tight mb2 ms-chips">
+      ${catalog.map((m) => {
+    const active = ms && !ms.disabled && ms.id === m.id;
+    const owned = inVault(m.id);
+    const isEquipped = equippedId === m.id;
+    if (isEquipped) {
+      return `<span class="ms-chip is-active" data-id="${m.id}" title="已装在板面上，可直接在板面上拖动换位置">
+        <span class="ms-chip-name">${esc(m.name)}</span>
+        <span class="ms-chip-meta">已装 · ${m.cells.length} 格</span>
+      </span>`;
+    }
+    if (owned) {
+      return `<span class="ms-chip${active ? ' is-active' : ''}" data-act="wsMsPick" data-ms-drag="1"
+        data-id="${m.id}" role="button" tabindex="0" title="拖到板面上放置 · 点击选中">
+        <span class="ms-chip-name">${esc(m.name)}</span>
+        <span class="ms-chip-meta">${m.cells.length} 格</span>
+      </span>`;
+    }
+    return `<span class="ms-chip is-locked" title="还没有这套功法（副本掉落 / 祭坛兑换）">
+      <span class="ms-chip-name">${esc(m.name)}</span>
+      <span class="ms-chip-meta">未拥有</span>
+    </span>`;
+  }).join('')}
       ${btn('无', 'wsMsPick', { cls: ms && ms.disabled ? 'gold xs' : 'ghost xs', data: { id: 'none' } })}
     </div>
+    <div class="tiny muted mb2">把仓库里的功法拖到板面上即可装上；已装的可直接在板面上拖动换位置。</div>
     <div class="row wrap tight mb2">
       ${equippedId
     ? btn('卸下功法', 'wsMsUnequip', { cls: 'ghost xs danger' })
@@ -1235,13 +1256,14 @@
             ${bar(pv.load, loadCap, loadOver ? 'hp' : 'energy')}
           </div>
           <div class="row wrap tight mt2">
-            <span class="tiny muted">输出：</span>
-            <span class="tag ${ms && ms.rt && ms.rt.ok ? 'tag-weapon' : ''}">功法 ${ms && ms.rt && ms.rt.ok ? '● 已贯通' : '○ 未贯通'}</span>
-            <span class="tag ${pv.reachableOutputs.includes('support') ? 'tag-circuit' : ''}">保护 ${pv.reachableOutputs.includes('support') ? '● 已接通' : '○ 未接通'}</span>
+            <span class="tiny muted">功法：</span>
+            ${ms && !ms.disabled
+    ? `<span class="tag ${ms.rt && ms.rt.ok ? 'tag-weapon' : ''}">${esc(ms.spec.name)} ${ms.rt && ms.rt.ok ? '● 已贯通' : '○ 未贯通'}</span>`
+    : '<span class="tag">未修功法 · 只能平A</span>'}
           </div>
           ${(!pv.ok && pv.errors.length) || (ui.wsErrors && ui.wsErrors.length)
     ? `<div class="err-box mt2">${(ui.wsErrors && ui.wsErrors.length ? ui.wsErrors : pv.errors).slice(0, 4).map((e) => `<div>${esc(e)}</div>`).join('')}</div>` : ''}
-          ${pv.ok && !pv.reachableOutputs.length ? '<div class="mt2 tiny muted">还没有接通任何输出——可以先存下来，回头在工坊里接。</div>' : ''}`)}
+          ${pv.ok && (!ms || ms.disabled) ? '<div class="mt2 tiny muted">没有功法：板面只是一块带槽位的金属，装上功法才有能量与招式。</div>' : ''}`)}
         ${panel('功法膜覆盖率', manuscriptPanelBody(plate, ms, unit, state))}
       </aside>
 

@@ -828,12 +828,84 @@
         return;
       }
 
-      case 'wsMsMove':
-        ui.wsMsOx = Number(action.ox);
-        ui.wsMsOy = Number(action.oy);
+      /* 把功法装到拖放指定的位置：摆不下就拒绝，不偷偷挪走 */
+      case 'wsMsEquipAt': {
+        const msId = action.id;
+        const spec = V.Data.manuscript(msId);
+        const unit = state.roster.find((u) => u.id === ui.wsUnit);
+        if (!spec || !unit) return;
+
+        const oriented = V.Manuscript.orient(
+          V.Manuscript.normalize(spec),
+          Number(action.rotation || 0) % 4, false,
+        );
+        const plate = V.Circuit.plateOf(unit);
+        const ox = Number(action.ox) || 0;
+        const oy = Number(action.oy) || 0;
+        if (!V.Manuscript.fits(oriented, plate.cellsList, ox, oy)) {
+          toast('这套功法在这里摆不下：需要 ' + oriented.cells.length + ' 格都落在金属上');
+          return;
+        }
+
+        const next = V.State.clone(state);
+        const u2 = next.roster.find((u) => u.id === ui.wsUnit);
+        /* 新装的这套必须离开仓库（否则同一套功法会被复制成两份），
+           板上原来那套则回仓库 */
+        next.manuscriptVault = (next.manuscriptVault || []).filter((m) => m.id !== msId);
+        if (u2.manuscript && u2.manuscript.id !== msId) {
+          const old = {};
+          Object.keys(u2.manuscript).forEach((k) => {
+            if (k === 'x' || k === 'y' || k === 'rotation' || k === 'mirrorY') return;
+            old[k] = u2.manuscript[k];
+          });
+          next.manuscriptVault.push(old);
+        }
+        u2.manuscript = Object.assign({}, spec, {
+          x: ox, y: oy,
+          rotation: Number(action.rotation || 0) % 4,
+          mirrorY: false,
+        });
+
+        const check = V.State.validate(next);
+        if (!check.ok) {
+          /* 最常见的失败是压到了已有构件：直接把原因说出来，别让玩家猜 */
+          const first = check.errors[0] || '装不上';
+          toast(first.replace(/^\S+\s*板面：/, ''));
+          return;
+        }
+        state = next;
+        persistSoon();
+        ui.wsMsId = msId;
+        openWorkshop(ui.wsUnit);
+        render();
+        toast('已装上「' + spec.name + '」');
+        return;
+      }
+
+      case 'wsMsMove': {
+        const unit = state.roster.find((u) => u.id === ui.wsUnit);
+        const ox = Number(action.ox);
+        const oy = Number(action.oy);
+        /* 和构件一致：摆不下的位置不接受，提示后留在原处 */
+        if (unit && unit.manuscript && V.Manuscript) {
+          const or = V.Manuscript.orient(
+            V.Manuscript.normalize(unit.manuscript),
+            Number.isFinite(ui.wsMsRot) ? ui.wsMsRot : (unit.manuscript.rotation || 0),
+            !!ui.wsMsMir,
+          );
+          const plate = V.Circuit.plateOf(unit);
+          if (!V.Manuscript.fits(or, plate.cellsList, ox, oy)) {
+            toast('功法膜放不下：要 ' + or.cells.length + ' 格都落在金属上');
+            render();
+            return;
+          }
+        }
+        ui.wsMsOx = ox;
+        ui.wsMsOy = oy;
         ui.wsMsSpotIdx = 0;
         render();
         return;
+      }
 
       case 'wsMsPick':
         ui.wsMsId = action.id;
@@ -1663,6 +1735,16 @@
     const others = (ui.wsDraft || []).filter((p) => p.itemId !== d.id);
     const L = V.Circuit.layout(state, others, plate && plate.terminals);
     const used = new Set(L.cells.map((c) => c.x + ',' + c.y));
+    /* 从谱表拖进来的功法：别处已经铺了膜，那几格也不能占 */
+    if (String(d.id).indexOf('ms:') === 0 && unit && unit.manuscript && V.Manuscript) {
+      const cur = V.Manuscript.orient(
+        V.Manuscript.normalize(unit.manuscript),
+        unit.manuscript.rotation || 0, !!unit.manuscript.mirrorY,
+      );
+      const ox0 = unit.manuscript.x || 0;
+      const oy0 = unit.manuscript.y || 0;
+      cur.cells.forEach((c) => used.add((c[0] + ox0) + ',' + (c[1] + oy0)));
+    }
 
     const conflicts = new Set();
     let hitBlocked = false;
@@ -1999,12 +2081,53 @@
       const t = e.target;
       if (!t || !t.closest || t.closest('[data-act="wsRemove"]')) return;
       const msGrab = t.closest('[data-act="wsMsGrab"]');
+      const msChip = t.closest('[data-ms-drag="1"]');
       const group = t.closest('[data-act="wsGrab"]');
       const stash = t.closest('.part-item[data-stash="1"]');
-      if (!msGrab && !group && !stash) return;
+      if (!msGrab && !msChip && !group && !stash) return;
       if (stash && stash.hasAttribute('disabled')) return;
       const svg = document.querySelector('svg.board');
       if (!svg) return;
+
+      /* 谱表里的功法：抓起来像构件一样拖到板面上放 */
+      if (msChip) {
+        const spec = V.State && V.Data.manuscript ? V.Data.manuscript(msChip.dataset.id) : null;
+        if (!spec || !V.Manuscript) return;
+        const norm = V.Manuscript.normalize(spec);
+        if (!norm || !norm.cells.length) return;
+        const xs = norm.cells.map((c) => c[0]);
+        const ys = norm.cells.map((c) => c[1]);
+        const minX = Math.min.apply(null, xs);
+        const minY = Math.min.apply(null, ys);
+        const halfX = Math.floor((Math.max.apply(null, xs) - minX) / 2);
+        const halfY = Math.floor((Math.max.apply(null, ys) - minY) / 2);
+        drag = {
+          kind: 'msNew',
+          id: 'ms:' + spec.id,
+          msId: spec.id,
+          svg,
+          /* 膜跟着指针居中：这两个不填，clampAnchor 会算出 NaN */
+          grabDx: halfX,
+          grabDy: halfY,
+          x0: e.clientX,
+          y0: e.clientY,
+          lastX: e.clientX,
+          lastY: e.clientY,
+          moved: false,
+          ghost: null,
+          cellPx: cellPixelSize(svg),
+          label: spec.name,
+          shape: {
+            name: spec.name,
+            color: '#7E6BB8',
+            cells: norm.cells.map((c) => ({ x: c[0] - minX, y: c[1] - minY })),
+            minX, minY,
+            maxX: Math.max.apply(null, xs) - minX,
+            maxY: Math.max.apply(null, ys) - minY,
+          },
+        };
+        return;
+      }
 
       /* 功法膜：和构件同一条拖拽通道，只是落点写回 wsMsOx/Oy */
       if (msGrab) {
@@ -2118,6 +2241,19 @@
         && (!valid || !valid.ok) && isWayOutsideBoard(d.svg, e.clientX, e.clientY);
       endDrag();
       if (!moved) return;
+
+      /* 从谱表拖进来的功法：落点即装配位置，摆不下就回弹并说明原因 */
+      if (d.kind === 'msNew') {
+        const raw = rawTarget || (d.svg ? cellFromPoint(d.svg, e.clientX, e.clientY) : null);
+        if (!raw) return;
+        const snapped = clampAnchor(d.shape, { x: raw.x - d.grabDx, y: raw.y - d.grabDy });
+        if (valid && !valid.ok) {
+          toast('放不下：' + (valid.reason || '不在板面上'));
+          return;
+        }
+        dispatch({ type: 'wsMsEquipAt', id: d.msId, ox: snapped.x, oy: snapped.y });
+        return;
+      }
 
       /* 功法膜：吸附到格子后写回 UI 状态，保存时再落盘 */
       if (d.kind === 'ms') {
