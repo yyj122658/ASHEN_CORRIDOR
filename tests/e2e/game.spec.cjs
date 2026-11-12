@@ -303,6 +303,45 @@ async function launch() {
     ok('B8 跳过（没有可拖的构件或没有别的合法落点）', true);
   }
 
+  /* B16：松手即结束——拖完不该还握在手上，否则点别处会把构件搬走 */
+  ok('B16 拖拽落位后解除手持', (await ev(() => window.Ashen.Veteran.App.ui.wsPick)) === null);
+
+  const blankPick = await ev(() => {
+    const A = window.Ashen.Veteran;
+    const ui = A.App.ui;
+    const svg = document.querySelector('svg.board');
+    if (!svg || !(ui.wsDraft || []).length) return null;
+    const u = A.App.state.roster.find((x) => x.id === ui.wsUnit) || A.App.state.roster[0];
+    const plate = A.Circuit.plateOf(u);
+    const cell = +svg.dataset.cell, gx = +svg.dataset.gx, gy = +svg.dataset.gy;
+    const ctm = svg.getScreenCTM(); const pt = svg.createSVGPoint();
+    A.App.dispatch({ type: 'wsPick', id: ui.wsDraft[0].itemId });
+    const picked = ui.wsPick;
+    const draft = ui.wsDraft.map((x) => x.itemId + '@' + x.x + ',' + x.y).join('|');
+    /* 找一个「不落在构件上」的板面格当空白处点 */
+    for (const [x, y] of plate.cellsList) {
+      pt.x = gx + x * cell + cell / 2; pt.y = gy + y * cell + cell / 2;
+      const p = pt.matrixTransform(ctm);
+      const el = document.elementFromPoint(p.x, p.y);
+      if (!el || (el.closest && el.closest('.part-group'))) continue;
+      return { picked, draft, at: { x: p.x, y: p.y } };
+    }
+    return null;
+  });
+
+  if (blankPick) {
+    await page.mouse.click(blankPick.at.x, blankPick.at.y);
+    await wait(300);
+    const afterBlank = await ev(() => ({
+      pick: window.Ashen.Veteran.App.ui.wsPick,
+      draft: window.Ashen.Veteran.App.ui.wsDraft.map((x) => x.itemId + '@' + x.x + ',' + x.y).join('|'),
+    }));
+    ok('B16b 点板面空白处取消选中且构件不动', afterBlank.pick === null && afterBlank.draft === blankPick.draft,
+      JSON.stringify({ pick: afterBlank.pick, moved: afterBlank.draft !== blankPick.draft }));
+  } else {
+    ok('B16b 跳过（找不到可点的空白格）', true);
+  }
+
   /* B12：仓库里的功法要能像构件一样「抓起来拖到板面上」 */
   const msDrag = await ev(() => {
     const A = window.Ashen.Veteran;

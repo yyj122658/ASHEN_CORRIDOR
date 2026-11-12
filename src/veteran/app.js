@@ -582,7 +582,8 @@
 
       case 'wsPick': {
         const id = action.id;
-        if (action.stash && ui.wsPick === id) {
+        /* 再点一次同一件就取消选中——不管它是仓库里的还是已经在板面上 */
+        if (ui.wsPick === id) {
           ui.wsPick = null;
           ui.wsErrors = [];
           render();
@@ -716,24 +717,28 @@
       }
 
       case 'wsCell': {
-        if (!ui.wsPick) { toast('先在右侧选一件构件'); return; }
+        /* 没选中就点空格：什么都不做（不再弹提示，否则放置后再点板面会被念一句） */
+        if (!ui.wsPick) return;
         const [x, y] = String(action.id).split(',').map(Number);
         const existing = ui.wsDraft.find((p) => p.itemId === ui.wsPick);
-        pushHistory();
+        /* 选中一件「已经在板面上」的构件时，点空白格只当作「放下它」= 取消选中。
+           要换位置请直接拖——否则误点一下板面就把构件搬走，是最容易踩的坑。 */
         if (existing) {
-          existing.x = x;
-          existing.y = y;
-          existing.rotation = ui.wsRot;
-          existing.mirrorY = ui.wsMirror;
-        } else {
-          ui.wsDraft.push({ itemId: ui.wsPick, x, y, rotation: ui.wsRot, mirrorY: ui.wsMirror });
+          ui.wsPick = null;
+          ui.wsErrors = [];
+          render();
+          return;
         }
+        pushHistory();
+        ui.wsDraft.push({ itemId: ui.wsPick, x, y, rotation: ui.wsRot, mirrorY: ui.wsMirror });
         ui.wsErrors = [];
+        /* 放完即结束：解除手持，避免之后点板面又把它搬走 */
+        ui.wsPick = null;
         render();
         return;
       }
 
-      /* 拖拽落点：选中 + 放置一次完成，只重绘一次。支持拖拽中按 R/F 旋转翻转。 */
+      /* 拖拽落点：放置一次完成，只重绘一次。支持拖拽中按 R/F 旋转翻转。 */
       case 'wsDrop': {
         const id = action.id;
         const cell = String(action.cell || '').split(',').map(Number);
@@ -749,7 +754,6 @@
         const ny = anchored.y;
 
         pushHistory();
-        ui.wsPick = id;
         if (existing) {
           existing.x = nx;
           existing.y = ny;
@@ -761,6 +765,8 @@
         ui.wsRot = rot;
         ui.wsMirror = mir;
         ui.wsErrors = [];
+        /* 松手即结束：不再保持手持，否则点板面别处会把刚放下的构件搬过去 */
+        ui.wsPick = null;
         render();
         return;
       }
@@ -2003,7 +2009,15 @@
         if (onBoard) return;
       }
       const el = findAction(e.target);
-      if (!el) return;
+      if (!el) {
+        /* 点在板面的空白处（底材、毛边、格线）也算「放下」：解除手持。
+           单靠每格的命中层并不可靠——有的格会被构件图形盖住，点了没反应。 */
+        const onBoard = e.target && e.target.closest && e.target.closest('svg.board');
+        if (onBoard && ui.wsPick) {
+          dispatch({ type: 'wsCancelPick' });
+        }
+        return;
+      }
       const act = el.dataset.act;
       const id = el.dataset.id;
       if (el.tagName === 'SELECT') return; /* select 用 change，不阻断 rule 按钮 */
@@ -2026,6 +2040,13 @@
         lastClick = { key, ts: now };
       } else {
         lastClick = { key: '', ts: 0 };
+      }
+
+      /* 功法膜的命中层只用于拖拽，没有对应的点击动作：
+         点到它就当点空白，解除手上的构件（否则这格永远"点不动"） */
+      if (act === 'wsMsGrab') {
+        if (ui.wsPick) dispatch({ type: 'wsCancelPick' });
+        return;
       }
 
       const action = { type: act, id };
@@ -2271,6 +2292,8 @@
       if (!anchor) return;
       if (!valid || !valid.ok) {
         toast('无法放置：' + (valid && valid.reason ? valid.reason : '不在板面上'));
+        ui.wsPick = null;
+        render();
         return;
       }
       dispatch({ type: 'wsDrop', id: d.id, cell: anchor.x + ',' + anchor.y, rot: d.rot, mir: d.mir });
@@ -2280,7 +2303,15 @@
 
     document.addEventListener('change', (e) => {
       const el = findAction(e.target);
-      if (!el) return;
+      if (!el) {
+        /* 点在板面的空白处（底材、毛边、格线）也算「放下」：解除手持。
+           单靠每格的命中层并不可靠——有的格会被构件图形盖住，点了没反应。 */
+        const onBoard = e.target && e.target.closest && e.target.closest('svg.board');
+        if (onBoard && ui.wsPick) {
+          dispatch({ type: 'wsCancelPick' });
+        }
+        return;
+      }
       const act = el.dataset.act;
       if (!act || !act.startsWith('rule')) return;
       dispatch({ type: act, id: el.dataset.id }, el);
