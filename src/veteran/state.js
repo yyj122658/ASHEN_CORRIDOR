@@ -341,18 +341,15 @@
       /* 顺序即身位；可在营地调整。 */
       { skinId: 'blade', bodyPreset: 'sturdy', name: '铁鸦' },
       { skinId: 'ranger', bodyPreset: 'agile', name: '灰烬' },
-      { skinId: 'warden', bodyPreset: 'sturdy', name: '磐石' },
-      { skinId: 'cleric', bodyPreset: 'conduit', name: '烛火' },
     ];
 
     setup.forEach((spec, index) => {
       const unit = makeUnit(st, spec);
       equipPreset(st, unit, 'basic');
-      if (st.plateMode === 'plate') equipManuscript(st, unit, ['spark', 'needle', 'ward', 'needle'][index]);
+      if (st.plateMode === 'plate') equipManuscript(st, unit, ['spark', 'needle'][index]);
       st.roster.push(unit);
+      st.team[index] = unit.id;
     });
-
-    st.team = st.roster.map((u) => u.id);
 
     /* 仓库：一件重炮 + 一套可换的蓄能片（capacitor + straight） */
     ['capacitor', 'straight'].forEach((tpl) => {
@@ -367,7 +364,7 @@
       if (starter) st.manuscriptVault.push(clone(starter));
     }
 
-    addLog(st, { kind: 'sys', text: '灰烬前哨。四位老兵在等下一次下潜。' });
+    addLog(st, { kind: 'sys', text: '灰烬前哨。铁鸦与灰烬准备下潜。' });
 
     return st;
   }
