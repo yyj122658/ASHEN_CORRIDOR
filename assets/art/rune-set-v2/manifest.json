@@ -1,0 +1,336 @@
+{
+  "version": 2,
+  "generator": "Built-in ImageGen + documented calibration",
+  "cellPx": 256,
+  "alphaThreshold": 64,
+  "assetCount": 5,
+  "runtimeIntegrated": false,
+  "assets": {
+    "rivet": {
+      "file": "rivet.png",
+      "name": "铆纹",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "cellPx": 256,
+      "cells": [
+        [
+          0,
+          0
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "W",
+          "role": "in",
+          "visualOffsetCells": 0.002
+        },
+        {
+          "id": "out1",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "E",
+          "role": "out",
+          "visualOffsetCells": 0.002
+        }
+      ],
+      "mask": [
+        "X"
+      ],
+      "solidBounds": [
+        0,
+        0,
+        256,
+        256
+      ],
+      "sourceBounds": [
+        0,
+        0,
+        1254,
+        1254
+      ],
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceSha256": "5d413b00c65e32f69a8454d493d171fb9e823aa662ac772da595778196691d4d",
+      "outsideMaskGlowCells": 0,
+      "portRoles": "proposed-art-directions-not-runtime-rules",
+      "bytes": 116765,
+      "sha256": "def050c67fabdd929ddc5d99730e5f4528d4f8a3cce2eeda4d59d06d678f90ae",
+      "status": "calibrated-art"
+    },
+    "long": {
+      "file": "long.png",
+      "name": "长直纹章",
+      "width": 768,
+      "height": 256,
+      "alpha": true,
+      "cellPx": 256,
+      "cells": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "W",
+          "role": "in",
+          "visualOffsetCells": 0.002
+        },
+        {
+          "id": "out1",
+          "cell": [
+            2,
+            0
+          ],
+          "dir": "E",
+          "role": "out",
+          "visualOffsetCells": 0.002
+        }
+      ],
+      "mask": [
+        "XXX"
+      ],
+      "solidBounds": [
+        0,
+        0,
+        768,
+        256
+      ],
+      "sourceBounds": [
+        0,
+        0,
+        2172,
+        724
+      ],
+      "sourceSize": [
+        2172,
+        724
+      ],
+      "sourceSha256": "e922838c30a52bd1560f80ba4d8b2a91df50be21954400f43dacdb8e524f8084",
+      "outsideMaskGlowCells": 0,
+      "portRoles": "proposed-art-directions-not-runtime-rules",
+      "bytes": 349802,
+      "sha256": "bce4e37fc08d0bd109bbdec39a3020a18314650f9e146f6a39541456c95cee76",
+      "status": "calibrated-art"
+    },
+    "tee": {
+      "file": "tee.png",
+      "name": "三通纹章",
+      "width": 768,
+      "height": 512,
+      "alpha": true,
+      "cellPx": 256,
+      "cells": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "W",
+          "role": "in",
+          "visualOffsetCells": 0.0156
+        },
+        {
+          "id": "out1",
+          "cell": [
+            2,
+            0
+          ],
+          "dir": "E",
+          "role": "out",
+          "visualOffsetCells": 0.0156
+        },
+        {
+          "id": "out2",
+          "cell": [
+            1,
+            1
+          ],
+          "dir": "S",
+          "role": "out",
+          "visualOffsetCells": 0.002
+        }
+      ],
+      "mask": [
+        "XXX",
+        ".X."
+      ],
+      "solidBounds": [
+        0,
+        0,
+        768,
+        512
+      ],
+      "sourceBounds": [
+        0,
+        0,
+        1536,
+        1024
+      ],
+      "sourceSize": [
+        1536,
+        1024
+      ],
+      "sourceSha256": "c017d2243ada9c8947ff0bd75a1e657cfb4d1f0b33606af7725dce17cacd52b3",
+      "outsideMaskGlowCells": 0,
+      "portRoles": "proposed-art-directions-not-runtime-rules",
+      "bytes": 466258,
+      "sha256": "a448f8e39cabe5d16f355bf0736538b43f771ca2563d0383848a1e8ebdcb83ee",
+      "status": "calibrated-art"
+    },
+    "cross": {
+      "file": "cross.png",
+      "name": "四通纹章",
+      "width": 768,
+      "height": 768,
+      "alpha": true,
+      "cellPx": 256,
+      "cells": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            1
+          ],
+          "dir": "W",
+          "role": "in",
+          "visualOffsetCells": 0.0059
+        },
+        {
+          "id": "out1",
+          "cell": [
+            1,
+            0
+          ],
+          "dir": "N",
+          "role": "out",
+          "visualOffsetCells": 0.002
+        },
+        {
+          "id": "out2",
+          "cell": [
+            2,
+            1
+          ],
+          "dir": "E",
+          "role": "out",
+          "visualOffsetCells": 0.0059
+        },
+        {
+          "id": "out3",
+          "cell": [
+            1,
+            2
+          ],
+          "dir": "S",
+          "role": "out",
+          "visualOffsetCells": 0.002
+        }
+      ],
+      "mask": [
+        ".X.",
+        "XXX",
+        ".X."
+      ],
+      "solidBounds": [
+        0,
+        0,
+        768,
+        768
+      ],
+      "sourceBounds": [
+        0,
+        0,
+        1254,
+        1254
+      ],
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceSha256": "c6a85c3fa5c3d135842770b7ec7349c9035424afa7304b61ecaa2f31c987291e",
+      "outsideMaskGlowCells": 0,
+      "portRoles": "proposed-art-directions-not-runtime-rules",
+      "bytes": 626790,
+      "sha256": "db4e6e76d820baac04aebd162a4610bc7c8d9b107c0ffa5b94800610e7982a0d",
+      "status": "calibrated-art"
+    },
+    "living-metal": {
+      "file": "living-metal.png",
+      "name": "生命金属平铺底材",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "tileable": true,
+      "oppositeEdgePixelDifference": 0,
+      "bytes": 1322510,
+      "sha256": "6f50475cffb476896d63c1c58da9c0fbd3e70693f0e91e14d713d853667e69ba",
+      "sourceSha256": "a7f704b40b5d4b86d67e51586cbb39db582fea690cd28568c916b275b1a33814",
+      "processing": "resize-1024-and-linear-periodic-color-correction"
+    }
+  }
+}

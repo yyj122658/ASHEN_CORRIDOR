@@ -48,8 +48,22 @@
 
   function targetX(u) {
     /* 我方 slot0 最靠中心（画布右侧），敌方 slot0 最靠中心（画布左侧） */
-    if (u.side === 'ally') return 118 - (3 - u.slot) * 29;
+    if (u.side === 'ally') return 118 - u.slot * 29;
     return 202 + u.slot * 29;
+  }
+
+  function preloadPreparation(state) {
+    const encounter = state.run && state.run.encounter;
+    if (!encounter) return;
+    const formation = encounter.preparation.formation;
+    const skins = state.roster.filter(u => formation.includes(u.id)).map(u => u.skinId);
+    /* 亚种读同族立绘，预加载也要按 sprite 取，否则第一帧会退化成名字 */
+    const foes = encounter.enemyBlueprint.units.map((u) => {
+      const meta = A.Veteran.Data.ENEMIES[u.enemyType];
+      return (meta && meta.sprite) || u.enemyType;
+    });
+    A.SpriteAnim.preload([...skins, ...foes]);
+    A.Art.preloadArt([encounter.kind === 'boss' ? 'scene.boss' : 'scene.corridor']);
   }
 
   /**
@@ -67,47 +81,19 @@
       lastTs = 0;
     }
     if (!ctx) return;
-    if (o.sync === false) {
-      const b0 = state && state.run && state.run.battle;
-      if (b0) {
-        bgId = b0.kind === 'boss' ? 'scene.boss' : 'scene.corridor';
-        [...b0.allies, ...b0.enemies].forEach((u) => {
-          if (!displayX.has(u.id)) displayX.set(u.id, targetX(u));
-        });
-        lastLogSeq = b0.logSeq || 0;
-      }
-      return;
-    }
     const b = state && state.run && state.run.battle;
-    if (b) {
-      bgId = b.kind === 'boss' ? 'scene.boss' : 'scene.corridor';
-      [...b.allies, ...b.enemies].forEach((u) => displayX.set(u.id, targetX(u)));
-      /* 恢复战斗时按存活状态初始化，不重放历史伤害 */
-      if (A.SpriteAnim && A.SpriteAnim.syncFromBattle) {
-        A.SpriteAnim.syncFromBattle({
-          logSeq: b.logSeq,
-          allies: b.allies.map(toAnimUnit),
-          enemies: b.enemies.map(toAnimUnit),
-          over: b.over,
-        });
-      }
-      lastLogSeq = b.logSeq || 0;
+    if (!b) return;
+    bgId = b.kind === 'boss' ? 'scene.boss' : 'scene.corridor';
+    if (o.sync !== false && A.Art) A.Art.preloadArt([bgId]);
+    const units = [...b.allies, ...b.enemies];
+    units.forEach((u) => {
+      if (o.sync !== false || !displayX.has(u.id)) displayX.set(u.id, targetX(u));
+    });
+    if (A.SpriteAnim) {
+      A.SpriteAnim.preload(units.map(A.SpriteAnim.charIdFor).filter(Boolean));
+      if (o.sync !== false) A.SpriteAnim.syncFromBattle(b);
     }
-  }
-
-  /** 显示适配：把新单位结构翻译成旧动画模块认得的形状。 */
-  function toAnimUnit(u) {
-    return {
-      id: u.id,
-      side: u.side,
-      cls: u.side === 'ally' ? (u.skinId === 'blade' ? 'blade' : 'other') : undefined,
-      skinId: u.skinId,
-      enemyType: u.enemyType,
-      hp: u.hp,
-      maxHp: u.maxHp,
-      alive: u.alive !== false,
-      shape: u.enemyType === 'bone' ? 'human' : (u.enemyType || 'human'),
-    };
+    if (o.sync !== false) lastLogSeq = b.logSeq || 0;
   }
 
   function unitX(u) {
@@ -145,17 +131,21 @@
     fresh.forEach((l) => {
       const actor = l.actorId ? byId.get(l.actorId) : null;
       const target = l.targetId ? byId.get(l.targetId) : null;
+      if (l.type === 'cast' && actor && A.SpriteAnim) A.SpriteAnim.play(actor, actor.side === 'ally' ? 'cast' : 'attack');
+      if (l.type === 'move' && A.SpriteAnim) {
+        for (const unit of [actor,target]) if (unit?.side === 'ally') A.SpriteAnim.play(unit, 'move');
+      }
       if (l.type === 'hit' || l.type === 'crit') {
         const isCrit = l.type === 'crit';
         if (actor) {
-          if (A.SpriteAnim) A.SpriteAnim.play(toAnimUnit(actor), 'attack');
-          if (!rm && (!target || target.id !== actor.id)) {
+          if (A.SpriteAnim) A.SpriteAnim.play(actor, 'attack');
+          if (actor.side !== 'ally' && !rm && (!target || target.id !== actor.id)) {
             const dir = actor.side === 'ally' ? 1 : -1;
             lungeMap.set(actor.id, { dx: dir * (isCrit ? 13 : 9), ttl: 220, max: 220 });
           }
         }
         if (target) {
-          if (A.SpriteAnim) A.SpriteAnim.play(toAnimUnit(target), 'hurt');
+          if (A.SpriteAnim) A.SpriteAnim.play(target, 'hurt');
           const tx = unitX(target);
           hurtMap.set(target.id, { ttl: 180, max: 180, crit: isCrit });
           if (l.amount > 0) {
@@ -166,23 +156,25 @@
         }
         playSfx(isCrit ? 'crit' : 'hit');
       } else if (l.type === 'miss') {
-        if (actor && A.SpriteAnim) A.SpriteAnim.play(toAnimUnit(actor), 'attack');
+        if (actor && A.SpriteAnim) A.SpriteAnim.play(actor, 'attack');
+        if (target?.side === 'ally' && A.SpriteAnim) A.SpriteAnim.play(target, 'dodge');
         if (target) spawnPopup(unitX(target), GROUND - 56, '闪避', '#9A92A6', false);
       } else if (l.type === 'blocked') {
         if (target) {
+          if (target.side === 'ally' && A.SpriteAnim) A.SpriteAnim.play(target,'guard');
           const tx = unitX(target);
           spawnPopup(tx, GROUND - 56, '格挡', '#7FBBC8', false);
           spawnParticle('shield', tx, GROUND - 20, '#7FBBC8');
         }
       } else if (l.type === 'death' && target) {
-        if (A.SpriteAnim) A.SpriteAnim.play(toAnimUnit(target), 'death');
+        if (A.SpriteAnim) A.SpriteAnim.play(target, 'death');
         spawnParticle('death', unitX(target), GROUND - 16, '#8A6F5E');
       } else if (l.type === 'telegraph' && actor) {
-        if (A.SpriteAnim) A.SpriteAnim.play(toAnimUnit(actor), 'attack');
+        if (A.SpriteAnim) A.SpriteAnim.play(actor, 'attack');
         spawnPopup(unitX(actor), GROUND - 66, '蓄力!', '#D36A65', true);
         if (!rm) shakeTimer = 140;
       } else if (l.type === 'heal') {
-        if (actor && A.SpriteAnim) A.SpriteAnim.play(toAnimUnit(actor), 'attack');
+        if (actor && A.SpriteAnim) A.SpriteAnim.play(actor, actor.side === 'ally' ? 'cast' : 'attack');
         if (target && l.amount > 0) {
           const tx = unitX(target);
           spawnPopup(tx, GROUND - 58, `+${l.amount}`, '#8DB69B', false);
@@ -190,6 +182,7 @@
           playSfx('heal');
         }
       } else if (l.type === 'shield' && target && l.amount > 0) {
+        if (target.side === 'ally' && A.SpriteAnim) A.SpriteAnim.play(target,'guard');
         const tx = unitX(target);
         spawnPopup(tx, GROUND - 60, `+${l.amount}盾`, '#7FBBC8', false);
         spawnParticle('shield', tx, GROUND - 20, '#7FBBC8');
@@ -253,235 +246,28 @@
     }
   }
 
-  const SKIN_COLOR = {
-    blade: '#6B483E', warden: '#5E6D86', ranger: '#4C6444',
-    cleric: '#A4927C', warlock: '#5D4476', rogue: '#4B4E62',
-  };
-  const SKIN_TRIM = {
-    blade: '#C46848', warden: '#B8C4D4', ranger: '#9DB070',
-    cleric: '#EFD082', warlock: '#AD8AC7', rogue: '#7FBBC8',
-  };
-
-  function drawFallback(u, x, y, now) {
-    const dir = u.side === 'ally' ? 1 : -1;
-    const dead = u.alive === false;
-    const scale = u.isBoss ? 1.45 : u.isElite ? 1.18 : 1;
-    const rm = reducedMotion();
-    const bob = (!dead && !rm) ? Math.round(Math.sin(now * 0.0045 + u.slot * 1.3) * 0.65) : 0;
-
-    ctx.save();
-    if (scale !== 1) {
-      ctx.translate(x, y);
-      ctx.scale(scale, scale);
-      ctx.translate(-x, -y);
-    }
-    ctx.globalAlpha = dead ? 0.34 : 1;
-
-    /* 落地阴影 */
-    ctx.fillStyle = 'rgba(0,0,0,0.52)';
-    ctx.fillRect(x - 8, y - 1, 16, 2);
-
-    if (dead) {
-      ctx.fillStyle = u.side === 'ally' ? '#4A4A5A' : '#4A3730';
-      ctx.fillRect(x - 9, y - 5, 18, 4);
-      ctx.fillStyle = 'rgba(229,219,202,0.15)';
-      ctx.fillRect(x - 7, y - 4, 12, 1);
-      ctx.restore();
-      return;
-    }
-
-    /* 四足骨犬专用兽形剪影（紧贴轮廓，无方框背底） */
-    if (u.enemyType === 'hound') {
-      ctx.fillStyle = 'rgba(8,7,12,0.82)';
-      ctx.fillRect(x - 8, y - 14 + bob, 13, 7);
-      ctx.fillRect(x - 11, y - 17 + bob, 8, 7);
-      ctx.fillStyle = '#8C7A68'; /* 四肢 */
-      ctx.fillRect(x - 7, y - 8, 2, 8);
-      ctx.fillRect(x - 4, y - 7, 2, 7);
-      ctx.fillRect(x + 2, y - 8, 2, 8);
-      ctx.fillRect(x + 5, y - 7, 2, 7);
-      ctx.fillStyle = '#9D8C78'; /* 躯干与肋骨 */
-      ctx.fillRect(x - 7, y - 13 + bob, 12, 5);
-      ctx.fillStyle = '#524036';
-      ctx.fillRect(x - 6, y - 12 + bob, 9, 3);
-      ctx.fillStyle = '#B8A690'; /* 颅骨与吻部 */
-      ctx.fillRect(x - 10, y - 16 + bob, 6, 5);
-      ctx.fillRect(x - 12, y - 14 + bob, 3, 2);
-      ctx.fillStyle = '#D0B99E'; /* 骨尾 */
-      ctx.fillRect(x + 5, y - 14 + bob, 3, 2);
-      ctx.fillStyle = '#FF6A48'; /* 眼 */
-      ctx.fillRect(x - 9, y - 15 + bob, 1, 1);
-      ctx.restore();
-      return;
-    }
-
-    /* 飘浮幽魂剪影 */
-    if (u.enemyType === 'wraith') {
-      const floatY = (!rm) ? Math.round(Math.sin(now * 0.005 + u.slot) * 1.5) - 3 : -2;
-      ctx.fillStyle = 'rgba(8,7,12,0.75)';
-      ctx.fillRect(x - 6, y - 31 + floatY, 12, 26);
-      ctx.fillStyle = '#4B3C68';
-      ctx.fillRect(x - 5, y - 24 + floatY, 10, 17);
-      ctx.fillStyle = '#362A4C';
-      ctx.fillRect(x - 6, y - 10 + floatY, 3, 6);
-      ctx.fillRect(x + 3, y - 11 + floatY, 3, 5);
-      ctx.fillStyle = '#6A5692'; /* 兜帽与面具 */
-      ctx.fillRect(x - 4, y - 32 + floatY, 8, 8);
-      ctx.fillStyle = '#CFC3E8';
-      ctx.fillRect(x - 3, y - 29 + floatY, 5, 4);
-      ctx.fillStyle = '#9CF0FF';
-      ctx.fillRect(x - 2, y - 28 + floatY, 2, 1);
-      ctx.restore();
-      return;
-    }
-
-    /* 石傀 / 扰位石傀 厚重体型 */
-    if (u.enemyType === 'hulk' || u.enemyType === 'shuffler') {
-      const coreCol = u.enemyType === 'shuffler' ? '#7FBBC8' : '#D87843';
-      ctx.fillStyle = 'rgba(8,7,12,0.86)';
-      ctx.fillRect(x - 9, y - 34 + bob, 18, 34);
-      ctx.fillStyle = '#433C4A';
-      ctx.fillRect(x - 6, y - 12, 4, 12);
-      ctx.fillRect(x + 2, y - 12, 4, 12);
-      ctx.fillStyle = '#5B5164';
-      ctx.fillRect(x - 8, y - 29 + bob, 16, 17);
-      ctx.fillStyle = '#75687E';
-      ctx.fillRect(x - 7, y - 28 + bob, 6, 4);
-      ctx.fillStyle = coreCol;
-      ctx.fillRect(x - 2, y - 22 + bob, 4, 4);
-      ctx.fillStyle = '#4F4658';
-      ctx.fillRect(x - 4, y - 34 + bob, 8, 6);
-      ctx.fillStyle = coreCol;
-      ctx.fillRect(x - 2, y - 31 + bob, 3, 1);
-      ctx.restore();
-      return;
-    }
-
-    const body = u.side === 'ally' ? (SKIN_COLOR[u.skinId] || '#5E6478') : '#6B4A3C';
-    const trim = u.side === 'ally' ? (SKIN_TRIM[u.skinId] || '#C8B98E') : '#A8765A';
-
-    /* 贴体轮廓衬底（不封死腿间空隙） */
-    ctx.fillStyle = 'rgba(8,7,12,0.84)';
-    ctx.fillRect(x - 6, y - 25 + bob, 12, 15);
-    ctx.fillRect(x - 5, y - 11, 4, 11);
-    ctx.fillRect(x + 1, y - 11, 4, 11);
-    ctx.fillRect(x - 5, y - 34 + bob, 10, 10);
-
-    /* 披风（背侧） */
-    if (u.side === 'ally') {
-      ctx.fillStyle = u.skinId === 'cleric' ? '#8C7E6E' : '#2C2338';
-      ctx.fillRect(x - dir * 6, y - 24 + bob, 3, 18);
-    }
-
-    /* 腿与战靴 */
-    ctx.fillStyle = '#2B2436';
-    ctx.fillRect(x - 4, y - 11, 3, 10);
-    ctx.fillRect(x + 1, y - 11, 3, 10);
-    ctx.fillStyle = '#463C52';
-    ctx.fillRect(x - 5, y - 3, 4, 3);
-    ctx.fillRect(x + 1, y - 3, 4, 3);
-
-    /* 躯干、护甲高光与腰带 */
-    ctx.fillStyle = body;
-    ctx.fillRect(x - 5, y - 24 + bob, 10, 14);
-    ctx.fillStyle = 'rgba(0,0,0,0.34)';
-    ctx.fillRect(x + (dir > 0 ? 3 : -5), y - 24 + bob, 2, 14);
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(x - 4, y - 23 + bob, 2, 6);
-    ctx.fillStyle = '#1D1724';
-    ctx.fillRect(x - 5, y - 13 + bob, 10, 2);
-    ctx.fillStyle = trim;
-    ctx.fillRect(x - 1, y - 13 + bob, 2, 2);
-
-    /* 护肩 */
-    ctx.fillStyle = trim;
-    ctx.fillRect(x + dir * 4 - (dir > 0 ? 0 : 2), y - 24 + bob, 3, 3);
-
-    /* 头盔 / 兜帽 */
-    ctx.fillStyle = u.side === 'ally' ? '#D6C3A5' : '#B59B82';
-    ctx.fillRect(x - 3, y - 30 + bob, 6, 5);
-    ctx.fillStyle = u.skinId === 'warden' ? '#7E8CA4' : body;
-    ctx.fillRect(x - 4, y - 33 + bob, 8, 4);
-    ctx.fillRect(x - 4, y - 30 + bob, 1, 5);
-    ctx.fillRect(x + 3, y - 30 + bob, 1, 5);
-    if (u.skinId === 'warden') {
-      ctx.fillStyle = '#C8B98E';
-      ctx.fillRect(x - 1, y - 35 + bob, 2, 2);
-    }
-    ctx.fillStyle = u.side === 'ally' ? '#1C1724' : '#FF6A48';
-    ctx.fillRect(dir > 0 ? x + 1 : x - 2, y - 28 + bob, 2, 1);
-
-    /* 手臂 */
-    ctx.fillStyle = body;
-    ctx.fillRect(x + dir * 5 - (dir > 0 ? 0 : 1), y - 22 + bob, 2, 7);
-
-    /* 手中刻印剪影：按功法稀有度换形制（武器已移除） */
-    const wx = x + dir * 6;
-    const rarity = (u.ms && u.ms.spec && u.ms.spec.rarity) || 1;
-    ctx.fillStyle = trim;
-    if (rarity >= 6) {
-      ctx.fillRect(wx, y - 28 + bob, 2, 16);
-      ctx.fillStyle = '#F2CF7E';
-      ctx.fillRect(wx - 2, y - 33 + bob, 6, 5);
-    } else if (rarity >= 4) {
-      ctx.fillRect(wx - 1, y - 24 + bob, 6, 5);
-      ctx.fillStyle = '#D87843';
-      ctx.fillRect(wx + (dir > 0 ? 5 : -2), y - 23 + bob, 2, 3);
-    } else if (rarity >= 2) {
-      ctx.fillRect(wx, y - 26 + bob, 1, 18);
-      ctx.fillStyle = '#DDE5EE';
-      ctx.fillRect(wx - 1, y - 30 + bob, 3, 4);
-    } else {
-      ctx.fillRect(wx, y - 24 + bob, 2, 12);
-      ctx.fillStyle = '#D9AD65';
-      ctx.fillRect(wx - 1, y - 13 + bob, 4, 1);
-    }
-
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
   function overhead(u, x, y) {
     if (u.alive === false) return;
     const bw = 20;
     const bx = x - bw / 2;
 
-    /* HP 条 */
-    ctx.fillStyle = 'rgba(0,0,0,0.92)';
-    ctx.fillRect(bx - 1, y - 46, bw + 2, 5);
+    /* 只画当前时间轴真正使用的生命与余裕，移除退役能量点。 */
+    ctx.fillStyle = 'rgba(12,20,15,0.88)';
+    ctx.fillRect(bx - 1, y - 44, bw + 2, 3);
     const ratio = Math.max(0, Math.min(1, u.hp / u.maxHp));
-    ctx.fillStyle = ratio > 0.5 ? '#D36A65' : ratio > 0.25 ? '#D9AD65' : '#9E2A24';
-    ctx.fillRect(bx, y - 45, Math.round(bw * ratio), 3);
-
-    /* 行动条 Gauge (0..60) */
-    const gPct = Math.max(0, Math.min(1, (u.gauge || 0) / 60));
-    ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillRect(bx - 1, y - 41, bw + 2, 2);
-    ctx.fillStyle = gPct >= 0.85 ? '#F2CF7E' : '#8A7E6E';
-    ctx.fillRect(bx, y - 41, Math.round(bw * gPct), 1.5);
-
-    /* 护盾条 */
+    ctx.fillStyle = ratio < 0.25 ? '#d88b73' : u.side === 'ally' ? '#a8b99c' : '#b87367';
+    ctx.fillRect(bx, y - 43, Math.round(bw * ratio), 1);
+    if (u.side === 'ally' && (u.skillList || []).length) {
+      ctx.fillStyle = 'rgba(26,44,33,.9)';
+      ctx.fillRect(bx, y - 40, bw, 1);
+      ctx.fillStyle = u.casting ? '#dfc38b' : '#7caca0';
+      const pct = u.casting ? 1 - u.castTimer / ((u.pendingSkill && u.pendingSkill.castTime) || 0.6) : (u.energy || 0) / (u.energyMax || 20);
+      ctx.fillRect(bx, y - 40, Math.round(bw * Math.max(0, Math.min(1, pct))), 1);
+    }
     if (u.shield > 0) {
-      ctx.fillStyle = 'rgba(127,187,200,0.9)';
-      const sw = Math.round(bw * Math.min(1, u.shield / Math.max(1, u.maxHp * 0.3)));
-      ctx.fillRect(bx, y - 49, sw, 2);
+      ctx.fillStyle = '#a1bfc4';
+      ctx.fillRect(bx, y - 46, Math.round(bw * Math.min(1, u.shield / Math.max(1, u.maxHp * 0.3))), 1);
     }
-
-    /* 能量点（我方） */
-    if (u.side === 'ally' && u.runtime) {
-      const main = V.Circuit.outputTokens(u.runtime, 'main').length;
-      const sup = V.Circuit.outputTokens(u.runtime, 'support').length;
-      const px = x - 9;
-      for (let i = 0; i < 4; i++) {
-        ctx.fillStyle = i < main ? '#F2CF7E' : 'rgba(232,196,106,0.20)';
-        ctx.fillRect(px + i * 5, y - 54, 3, 3);
-      }
-      for (let i = 0; i < 4; i++) {
-        ctx.fillStyle = i < sup ? '#7FBBC8' : 'rgba(127,187,200,0.20)';
-        ctx.fillRect(px + i * 5, y - 59, 3, 2);
-      }
-    }
-
     /* 蓄力预告 */
     if (u.charging) {
       ctx.fillStyle = '#D36A65';
@@ -579,11 +365,11 @@
     const dt = lastTs ? Math.min(120, now - lastTs) : 16;
     lastTs = now;
 
-    const paused = !!(V.App && V.App.ui && V.App.ui.paused);
+    const paused = !!(V.App && V.App.ui && (V.App.ui.paused || V.App.ui.modal));
     const effDt = paused ? 0 : dt;
     if (effDt > 0 && A.SpriteAnim) {
-      const speed = Math.min((V.App && V.App.ui && V.App.ui.speed) || 1, 2);
-      A.SpriteAnim.update([...b.allies.map(toAnimUnit), ...b.enemies.map(toAnimUnit)], effDt * speed);
+      const speed = (V.App && V.App.ui && V.App.ui.speed) || 1;
+      A.SpriteAnim.update([...b.allies, ...b.enemies], effDt * speed);
     }
 
     let shx = 0;
@@ -625,24 +411,17 @@
       }
 
       const y = GROUND;
-      /* 残影折射表现 */
-      if (u.refract > 0 && u.alive !== false) {
+      if (A.SpriteAnim) {
         ctx.save();
-        ctx.globalAlpha = 0.28;
-        ctx.fillStyle = '#7FBBC8';
-        ctx.fillRect(x - 6, y - 32, 12, 32);
-        ctx.restore();
-      }
-
-      const anim = toAnimUnit(u);
-      const played = A.SpriteAnim && A.SpriteAnim.supports(anim)
-        && A.SpriteAnim.draw(ctx, anim, x, y, CELL);
-      if (!played) drawFallback(u, x, y, paused ? 0 : now);
-
-      if (ht && ht.ttl > 80) {
-        ctx.save();
-        ctx.fillStyle = ht.crit ? 'rgba(242, 207, 126, 0.32)' : 'rgba(255, 255, 255, 0.25)';
-        ctx.fillRect(x - 7, y - 34, 14, 34);
+        if (u.refract > 0 && u.alive !== false) ctx.globalAlpha = 0.68;
+        if (ht && ht.ttl > 80 && !reducedMotion()) ctx.filter = 'brightness(1.35)';
+        const drawn = A.SpriteAnim.draw(ctx, u, x, y, CELL * (u.isBoss ? 1.45 : u.isElite ? 1.14 : 1), reducedMotion());
+        if (!drawn && u.alive !== false) {
+          ctx.fillStyle = '#d7c7ae';
+          ctx.font = '7px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(u.name, x, y - 4);
+        }
         ctx.restore();
       }
       overhead(u, x, y);
@@ -685,14 +464,14 @@
     const sp = document.getElementById('btlSpeed');
     if (sp) sp.textContent = '速度 ×' + ((V.App && V.App.ui && V.App.ui.speed) || 1);
     const tc = document.getElementById('btlTactic');
-    if (tc) tc.textContent = '战术：' + ({ balance: '均衡', focus: '集火', safe: '保守' }[b.tactic] || '均衡');
+    if (tc) tc.textContent = '战术：' + ({ balance: '均衡', focus: '集火', safe: '压制' }[b.tactic] || '均衡');
     const next = document.getElementById('btlNext');
     if (next) next.style.display = b.over ? '' : 'none';
     const tk = document.querySelector('.bt-tick');
-    if (tk) tk.textContent = '第 ' + b.tick + ' 刻';
+    if (tk) tk.textContent = (b.tick * V.Data.DESIGN.stepSeconds).toFixed(1) + 's';
     /* 双方信息条随 tick 更新，但不动 canvas */
     const ab = document.querySelector('.side.allies');
-    if (ab) ab.innerHTML = b.allies.map((u) => V.UI.battleBar(u)).join('');
+    if (ab) ab.innerHTML = b.allies.slice().sort((a, c) => c.slot - a.slot).map((u) => V.UI.battleBar(u)).join('');
     const eb = document.querySelector('.side.enemies');
     if (eb) eb.innerHTML = b.enemies.map((u) => V.UI.battleBar(u)).join('');
     const rn = document.querySelector('.bt-round');
@@ -706,5 +485,5 @@
     }
   }
 
-  V.View = { mount, renderFrame, updateHud, reset, targetX, CW, CH, GROUND };
+  V.View = { preloadPreparation, mount, renderFrame, updateHud, reset, targetX, CW, CH, GROUND };
 })(globalThis.Ashen ||= {});

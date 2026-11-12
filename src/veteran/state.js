@@ -10,7 +10,7 @@
   const RULESET = 'veteran';
   const SAVE_KEY = 'ashen_corridor_veteran_v1';
   const DEFAULT_SEED = 20261111;
-  const MAX_FLOOR = 7;
+  const MAX_FLOOR = D().DESIGN.maxFloor;
 
   /** 有些地方只需要一个无关紧要的种子；避免碰 Math.random。 */
   function clone(value) { return A.State.clone(value); }
@@ -39,9 +39,9 @@
     if (st.logs.length > 120) st.logs.shift();
   }
 
-  /* ------------------------------ 构件 ------------------------------ */
+  /* ------------------------------ 纹路 ------------------------------ */
 
-  /** 新建一个构件实例（不写 registry，调用方负责注册）。 */
+  /** 新建一个纹路实例（不写 registry，调用方负责注册）。 */
   function makePart(st, spec) {
     const kind = spec.kind || 'circuit';
     const item = {
@@ -56,7 +56,7 @@
     return item;
   }
 
-  /** 构件占格数（主手固定 4 格；回路按模板 cells）。 */
+  /** 纹路占格数（主手固定 4 格；回路按模板 cells）。 */
   function partCells(item) {
     if (!item) return 0;
     if (item.kind === 'weapon') return D().DESIGN.weaponCells;
@@ -64,7 +64,7 @@
     return tpl.cells.length;
   }
 
-  /** 构件负荷（主手不计负荷；回路按模板 load）。 */
+  /** 纹路负荷（主手不计负荷；回路按模板 load）。 */
   function partLoad(item) {
     if (!item) return 0;
     if (item.kind === 'weapon') return 0;
@@ -97,6 +97,8 @@
     const run = st.run;
     if (run) {
       (run.bag || []).forEach((id) => push(id, 'bag'));
+      if (Array.isArray(run.chestChoices)) run.chestChoices.forEach((id) => push(id, 'chest'));
+      if (Array.isArray(run.shop)) run.shop.filter((o) => o && !o.sold).forEach((o) => push(o.itemId, 'merchant', o.id));
       (run.pendingLoot || []).forEach((id) => push(id, 'pending'));
       (run.provisionalBindings || []).forEach((b) => push(b.itemId, 'provisional', b.unitId));
     }
@@ -112,37 +114,108 @@
 
   /* ------------------------------ 默认档 ------------------------------ */
 
-  /**
-   * 装上一套功法：放在板面上第一个能容纳它的位置。
-   * 功法是占格的「管道」，摆不下就先空着（玩家自己找位置）。
-   */
-  function equipManuscript(st, unit, msId) {
-    const spec = D().manuscript(msId);
-    if (!spec || !A.Veteran.Manuscript) return unit;
-    const base = A.Veteran.Manuscript.normalize(spec);
-    if (!base) return unit;
-    const plate = A.Veteran.Circuit.plateOf(unit);
-    /* 已放构件占住的格不能让出来给功法 */
+  /** 首门沿用旧档字段，其余按装入顺序递补。 */
+  function manuscriptsOf(unit) {
+    return [unit?.manuscript, ...(Array.isArray(unit?.extraManuscripts) ? unit.extraManuscripts : [])].filter(Boolean);
+  }
+
+  function manuscriptCells(ms) {
+    const shape = V.Manuscript.orient(V.Manuscript.normalize(ms), ms.rotation || 0, !!ms.mirrorY);
+    return shape ? shape.cells.map(([x, y]) => [x + (ms.x ?? 0), y + (ms.y ?? 0)]) : [];
+  }
+
+  function freeManuscriptCells(unit, id) {
     const occupied = new Set();
-    (unit.board.placements || []).forEach((pl) => {
-      const item = st.itemsById[pl.itemId];
-      if (!item) return;
-      const tpl = D().template(item.templateId);
-      const tf = A.Veteran.Circuit.transformTemplate(tpl, pl.rotation || 0, !!pl.mirrorY);
-      tf.cells.forEach((c) => occupied.add((c.x + pl.x) + ',' + (c.y + pl.y)));
-    });
-    for (let r = 0; r < 4; r++) {
-      const oriented = A.Veteran.Manuscript.orient(base, r, false);
-      const spots = A.Veteran.Manuscript.placements(oriented, plate.cellsList)
-        .filter(([ox, oy]) => oriented.cells.every((c) => !occupied.has((c[0] + ox) + ',' + (c[1] + oy))));
-      if (spots.length) {
-        unit.manuscript = Object.assign({}, spec, {
-          x: spots[0][0], y: spots[0][1], rotation: r, mirrorY: false,
-        });
-        return unit;
+    for (const ms of manuscriptsOf(unit)) {
+      if (ms.id !== id) manuscriptCells(ms).forEach(cell => occupied.add(cell.join(',')));
+    }
+    return V.Circuit.plateOf(unit).cellsList.filter(cell => !occupied.has(cell.join(',')));
+  }
+
+  function canPlaceManuscript(unit, id, pose) {
+    const spec = D().manuscript(id);
+    if (!spec || !pose || !isInt(pose.x) || !isInt(pose.y)
+      || ![0, 1, 2, 3].includes(pose.rotation ?? 0)) return false;
+    const shape = V.Manuscript.orient(V.Manuscript.normalize(spec), pose.rotation, !!pose.mirrorY);
+    return V.Manuscript.fits(shape, freeManuscriptCells(unit, id), pose.x, pose.y);
+  }
+
+  function bestManuscriptPose(st, unit, spec, cells, placements) {
+    const base = V.Manuscript.normalize(spec);
+    const idx = V.Manuscript.pieceIndex(V.Circuit.layout(st, placements || unit.board.placements));
+    let best = null;
+    let bestScore = -1;
+    for (const mirrorY of [false, true]) {
+      for (let rotation = 0; rotation < 4; rotation++) {
+        const oriented = V.Manuscript.orient(base, rotation, mirrorY);
+        for (const [x, y] of V.Manuscript.placements(oriented, cells)) {
+          const score = V.Manuscript.coverage(oriented, x, y, idx).aligned;
+          if (score > bestScore) {
+            best = { x, y, rotation, mirrorY };
+            bestScore = score;
+          }
+        }
       }
     }
+    return best;
+  }
+
+  /** 新角色和模拟场次直接配置起始谱，不经过玩家仓库。 */
+  function equipManuscript(st, unit, msId) {
+    const spec = D().manuscript(msId);
+    if (!spec || !V.Manuscript) return unit;
+    const pose = bestManuscriptPose(st, unit, spec, V.Circuit.plateOf(unit).cellsList);
+    if (pose) {
+      unit.manuscript = { ...spec, ...pose };
+      delete unit.extraManuscripts;
+    }
     return unit;
+  }
+
+  function setManuscripts(unit, list) {
+    unit.manuscript = list[0] || null;
+    unit.extraManuscripts = list.slice(1);
+  }
+
+  /** 玩家装配事务：板面与负荷全通过才提交，并且只扣新增的那一份。 */
+  function placeManuscript(st, unit, id, pose, placements) {
+    const spec = D().manuscript(id);
+    const equipped = manuscriptsOf(unit);
+    const index = equipped.findIndex(m => m.id === id);
+    const stock = (st.manuscriptVault || []).findIndex(m => m.id === id);
+    if (!spec || (index < 0 && stock < 0)) return { ok: false, reason: '尚未获得这门蚀刻法' };
+    const target = pose || bestManuscriptPose(st, unit, spec, freeManuscriptCells(unit, id), placements);
+    if (!canPlaceManuscript(unit, id, target)) return { ok: false, reason: '拓片需要一块形状相合的空地' };
+    const owned = index < 0 ? st.manuscriptVault[stock] : equipped[index];
+    const next = { ...spec, ...owned, x: target.x, y: target.y, rotation: target.rotation || 0, mirrorY: !!target.mirrorY };
+    if (index < 0) equipped.push(next);
+    else equipped[index] = next;
+    const candidate = { ...unit };
+    setManuscripts(candidate, equipped);
+    const preview = V.Circuit.preview({ ...st, roster: [candidate] }, unit.id, placements || unit.board.placements);
+    if (!preview.ok) return { ok: false, reason: preview.errors[0] };
+    setManuscripts(unit, equipped);
+    if (index < 0) st.manuscriptVault.splice(stock, 1);
+    return { ok: true };
+  }
+
+  function removeManuscript(st, unit, id) {
+    const equipped = manuscriptsOf(unit);
+    const selected = equipped.find(m => m.id === id);
+    if (!selected) return { ok: false, reason: '这门蚀刻法尚未装入' };
+    const { x, y, rotation, mirrorY, ...stored } = selected;
+    setManuscripts(unit, equipped.filter(m => m.id !== id));
+    (st.manuscriptVault ||= []).push(stored);
+    return { ok: true };
+  }
+
+  function promoteManuscript(unit, id) {
+    const equipped = manuscriptsOf(unit);
+    const index = equipped.findIndex(ms => ms.id === id);
+    if (index < 0) return { ok: false, reason: '这门蚀刻法尚未装入' };
+    const [primary] = equipped.splice(index, 1);
+    setManuscripts(unit, [primary, ...equipped]);
+    return { ok: true };
   }
 
   /** FNV-1a：把字符串稳定映射成 uint32，用来派生板面 seed。 */
@@ -179,6 +252,7 @@
       plateSeed: spec.plateSeed != null ? (spec.plateSeed >>> 0) : hashSeed('plate:' + unitId),
       stress: 0,
       affliction: null,
+      scars: [],
       board: { placements: [] },
       manuscript: null,
       gambits: D().defaultGambits(),
@@ -190,7 +264,7 @@
     return unit;
   }
 
-  /** 给单位装配预设线路，构件写入 registry 并挂到 board。 */
+  /** 给单位装配预设线路，纹路写入 registry 并挂到 board。 */
   /**
    * 装上预设线路。
    * 预设的坐标是「相对形状」，异形板面上不一定落在金属里，所以要找一个平移量
@@ -200,17 +274,6 @@
     const preset = D().PRESETS[presetId] || D().PRESETS.basic;
     /* 板面只认 Circuit.plateOf，别处不要重复推导 */
     const plateCells = A.Veteran.Circuit.plateOf(unit).cells;
-    /* 功法先铺好，构件给它让位 */
-    if (unit.manuscript && A.Veteran.Manuscript) {
-      const or = A.Veteran.Manuscript.orient(
-        A.Veteran.Manuscript.normalize(unit.manuscript),
-        unit.manuscript.rotation || 0, !!unit.manuscript.mirrorY,
-      );
-      const ox = unit.manuscript.x || 0;
-      const oy = unit.manuscript.y || 0;
-      or.cells.forEach((c) => plateCells.delete((c[0] + ox) + ',' + (c[1] + oy)));
-    }
-
     const fits = (dx, dy) => preset.layout.every((slot) => {
       const tpl = D().template(slot.templateId);
       const tf = A.Veteran.Circuit.transformTemplate(tpl, slot.rotation || 0, !!slot.mirrorY);
@@ -252,8 +315,13 @@
       shards: 0,
       bestDepth: 0,
       roster: [],
-      /* 功法藏品：掉到的功法先进这里，工坊里再装到具体单位身上 */
+      /* 蚀刻法藏品：掉到的蚀刻法先进这里，工坊里再装到具体单位身上 */
       manuscriptVault: [],
+      packLevel: 0,
+      pantry: {},
+      packedMeals: {},
+      mealStore: {},
+      cookedRecipes: {},
       team: [null, null, null, null],
       itemsById: {},
       stash: [],
@@ -268,22 +336,19 @@
       savedAt: 0,
     };
 
-    /* 四位老兵：短刃 / 塔盾 / 长矛 / 仪式杖 */
+    /* 同一生命基数，三门练法带来不同打法。 */
     const setup = [
-      /* 顺序即初始站位：短刃必须 1 号位，长矛 2 号位可贯穿，塔盾与杖在后 */
+      /* 顺序即身位；可在营地调整。 */
       { skinId: 'blade', bodyPreset: 'sturdy', name: '铁鸦' },
       { skinId: 'ranger', bodyPreset: 'agile', name: '灰烬' },
       { skinId: 'warden', bodyPreset: 'sturdy', name: '磐石' },
       { skinId: 'cleric', bodyPreset: 'conduit', name: '烛火' },
     ];
 
-    setup.forEach((spec) => {
+    setup.forEach((spec, index) => {
       const unit = makeUnit(st, spec);
-      /* 开局就带一门微功法（经典模式除外，老存档沿用旧负荷） */
-      if (st.plateMode === 'plate') equipManuscript(st, unit, 'spark');
-      /* 开局不装功法：功法是副本掉落物，第一层必掉（见 expedition 掉落表）。
-         没有功法的单位只能基础攻击，这是「还没入门」的状态。 */
       equipPreset(st, unit, 'basic');
+      if (st.plateMode === 'plate') equipManuscript(st, unit, ['spark', 'needle', 'ward', 'needle'][index]);
       st.roster.push(unit);
     });
 
@@ -296,11 +361,10 @@
       st.stash.push(part.id);
     });
 
-    /* 开局身上没有功法，但仓库给一套入门的：玩家在工坊里自己装。
-       后续更稀有的功法走副本掉落与祭坛兑换。 */
-    if (st.manuscriptVault.length === 0) {
-      const starter = D().manuscript('corridor5');
-      if (starter) st.manuscriptVault.push(JSON.parse(JSON.stringify(starter)));
+    /* 短拓片适合起手合修，长拓片留给愿意调整板面的玩家。 */
+    for (const id of ['corridor5', 'rivet']) {
+      const starter = D().manuscript(id);
+      if (starter) st.manuscriptVault.push(clone(starter));
     }
 
     addLog(st, { kind: 'sys', text: '灰烬前哨。四位老兵在等下一次下潜。' });
@@ -330,6 +394,126 @@
     if (!Array.isArray(st.roster) || st.roster.length === 0) err('roster 不能为空');
     if (!Array.isArray(st.team) || st.team.length !== 4) err('team 必须是 4 个槽位');
 
+    function checkCounts(counts, catalog, label, minimum = 0) {
+      if (counts === undefined) return;
+      if (!counts || typeof counts !== 'object' || Array.isArray(counts)
+        || Object.entries(counts).some(([id, n]) => !Object.hasOwn(catalog, id) || !Number.isSafeInteger(n) || n < minimum)) {
+        err(`${label}的品种或数量非法`);
+      }
+    }
+    function checkKitchen(snapshot) {
+      for (const [key,max] of [['rackLevel',3],['binLevel',1]]) {
+        if (snapshot[key] !== undefined && (!isInt(snapshot[key]) || snapshot[key]<0 || snapshot[key]>max)) err('仓库改装等级非法');
+      }
+      if (snapshot.storePlaces !== undefined) {
+        const obj = v => v && typeof v === 'object' && !Array.isArray(v);
+        if (!obj(snapshot.storePlaces) || Object.entries(snapshot.storePlaces).some(([shelf,places]) =>
+          !['food','meal','part','etch'].includes(shelf) || !obj(places) || Object.values(places).some(p =>
+            !obj(p) || !isInt(p.at) || p.at<0 || p.at>=24+12*(snapshot.rackLevel||0) || !isInt(p.turn) || p.turn<0 || p.turn>3))) err('仓库格位非法');
+      }
+      if (snapshot.packLevel !== undefined && (!isInt(snapshot.packLevel) || snapshot.packLevel < 0 || snapshot.packLevel > V.Expedition.PACK_UPGRADES.length)) {
+        err('背包改装等级非法');
+      }
+      const ingredients = V.Kitchen?.INGREDIENTS || {}, recipes = V.Kitchen?.RECIPES || {};
+      const run = snapshot.run, owner = run || snapshot;
+      checkCounts(snapshot.pantry, ingredients, '食材仓库');
+      checkCounts(snapshot.cookedRecipes, recipes, '料理记录', 1);
+      checkCounts(snapshot.mealStore, recipes, '前哨成菜仓库');
+      checkCounts(snapshot.packedMeals, recipes, '出征备餐');
+      checkCounts(snapshot.settlement?.ingredients, ingredients, '结算食材');
+      checkCounts(snapshot.settlement?.meals, recipes, '结算成菜');
+      checkCounts(run?.meals, recipes, '随身成菜');
+      checkCounts(run?.ingredients, ingredients, '背包食材');
+      checkCounts(run?.ingredientLoot, ingredients, '待采集食材');
+      checkCounts(run?.mealLoot, recipes, '地面成菜');
+      if (run && Object.values(snapshot.packedMeals || {}).some(n => n > 0)) err('出征备餐与远征行囊不能同时持有');
+      if (run && run.stage !== 'loot' && [run.ingredientLoot, run.mealLoot].some(stock => Object.values(stock || {}).some(n => n > 0))) err('当前阶段不能留有地面食材或成菜');
+      const stacks = owner.packStacks;
+      if (stacks !== undefined && (!stacks || typeof stacks !== 'object' || Array.isArray(stacks)
+        || Object.entries(stacks).some(([token, count]) => {
+          const spec = V.Expedition.stackSpec(token);
+          return !spec || (!run && spec.kind !== 'meal') || !Number.isInteger(count) || count < 1 || count > spec.profile.limit;
+        }))) err('行囊堆号或份数非法');
+      for (const turns of [owner.packTurns, owner.groundTurns]) {
+        if (turns !== undefined && (!turns || typeof turns !== 'object' || Array.isArray(turns) ||
+          Object.values(turns).some(turn => !Number.isInteger(turn) || turn < 0 || turn > 3))) err('物品朝向无效');
+      }
+      const order = owner.packOrder;
+      if (order !== undefined && (!Array.isArray(order) || order.length !== V.Expedition.bagCapacity(snapshot)
+        || Array.from(order).some(token => {
+          if (token === null) return false;
+          const spec = V.Expedition.stackSpec(token);
+          return spec ? !run && spec.kind !== 'meal' : !(run && typeof token === 'string' && /^part:[A-Za-z0-9_-]{1,80}$/.test(token));
+        }))) err('行囊格位数量或物品标记非法');
+      if (errors.length) return;
+      const cap = V.Expedition.bagCapacity(snapshot);
+      const quantities = Object.entries(run?.ingredients || {});
+      const meals = Object.entries((run ? run.meals : snapshot.packedMeals) || {});
+      const partArea = (run?.bag || []).reduce((sum, id) => sum + partCells(snapshot.itemsById?.[id]), 0);
+      const oldArea = quantities.reduce((sum, [, n]) => sum + n, partArea);
+      // 旧档按每份原料一格计算，几何升级后允许保留原本超出的那几件。新收获须有实际格位。
+      const reserve = run?.packReserve;
+      let oldCost = 0;
+      if (reserve !== undefined) {
+        if (!reserve || typeof reserve !== 'object' || Array.isArray(reserve)) { err('待整理记录非法'); return; }
+        for (const [token, count] of Object.entries(reserve)) {
+          const spec = V.Expedition.stackSpec(token);
+          const part = token.startsWith('part:') && run.bag.includes(token.slice(5)) && snapshot.itemsById?.[token.slice(5)];
+          if (!Number.isSafeInteger(count) || count < 1 || !(spec?.kind === 'food' && count <= spec.profile.limit || part && count === 1)) {
+            err('待整理来源或份数非法'); return;
+          }
+          oldCost += part ? partCells(part) : count;
+        }
+      }
+      if (oldCost > cap || partArea > 2 * cap
+        || quantities.some(([id,n]) => n > cap * (1 + V.Expedition.foodPack(id).limit))
+        || meals.some(([id,n]) => n > cap * V.Expedition.mealPack(id).limit)) { err('背包超容'); return; }
+      if (oldArea > cap || meals.some(([,n]) => n > 0) || reserve !== undefined) {
+        const overflow = V.Expedition.packOverflow(snapshot);
+        if (overflow.some(token => V.Expedition.stackCount(snapshot, token) > (reserve?.[token] || 0))) err('背包超容');
+      }
+    }
+    checkKitchen(st);
+    function checkManuscripts(u) {
+      if (!u) return;
+      if (u.extraManuscripts !== undefined && (!Array.isArray(u.extraManuscripts)
+        || u.extraManuscripts.some(m => !m) || (u.extraManuscripts.length && !u.manuscript))) {
+        err(`${u.id} 的合修记录非法`);
+      }
+      const ids = new Set();
+      for (const m of manuscriptsOf(u)) {
+        if (!Object.hasOwn(D().MANUSCRIPTS, m.id) || ids.has(m.id)
+          || !Array.isArray(m.cells) || !m.cells.length || !isInt(m.x ?? 0) || !isInt(m.y ?? 0)
+          || ![0, 1, 2, 3].includes(m.rotation ?? 0)) err(`${u.id} 的蚀刻法或落点非法`);
+        ids.add(m.id);
+      }
+    }
+    if (Array.isArray(st.roster)) st.roster.forEach(checkManuscripts);
+    const checkpoint = st.run?.encounter?.checkpoint;
+    if (checkpoint) checkKitchen(checkpoint);
+    if (Array.isArray(checkpoint?.roster)) checkpoint.roster.forEach(checkManuscripts);
+    if (errors.length) return { ok: false, errors };
+
+    /** 顶层角色与回转检查点共用瘢痕校验。@param {object} u @returns {void} */
+    function checkScars(u) {
+      if (!u || typeof u !== 'object') { err('瘢痕所属传奇非法'); return; }
+      if (u.scars !== undefined) {
+        if (!Array.isArray(u.scars)) err(`${u.id} 瘢痕记录非法`);
+        else {
+          const metal = V.Circuit.plateOf(u).cells;
+          const seenScars = new Set();
+          u.scars.forEach((s) => {
+            if (!s || !isInt(s.x) || !isInt(s.y) || !metal.has(s.x + ',' + s.y)
+              || seenScars.has(s.x + ',' + s.y) || !Object.hasOwn(D().SCAR_EFFECTS, s.templateId)
+              || typeof s.source !== 'string' || !s.source || s.source.length > 120
+              || typeof s.runId !== 'string' || s.runId.length > 80 || !isInt(s.floor) || s.floor < 1 || s.floor > MAX_FLOOR) {
+              err(`${u.id} 瘢痕位置或来源非法`);
+            }
+            if (s) seenScars.add(s.x + ',' + s.y);
+          });
+        }
+      }
+    }
     const ids = new Set();
     (st.roster || []).forEach((u) => {
       if (!u || !u.id) return err('角色缺少 id');
@@ -337,6 +521,7 @@
       ids.add(u.id);
       if (!D().BODIES[u.bodyPreset]) err(`${u.id} 的底盘未知：${u.bodyPreset}`);
       if (!isInt(u.stress) || u.stress < 0 || u.stress > 100) err(`${u.id} 压力越界`);
+      checkScars(u);
       if (!u.board || !Array.isArray(u.board.placements)) err(`${u.id} 缺少 board.placements`);
       if (!Array.isArray(u.gambits)) err(`${u.id} 缺少 gambits`);
       else if (u.gambits.length > (u.logicSlots || D().DESIGN.logicSlots)) {
@@ -359,9 +544,9 @@
     /* 归属唯一 */
     const locs = itemLocations(st);
     Object.keys(locs).forEach((id) => {
-      if (!st.itemsById[id]) err(`归属引用了不存在的构件 ${id}`);
+      if (!st.itemsById[id]) err(`归属引用了不存在的纹路 ${id}`);
       if (locs[id].length > 1) {
-        err(`构件 ${id} 有 ${locs[id].length} 处归属：${locs[id].map((x) => x.where).join('/')}`);
+        err(`纹路 ${id} 有 ${locs[id].length} 处归属：${locs[id].map((x) => x.where).join('/')}`);
       }
     });
 
@@ -372,34 +557,19 @@
         : (st.plateMode === 'classic' ? D().DESIGN.gridSize : (V.PlateGen ? V.PlateGen.SIZE : D().DESIGN.gridSize))) - 1;
       (u.board && u.board.placements || []).forEach((p) => {
         const it = st.itemsById[p.itemId];
-        if (!it) return err(`${u.id} 的板面引用了不存在的构件 ${p.itemId}`);
-        if (it.kind !== 'circuit') err(`${u.id} 的板面放了非回路构件 ${p.itemId}`);
+        if (!it) return err(`${u.id} 的板面引用了不存在的纹路 ${p.itemId}`);
+        if (it.kind !== 'circuit') err(`${u.id} 的板面放了非回路纹路 ${p.itemId}`);
         if (!isInt(p.x) || !isInt(p.y) || p.x < 0 || p.y < 0 || p.x > maxCoord || p.y > maxCoord) {
-          err(`${u.id} 的构件 ${p.itemId} 坐标越界`);
+          err(`${u.id} 的纹路 ${p.itemId} 坐标越界`);
         }
-        if (![0, 1, 2, 3].includes(p.rotation)) err(`${u.id} 的构件 ${p.itemId} 旋转值非法`);
+        if (![0, 1, 2, 3].includes(p.rotation)) err(`${u.id} 的纹路 ${p.itemId} 旋转值非法`);
       });
     });
 
-    /* 功法藏品：只认已知谱目，避免坏档塞进任意对象 */
+    /* 蚀刻法藏品：只认已知谱目，避免坏档塞进任意对象 */
     (st.manuscriptVault || []).forEach((m) => {
-      if (!m || !D().MANUSCRIPTS[m.id]) err(`功法藏品里有未知条目：${m && m.id}`);
+      if (!m || !D().manuscript(m.id)) err(`蚀刻法藏品里有未知条目：${m && m.id}`);
     });
-
-    /* 功法：必须整块落在板面上（占格由 preview 统一查） */
-    if (V.Manuscript && V.Circuit && typeof V.Circuit.plateOf === 'function') {
-      (st.roster || []).forEach((u) => {
-        if (!u.manuscript) return;
-        const plate = V.Circuit.plateOf(u);
-        const or = V.Manuscript.orient(
-          V.Manuscript.normalize(u.manuscript),
-          u.manuscript.rotation || 0, !!u.manuscript.mirrorY,
-        );
-        if (!V.Manuscript.fits(or, plate.cellsList, u.manuscript.x || 0, u.manuscript.y || 0)) {
-          err(`${u.name || u.id} 的功法没有完整落在板面上`);
-        }
-      });
-    }
 
     /* 几何与负荷：委托回路编译器（含屏蔽格、重叠、越界、超负荷、闭环） */
     if (V.Circuit && typeof V.Circuit.preview === 'function') {
@@ -414,6 +584,8 @@
       const r = st.run;
       if (typeof r.id !== 'string' || !r.id) err('run.id 缺失');
       if (!isInt(r.floor) || r.floor < 1 || r.floor > MAX_FLOOR) err('run.floor 越界');
+      if (r.chapterEvents != null && (!Array.isArray(r.chapterEvents) || r.chapterEvents.length > 3 ||
+        r.chapterEvents.some(id => !D().EVENT_ORDER.includes(id)))) err('章节事件记录无效');
       if (!Array.isArray(r.party) || r.party.length > 4) err('run.party 结构错误');
       (r.party || []).forEach((p, i) => {
         if (!ids.has(p.uid)) err(`party[${i}] 指向不存在的角色 ${p.uid}`);
@@ -428,13 +600,28 @@
       const stages = ['map', 'prebattle', 'battle', 'battleReview', 'loot',
         'event', 'camp', 'merchant', 'blessing'];
       if (!stages.includes(r.stage)) err(`run.stage 非法：${r.stage}`);
+      if (r.encounter && r.encounter.checkpoint) {
+        const cpRoster = r.encounter.checkpoint.roster;
+        if (!Array.isArray(cpRoster)) err('检查点缺少传奇记录');
+        else cpRoster.forEach(checkScars);
+      }
       if (r.encounter && r.encounter.checkpoint && r.encounter.checkpoint.run) {
         const cpRun = r.encounter.checkpoint.run;
+        if ((cpRun.fieldManuscript ?? null) !== (r.fieldManuscript ?? null)) err('遭遇检查点的战利谱不一致');
         if (cpRun.encounter && cpRun.encounter.checkpoint) err('checkpoint 出现自嵌套');
       }
-      if (r.bag) {
-        const used = r.bag.reduce((a, id) => a + partCells(st.itemsById[id]), 0);
-        if (used > D().DESIGN.bagCapacity) err(`背包超容：${used} > ${D().DESIGN.bagCapacity}`);
+      if (r.fieldManuscript != null) {
+        const spec = typeof r.fieldManuscript === 'string' && D().manuscript(r.fieldManuscript);
+        if (!spec?.fieldSource || spec.fieldDepth > r.floor) err('携带的战利谱来源或层数非法');
+      }
+      // 旧版未决宝箱需先核对原物归属，读取器随后将两件移入待拾区。
+      if (r.chestChoices !== undefined) {
+        const node = r.nodes?.find((n) => n.id === r.activeNodeId);
+        const choices = r.chestChoices;
+        if (r.stage !== 'loot' || node?.type !== 'chest' || node.consumed || !Array.isArray(r.bag) || !Array.isArray(r.pendingLoot)
+          || !Array.isArray(choices) || choices.length !== 2
+          || !choices.every((id) => typeof id === 'string' && st.itemsById[id]?.kind === 'circuit' && D().TEMPLATE_ORDER.includes(st.itemsById[id].templateId))
+          || new Set(choices.map((id) => st.itemsById[id].templateId)).size !== 2) err('旧宝箱记录需要两件不同的待拾纹路');
       }
     }
 
@@ -443,6 +630,7 @@
 
   V.State = {
     VERSION, RULESET, SAVE_KEY, DEFAULT_SEED, MAX_FLOOR, equipManuscript,
+    manuscriptsOf, manuscriptCells, freeManuscriptCells, canPlaceManuscript, placeManuscript, removeManuscript, promoteManuscript,
     clone, ok, fail, takeId, addLog,
     create, makeUnit, makePart, equipPreset, partCells, partLoad,
     validate, itemLocations, itemLocation, ownItemIds, itemById, unitById,

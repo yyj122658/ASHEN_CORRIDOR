@@ -1,0 +1,167 @@
+{
+ "cellPx": 160,
+ "source": "manifest.json",
+ "assets": {
+  "straight": {
+   "file": "straight.png",
+   "name": "直导管",
+   "mask": [
+    "XX"
+   ],
+   "cols": 2,
+   "rows": 1,
+   "width": 320,
+   "height": 160,
+   "sourceBbox": [
+    350,
+    225,
+    1424,
+    662
+   ],
+   "sourceSize": [
+    1774,
+    887
+   ],
+   "squash": [
+    1.229,
+    0.814
+   ],
+   "bytes": 102573
+  },
+  "elbow": {
+   "file": "elbow.png",
+   "name": "弯管",
+   "mask": [
+    "XX",
+    ".X"
+   ],
+   "cols": 2,
+   "rows": 2,
+   "width": 320,
+   "height": 320,
+   "sourceBbox": [
+    250,
+    263,
+    979,
+    966
+   ],
+   "sourceSize": [
+    1254,
+    1254
+   ],
+   "squash": [
+    1.037,
+    0.964
+   ],
+   "bytes": 157867
+  },
+  "splitter": {
+   "file": "splitter.png",
+   "name": "棱镜分流",
+   "mask": [
+    ".X",
+    "XX",
+    ".X"
+   ],
+   "cols": 2,
+   "rows": 3,
+   "width": 320,
+   "height": 480,
+   "sourceBbox": [
+    136,
+    179,
+    889,
+    1345
+   ],
+   "sourceSize": [
+    1024,
+    1536
+   ],
+   "squash": [
+    0.969,
+    1.032
+   ],
+   "bytes": 219674
+  },
+  "capacitor": {
+   "file": "capacitor.png",
+   "name": "脉冲储能腔",
+   "mask": [
+    "XX",
+    "XX"
+   ],
+   "cols": 2,
+   "rows": 2,
+   "width": 320,
+   "height": 320,
+   "sourceBbox": [
+    211,
+    231,
+    1042,
+    1019
+   ],
+   "sourceSize": [
+    1254,
+    1254
+   ],
+   "squash": [
+    1.055,
+    0.948
+   ],
+   "bytes": 201242
+  },
+  "threshold": {
+   "file": "threshold.png",
+   "name": "阈值闸",
+   "mask": [
+    "XX"
+   ],
+   "cols": 2,
+   "rows": 1,
+   "width": 320,
+   "height": 160,
+   "sourceBbox": [
+    286,
+    180,
+    1488,
+    705
+   ],
+   "sourceSize": [
+    1774,
+    887
+   ],
+   "squash": [
+    1.145,
+    0.874
+   ],
+   "bytes": 100902
+  },
+  "ember": {
+   "file": "ember.png",
+   "name": "余烬导管",
+   "mask": [
+    "XX"
+   ],
+   "cols": 2,
+   "rows": 1,
+   "width": 320,
+   "height": 160,
+   "sourceBbox": [
+    242,
+    185,
+    1532,
+    694
+   ],
+   "sourceSize": [
+    1774,
+    887
+   ],
+   "squash": [
+    1.267,
+    0.789
+   ],
+   "bytes": 98757
+  }
+ },
+ "problems": []
+}

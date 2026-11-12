@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "generator": "Built-in ImageGen",
+  "styleReference": "../rune-23578-concept/rune-23578-v2.png",
+  "assetCount": 6,
+  "runtimeIntegrated": false,
+  "assets": {
+    "straight": {
+      "file": "straight.png",
+      "name": "直导管",
+      "width": 1774,
+      "height": 887,
+      "alpha": true,
+      "alphaRange": [
+        0,
+        255
+      ],
+      "solidBounds": [
+        350,
+        225,
+        1424,
+        662
+      ],
+      "cells": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "W",
+          "role": "in"
+        },
+        {
+          "id": "out",
+          "cell": [
+            1,
+            0
+          ],
+          "dir": "E",
+          "role": "out"
+        }
+      ],
+      "mask": [
+        "XX"
+      ],
+      "cellCenterCheck": "passed",
+      "status": "raw-art-awaiting-grid-calibration",
+      "bytes": 867151,
+      "sha256": "6d3ee542b1cfeb7d7c26e237552af1d8dc3f3e79088155fd968ef6d921b53b89"
+    },
+    "elbow": {
+      "file": "elbow.png",
+      "name": "弯管",
+      "width": 1254,
+      "height": 1254,
+      "alpha": true,
+      "alphaRange": [
+        0,
+        255
+      ],
+      "solidBounds": [
+        251,
+        263,
+        978,
+        966
+      ],
+      "cells": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "W",
+          "role": "in"
+        },
+        {
+          "id": "out",
+          "cell": [
+            1,
+            1
+          ],
+          "dir": "E",
+          "role": "out"
+        }
+      ],
+      "mask": [
+        "XX",
+        ".X"
+      ],
+      "cellCenterCheck": "passed",
+      "status": "raw-art-awaiting-grid-calibration",
+      "bytes": 769944,
+      "sha256": "3d240bdf545fc155d1ccacfb8bf0360e57d66560b9e80bb018eb1403918c6350"
+    },
+    "splitter": {
+      "file": "splitter.png",
+      "name": "棱镜分流",
+      "width": 1024,
+      "height": 1536,
+      "alpha": true,
+      "alphaRange": [
+        0,
+        254
+      ],
+      "solidBounds": [
+        136,
+        179,
+        888,
+        1345
+      ],
+      "cells": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            1
+          ],
+          "dir": "W",
+          "role": "in"
+        },
+        {
+          "id": "outA",
+          "cell": [
+            1,
+            0
+          ],
+          "dir": "E",
+          "role": "out"
+        },
+        {
+          "id": "outB",
+          "cell": [
+            1,
+            2
+          ],
+          "dir": "E",
+          "role": "out"
+        }
+      ],
+      "mask": [
+        ".X",
+        "XX",
+        ".X"
+      ],
+      "cellCenterCheck": "passed",
+      "status": "raw-art-awaiting-grid-calibration",
+      "bytes": 1772048,
+      "sha256": "df68f7cfee2c2fa9a35d8bfd300d269a015265f389375cbae7389b9fbe5b4a48"
+    },
+    "capacitor": {
+      "file": "capacitor.png",
+      "name": "脉冲储能腔",
+      "width": 1254,
+      "height": 1254,
+      "alpha": true,
+      "alphaRange": [
+        0,
+        255
+      ],
+      "solidBounds": [
+        212,
+        231,
+        1042,
+        1019
+      ],
+      "cells": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "W",
+          "role": "in"
+        },
+        {
+          "id": "out",
+          "cell": [
+            1,
+            0
+          ],
+          "dir": "E",
+          "role": "out"
+        }
+      ],
+      "mask": [
+        "XX",
+        "XX"
+      ],
+      "cellCenterCheck": "passed",
+      "status": "raw-art-awaiting-grid-calibration",
+      "bytes": 1283277,
+      "sha256": "f700a7ca7899cbd49f8f00b0cdde0e00641a183920fada34806dbf7244c86811"
+    },
+    "threshold": {
+      "file": "threshold.png",
+      "name": "阈值闸",
+      "width": 1774,
+      "height": 887,
+      "alpha": true,
+      "alphaRange": [
+        0,
+        255
+      ],
+      "solidBounds": [
+        286,
+        180,
+        1488,
+        705
+      ],
+      "cells": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "W",
+          "role": "in"
+        },
+        {
+          "id": "out",
+          "cell": [
+            1,
+            0
+          ],
+          "dir": "E",
+          "role": "out"
+        }
+      ],
+      "mask": [
+        "XX"
+      ],
+      "cellCenterCheck": "passed",
+      "status": "raw-art-awaiting-grid-calibration",
+      "bytes": 1152531,
+      "sha256": "fed673da8c8859c6591fb8a71e078110464c6d552c504c75438042585a2a8ffe"
+    },
+    "ember": {
+      "file": "ember.png",
+      "name": "余烬导管",
+      "width": 1774,
+      "height": 887,
+      "alpha": true,
+      "alphaRange": [
+        0,
+        255
+      ],
+      "solidBounds": [
+        242,
+        185,
+        1532,
+        694
+      ],
+      "cells": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "cell": [
+            0,
+            0
+          ],
+          "dir": "W",
+          "role": "in"
+        },
+        {
+          "id": "out",
+          "cell": [
+            1,
+            0
+          ],
+          "dir": "E",
+          "role": "out"
+        }
+      ],
+      "mask": [
+        "XX"
+      ],
+      "cellCenterCheck": "passed",
+      "status": "raw-art-awaiting-grid-calibration",
+      "bytes": 1157883,
+      "sha256": "48a3c76939a8dfc79701a454039ea747b886f08958f98f7c12d68e1c5014bb15"
+    }
+  }
+}

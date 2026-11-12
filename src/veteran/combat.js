@@ -1,6 +1,6 @@
 'use strict';
-/* 老兵回路战斗：行动条（60 阈值 / 6 tick 一回合）、clock 与 damage 脉冲、
-   能量路由、有限指令、五种主手规则、surge、首领预告与半血阶段。
+/* 蚀刻法战斗：固定时间轴、自然恢复的共振余裕、蚀刻法招式与战中换位、
+   共鸣与纹路增益、首领预告和半血阶段。
    纯数据推进，不读 DOM / 时钟 / Math.random；不提交任何长期收益。 */
 (function (A) {
   'use strict';
@@ -31,6 +31,35 @@
   function byId(units, id) { return units.find((u) => u.id === id) || null; }
   function frontOf(units) { return alive(units).sort((a, b) => a.slot - b.slot)[0] || null; }
 
+  function pressureRegenMultiplier(stress) {
+    return stress >= 80 ? 0.6 : stress >= 50 ? 0.8 : 1;
+  }
+
+  function energyRegen(u) {
+    const base = u.regen ?? D().DESIGN.energyBase.regen;
+    const bonus = hpPct(u) < 0.5 ? (u.lowHpRegen || 0) : 0;
+    return (base + bonus) * (u.side === 'ally' ? pressureRegenMultiplier(u.stress) : 1);
+  }
+
+  function addStress(b, u, amount) {
+    const mod = (b && b.bless && b.bless.stress) || 0;
+    const gain = amount > 0 && mod ? Math.round(amount * (1 + mod)) : amount;
+    const before = pressureRegenMultiplier(u.stress);
+    u.stress = Math.min(100, (u.stress || 0) + gain);
+    const after = pressureRegenMultiplier(u.stress);
+    if (after < before) log(b, { type: 'stress', targetId: u.id,
+      text: `${u.name}压力升至${u.stress}，自然回裕降至${Math.round(after * 100)}%` });
+  }
+
+  /** 眩光：把命中率按层数扣掉，命中判定统一走这里。 */
+  function blindOf(u) {
+    return (u.buffs || []).filter((x) => x.k === 'blind').reduce((sum, x) => sum + (x.v || 0), 0);
+  }
+
+  function hitChance(actor, target) {
+    return clamp((actor.hits || 0.94) - (target.dodge || 0) - blindOf(target), 0.05, 1);
+  }
+
   /* ------------------------------ 遭遇生成 ------------------------------ */
 
   /**
@@ -41,13 +70,13 @@
     const next = ST().clone(st);
     const floor = (next.run && next.run.floor) || 1;
     const index = (next.stats && next.stats.runs) || 0;
-    const tpl = D().encounterTemplate(kind, index);
+    const tpl = D().chapterEncounter(kind, index, floor);
 
     const sc = D().DESIGN.scaling;
-    /* 首领按自身基准（只在第 7 层出现），小怪按层数缩放但乘 minionHpMult */
-    const isBossFloor = floor >= D().DESIGN.maxFloor;
-    const scaleHp = 1 + (floor - 1) * sc.hpPerFloor * (tpl.bossId ? (isBossFloor ? 1 : 1) : 1);
-    const scaleAtk = 1 + (floor - 1) * sc.atkPerFloor;
+    /* 七个节点逐步升压，章末首领使用自身基准，随从使用独立倍率。 */
+    const difficulty = (floor - 1) / 6;
+    const scaleHp = 1 + difficulty * sc.hpPerFloor;
+    const scaleAtk = 1 + difficulty * sc.atkPerFloor;
 
     const units = [];
     let slot = 0;
@@ -65,20 +94,31 @@
         slot: slot++,
         hp, maxHp: hp,
         atk,
-        def: Math.round(meta.def * (1 + (floor - 1) * 0.12)),
+        def: Math.round(meta.def * (1 + difficulty * 0.12)),
         spd: meta.spd,
         hits: meta.hits,
         isBoss: !!opts.boss,
+        isElite: !!(opts.elite || meta.elite),
+        sprite: meta.sprite || null,
+        filter: meta.filter || null,
         skills: (meta.skills || []).map((s) => ({ ...s })),
         disrupt: meta.disrupt || null,
         phaseAt: meta.phaseAt || null,
         phaseBuff: meta.phaseBuff || null,
+        phaseSkills: (meta.phaseSkills || []).map((s) => ({ ...s })),
+        onDeathBurst: meta.onDeathBurst || null,
+        desc: meta.desc || '',
       });
     };
 
-    const eliteMult = tpl.elite ? 0.85 : 1;
+    /* 精英本体比随从更厚：它要撑住一整轮集火，随从才有存在感 */
     if (tpl.bossId) push(tpl.bossId, { boss: true, hpMult: 1, atkMult: 1 });
-    (tpl.minionIds || []).forEach((id) => push(id, { hpMult: eliteMult, atkMult: tpl.elite ? 1.0 : 1 }));
+    (tpl.minionIds || []).forEach((id) => {
+      const isEliteBody = !!(tpl.elite && D().enemy(id).elite);
+      push(id, isEliteBody
+        ? { elite: true, hpMult: 0.95, atkMult: 1.0 }
+        : { hpMult: tpl.elite ? 0.85 : 1, atkMult: 1 });
+    });
 
     /* 推进一次 RNG：遭遇的初始种子固定，重试不会变 */
     const r = A.Random.next(next.rngState >>> 0);
@@ -102,28 +142,27 @@
   /* ------------------------------ 建战斗 ------------------------------ */
 
   function buildAlly(st, partyEntry, unit) {
-    const body = D().body(unit.bodyPreset);
+    const stats = V.Roster.stats(st, unit);
     const placements = (st.run.fieldLayouts && st.run.fieldLayouts[unit.id]) || unit.board.placements;
     const cc = V.Circuit.compile(st, unit.id, placements);
-    /* 功法状态：覆盖率台阶 + 贯通。没有功法时是空效果，不影响老存档 */
-    const ms = V.Circuit.manuscriptState
-      ? V.Circuit.manuscriptState(st, unit.id, placements)
-      : null;
+    /* 蚀刻法状态：覆盖率台阶 + 贯通。没有蚀刻法时是空效果，不影响老存档 */
+    const equipped = ST().manuscriptsOf(unit);
+    const ms = V.Circuit.manuscriptState(st, unit.id, placements);
+    const extraMs = equipped.slice(1)
+      .map((spec) => V.Circuit.manuscriptState(st, unit.id, placements, spec.id))
+      .filter((state) => state.ok);
+    const skillList = (ms.spec?.skills || []).concat(extraMs.flatMap((state, index) =>
+      state.spec.skills.map((sk) => ({ ...sk, group: index + 1 }))));
 
-    const maxHpMod = (st.run.maxHpModifiers && st.run.maxHpModifiers[unit.id]) || 1;
-    const rarity = (unit.manuscript && unit.manuscript.rarity) || 1;
-    const rs = D().DESIGN.rarityStat || { atk: 0, hp: 0, def: 0 };
-    const msHp = 1 + (rarity - 1) * (rs.hp || 0);
-    const msAtk = 1 + (rarity - 1) * (rs.atk || 0);
-    const msDef = 1 + (rarity - 1) * (rs.def || 0);
-    const maxHp = Math.round(body.hp * maxHpMod * msHp);
+    const maxHp = stats.maxHp;
     const hp = partyEntry.hp == null ? maxHp : clamp(partyEntry.hp, 1, maxHp);
 
     return {
       id: 'a_' + unit.id,
       sourceUnitId: unit.id,
       ms,
-      /* 时间轴与能量：参数全部来自功法，没有功法就用基准值 */
+      extraMs,
+      /* 时间轴与能量：参数全部来自蚀刻法，没有蚀刻法就用基准值 */
       atkTimer: 0,
       energy: (ms && ms.effects && ms.effects.startEnergy) || 0,
       energyMax: ((ms && ms.spec && ms.spec.energy && ms.spec.energy.max) || D().DESIGN.energyBase.max)
@@ -132,16 +171,23 @@
         + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.regen) || 0),
       lowHpRegen: (ms && ms.effects && ms.effects.boost && ms.effects.boost.lowHpRegen) || 0,
       skillCostCut: (ms && ms.effects && ms.effects.boost && ms.effects.boost.skillCostCut) || 0,
-      skillMult: 1 + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.skillMult) || 0),
+      skillMult: (1 + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.skillMult) || 0)) * ((ms && ms.effects.mainMult) || 1),
+      /* 三条流派轴：治疗只吃护持倍率，灼烧吃独立倍率，护盾吃独立倍率 */
+      healMult: (ms && ms.effects && ms.effects.boost && ms.effects.boost.healMult) || 0,
+      dotMult: (ms && ms.effects && ms.effects.boost && ms.effects.boost.dotMult) || 0,
+      shieldMult: (ms && ms.effects && ms.effects.boost && ms.effects.boost.shieldMult) || 0,
+      supportMult: (ms && ms.effects.supportMult) || 1,
+      emberAttack: !!(ms && ms.effects.boost && ms.effects.boost.ember),
       onHitEnergy: (ms && ms.spec && ms.spec.energy && ms.spec.energy.onHit) || 0,
       onAttackEnergy: (ms && ms.spec && ms.spec.energy && ms.spec.energy.onAttack) || 0,
       attackInterval: D().DESIGN.autoAttack.interval
         * ((ms && ms.spec && ms.spec.attack && ms.spec.attack.intervalScale) || 1),
       attackMult: D().DESIGN.autoAttack.mult
         * ((ms && ms.spec && ms.spec.attack && ms.spec.attack.mult) || 1)
-        * (1 + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.attackMult) || 0)),
+        * (1 + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.attackMult) || 0))
+        * ((ms && ms.effects.mainMult) || 1),
       routedAtkBonus: (ms && ms.spec && ms.spec.attack && ms.spec.attack.routedBonus) || 0,
-      skillList: (ms && ms.spec && ms.spec.skills) || [],
+      skillList,
       cds: {},
       atkSinceSkill: 0,
       pendingSkill: null,
@@ -150,25 +196,19 @@
       skinId: unit.skinId,
       enemyType: null,
       name: unit.name,
-      /* 武器已移除：位移与调谐效果改由功法提供 */
+      /* 武器已移除：位移与调谐效果改由蚀刻法提供 */
       modId: (unit.manuscript && unit.manuscript.modId) || null,
       traitId: (unit.manuscript && unit.manuscript.traitId) || null,
       bodyPreset: unit.bodyPreset,
       maxHp, hp,
-      atk: Math.round(body.atk * msAtk),
-      def: Math.round(body.def * msDef),
-      spd: body.spd,
+      atk: stats.atk,
+      def: stats.def,
+      spd: stats.spd,
       hits: D().DESIGN.baseHit,
       crit: D().DESIGN.baseCrit,
       dodge: D().DESIGN.baseDodge,
       alive: hp > 0,
       gauge: 0,
-      atkTimer: 0,
-      energy: 0,
-      casting: null,
-      castTimer: 0,
-      atkTimer: 0,
-      energy: 0,
       casting: null,
       castTimer: 0,
       skipActions: 0,
@@ -189,7 +229,6 @@
       gambits: (unit.gambits || []).slice(),
       logicSlots: unit.logicSlots || 2,
       stats: { damage: 0, healing: 0, taken: 0, kills: 0, actions: 0 },
-      lastBlockReason: '',
     };
   }
 
@@ -220,7 +259,11 @@
       skills: bpUnit.skills || [],
       cds: {},
       isBoss: !!bpUnit.isBoss,
-      isElite: false,
+      isElite: !!bpUnit.isElite,
+      sprite: bpUnit.sprite || null,
+      filter: bpUnit.filter || null,
+      onDeathBurst: bpUnit.onDeathBurst || null,
+      phaseSkills: (bpUnit.phaseSkills || []).slice(),
       disrupt: bpUnit.disrupt || null,
       phaseAt: bpUnit.phaseAt,
       phaseBuff: bpUnit.phaseBuff,
@@ -246,12 +289,21 @@
     });
     const enemies = enemyBlueprint.units.map(buildEnemy);
 
-    /* 开局直充：祝福给全场 2 点，功法台阶再按人加成 */
+    /* 开局直充：祝福给全场 2 点，蚀刻法台阶再按人加成 */
     const blessEnergy = (next.run.blessings || []).some((id) => id === 'flow') ? 2 : 0;
     allies.forEach((a) => {
       const msEnergy = (a.ms && a.ms.effects && a.ms.effects.startEnergy) || 0;
       const total = blessEnergy + msEnergy;
       if (total > 0) a.runtime.outputs.main = V.Circuit.pulse(total);
+    });
+
+    /* 祝福数值在这里一次性折成三个系数，战斗内不再回查数据表 */
+    const bless = { mainDmg: 0, dmgTaken: 0, stress: 0 };
+    (next.run.blessings || []).forEach((id) => {
+      const e = (D().BLESSINGS[id] && D().BLESSINGS[id].effect) || {};
+      bless.mainDmg += e.mainDmg || 0;
+      bless.dmgTaken += e.dmgTaken || 0;
+      bless.stress += e.stress || 0;
     });
 
     next.run.battle = {
@@ -267,6 +319,7 @@
       outcome: null,
       rngState: (rngStart >>> 0),
       tactic: 'balance',
+      bless,
       logSeq: 0,
       logs: [],
       stats: { damage: 0, healing: 0, taken: 0, kills: 0, rounds: 0 },
@@ -306,6 +359,12 @@
       amount *= (D().DESIGN.enemyDamageScale == null ? 1 : D().DESIGN.enemyDamageScale);
     }
     const o = opts || {};
+    /* 祝福：主手增伤与全队减伤，DOT 不吃减伤（否则灼烧会被两次削弱） */
+    const bless = (b && b.bless) || null;
+    if (bless) {
+      if (src && src.side === 'ally') amount *= 1 + bless.mainDmg;
+      if (tgt.side === 'ally' && !o.isDot) amount *= 1 + bless.dmgTaken;
+    }
     let dmg = Math.max(1, Math.round(amount));
 
     if (!o.pierce) {
@@ -333,6 +392,9 @@
     const beforeHp = tgt.hp;
     tgt.hp = Math.max(0, tgt.hp - dmg);
     const actual = beforeHp - tgt.hp;
+    if (actual > 0 && tgt.onHitEnergy && !o.isDot && !o.selfInflicted) {
+      tgt.energy = Math.min(tgt.energyMax, (tgt.energy || 0) + tgt.onHitEnergy);
+    }
     tgt.stats.taken += actual;
     if (src) src.stats.damage += actual;
     if (b.stats) {
@@ -353,7 +415,10 @@
         if (b.stats) b.stats.kills += 1;
       }
       log(b, { type: 'death', actorId: src ? src.id : null, targetId: tgt.id, text: `${tgt.name} 倒下了` });
-      if (tgt.side === 'enemy') checkBossPhase(b, tgt);
+      if (tgt.side === 'enemy') {
+        deathBurst(b, tgt);
+        checkBossPhase(b, tgt);
+      }
       return { dealt: actual, absorbed, died: true };
     }
 
@@ -365,7 +430,7 @@
     const before = tgt.hp;
     tgt.hp = Math.min(tgt.maxHp, tgt.hp + Math.round(amount));
     const healed = tgt.hp - before;
-    tgt.stats.healing += healed;
+    if (src) src.stats.healing += healed;
     if (b.stats) b.stats.healing += healed;
     const overheal = Math.round(amount) - healed;
     if (healed > 0) {
@@ -374,7 +439,24 @@
     return { healed, overheal };
   }
 
-  /** 首领半血阶段：只触发一次。 */
+  /** 死亡崩裂：倒下时把壳里的东西泼出来，一次性打击全队。 */
+  function deathBurst(b, dead) {
+    const burst = dead.onDeathBurst;
+    if (!burst || b.burstActive) return;
+    b.burstActive = true;
+    alive(b.allies).slice().forEach((t) => {
+      const dmg = dead.atk * (burst.mult || 0.8) * (1 - mitigation(t.def));
+      const r = applyDamage(b, dead, t, dmg, { aoe: true });
+      log(b, {
+        type: 'hit', actorId: dead.id, targetId: t.id, amount: r.dealt,
+        text: `${dead.name} 的${burst.name || '崩裂'}溅到 ${t.name} -${r.dealt}`,
+      });
+      if (burst.dot && t.alive !== false && r.dealt > 0) t.buffs.push({ ...burst.dot });
+    });
+    b.burstActive = false;
+  }
+
+  /** 首领半血阶段：只触发一次。第二阶段可以追加招式。 */
   function checkBossPhase(b, boss) {
     if (!boss || !boss.isBoss || boss.bossPhase !== 1) return;
     if (!boss.phaseAt) return;
@@ -385,8 +467,12 @@
       if (boss.phaseBuff.spdAdd) boss.spd += boss.phaseBuff.spdAdd;
       log(b, { type: 'phase', actorId: boss.id, text: `${boss.name} 进入第二阶段：${boss.phaseBuff.name}` });
     }
+    (boss.phaseSkills || []).forEach((sk) => {
+      if (!boss.skills.some((s) => s.id === sk.id)) boss.skills.push({ ...sk });
+      log(b, { type: 'phase', actorId: boss.id, text: `${boss.name} 起手招式：${sk.name}` });
+    });
     const allies = b.allies.filter((u) => u.alive !== false);
-    allies.forEach((u) => { u.stress = Math.min(100, u.stress + 6); });
+    allies.forEach((u) => addStress(b, u, 6));
   }
 
   /* ------------------------------ 行动条 ------------------------------ */
@@ -406,6 +492,7 @@
       });
       if (u.hp <= 0) return;
       u.buffs = (u.buffs || []).filter((x) => {
+        if (x.seconds != null) return x.seconds > 0;
         x.d = (x.d || 1) - 1;
         return x.d > 0;
       });
@@ -428,6 +515,7 @@
     u.actionCount += 1;
     if (b.stats) b.stats.actions = (b.stats.actions || 0) + 1;
     u.stats.actions += 1;
+    if (u.refract) u.refract = 0;
     /* 自身行动开始：清 guard、扣 skip */
     u.buffs = (u.buffs || []).filter((x) => x.k !== 'guard');
     if (u.skipActions > 0) {
@@ -448,7 +536,8 @@
       return { dealtDamage: false, hits: 0 };
     }
     const crit = rngChance(b, actor.crit);
-    const raw = actor.atk * (o.mult || 1) * (1 + (o.dmgBonus || 0));
+    const atkBonus = (actor.buffs || []).filter((x) => x.k === 'atkUp').reduce((sum, x) => sum + x.v, 0);
+    const raw = actor.atk * (o.mult || 1) * (1 + (o.dmgBonus || 0)) * (1 + atkBonus);
     const dmg = raw * (1 - mitigation(tgt.def)) * (crit ? 1.75 : 1);
     const res = applyDamage(b, actor, tgt, dmg, { aoe: !!o.aoe });
     log(b, {
@@ -456,7 +545,7 @@
       text: `${actor.name} ${o.label || '攻击'} ${tgt.name}${crit ? '（暴击）' : ''} -${res.dealt}`,
     });
     if (o.ember && res.dealt > 0) {
-      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * 0.18)), d: 2 });
+      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * 0.18 * (1 + (actor.dotMult || 0)))), d: 2 });
       log(b, { type: 'ember', actorId: actor.id, targetId: tgt.id, text: `${tgt.name} 被余烬点燃` });
     }
     if (o.stun && tgt.alive !== false) {
@@ -470,9 +559,10 @@
   /** 主手动作。返回 {dealtDamage, action} */
   /* ------------------------------ 时间轴 ------------------------------ */
 
-  /** 选目标：沿用战前指令的目标偏好（frontFoe / lowestHpFoe / ...） */
-  function gambitTarget(b, actor) {
+  /** 指令求值：目标 + 动作一起返回。动作不再只是界面上的一项。 */
+  function gambitPlan(b, actor) {
     let targetId = null;
+    let action = 'main';
     try {
       const ctx = {
         self: { id: actor.id, slot: actor.slot, hp: actor.hp, maxHp: actor.maxHp, alive: actor.alive },
@@ -481,12 +571,32 @@
           id: u.id, slot: u.slot, hp: u.hp, maxHp: u.maxHp,
           alive: u.alive !== false, charging: !!u.charging,
         })),
-        energy: { main: Math.floor(actor.energy || 0), support: 0 },
+        /* 「保护」与主手共用同一条余裕：这是它真正的机会成本 */
+        energy: { main: Math.floor(actor.energy || 0), support: Math.floor(actor.energy || 0) },
       };
       const d = V.Tactics.evaluate(ctx, actor.gambits);
-      targetId = d && d.targetIds && d.targetIds[0];
+      if (d) {
+        targetId = d.targetIds && d.targetIds[0];
+        action = d.action || 'main';
+      }
     } catch (e) { /* 指令异常不影响战斗，退回默认目标 */ }
-    return targetId;
+
+    if (b.tactic === 'focus') return { targetId: pickTarget(b, actor, 'lowestHpFoe')?.id || null, action: 'main' };
+    if (b.tactic === 'safe') return { targetId: alive(b.enemies).find((u) => u.charging)?.id || frontOf(b.enemies)?.id || null, action: 'main' };
+
+    if (action === 'guard') return { targetId: actor.id, action };
+    if (action === 'support') {
+      const mate = targetId && alive(b.allies).find((u) => u.id === targetId);
+      const lowest = alive(b.allies).slice().sort((a, c) => hpPct(a) - hpPct(c))[0];
+      return { targetId: (mate || lowest || actor).id, action };
+    }
+    const foe = byId(b.enemies, targetId) ? targetId : frontOf(b.enemies)?.id || null;
+    return { targetId: foe, action: 'main' };
+  }
+
+  /** 兼容旧调用：只要目标。 */
+  function gambitTarget(b, actor) {
+    return gambitPlan(b, actor).targetId;
   }
 
   function pickTarget(b, actor, kind) {
@@ -502,40 +612,58 @@
   }
 
   /** 条件判定：只做有限几种，便于 UI 解释 */
-  function condOk(b, actor, cond) {
+  function condOk(b, actor, cond, ms, attackCount) {
     if (!cond) return true;
     if (cond.routed || cond.routed === false) {
-      const routed = !!(actor.ms && actor.ms.routed);
+      const routed = !!(ms && ms.routed);
       if (routed !== !!cond.routed) return false;
     }
     if (cond.foeHpBelow != null) {
       const t = frontOf(b.enemies);
       if (!t || hpPct(t) >= cond.foeHpBelow) return false;
     }
+    if (cond.alliesHurt != null && alive(b.allies).filter((u) => hpPct(u) < 0.6).length < cond.alliesHurt) return false;
     if (cond.energyAbove != null && (actor.energy || 0) < cond.energyAbove) return false;
-    if (cond.attackCount != null && (actor.atkSinceSkill || 0) < cond.attackCount) return false;
+    if (cond.attackCount != null && attackCount < cond.attackCount) return false;
     return true;
   }
 
+  function cooldownKey(sk) { return sk.group ? sk.group + ':' + sk.id : sk.id; }
+
+  function skillCost(actor, sk) {
+    const cut = sk.group ? actor.extraMs[sk.group - 1].effects.boost.skillCostCut : actor.skillCostCut;
+    return Math.max(1, (sk.cost || 0) - (cut || 0));
+  }
+
   function readySkill(b, actor) {
-    const list = actor.skillList || [];
-    for (let i = 0; i < list.length; i++) {
-      const sk = list[i];
-      if (((actor.cds || {})[sk.id] || 0) > 0) continue;
-      if ((actor.energy || 0) < Math.max(1, (sk.cost || 0) - (actor.skillCostCut || 0))) continue;
-      if (!condOk(b, actor, sk.cond)) continue;
-      return sk;
+    const count = 1 + (actor.extraMs || []).length;
+    for (let offset = 0; offset < count; offset++) {
+      const group = ((actor.nextGroup || 0) + offset) % count;
+      const ms = group ? actor.extraMs[group - 1] : actor.ms;
+      const attacks = group ? ms.atkSinceSkill : actor.atkSinceSkill;
+      for (const sk of actor.skillList || []) {
+        if ((sk.group || 0) !== group || actor.cds?.[cooldownKey(sk)] > 0) continue;
+        if ((actor.energy || 0) < skillCost(actor, sk) || !condOk(b, actor, sk.cond, ms, attacks || 0)) continue;
+        const target = pickTarget(b, actor, sk.target);
+        if (target && !(sk.effect?.heal && target.hp >= target.maxHp)) return sk;
+      }
     }
     return null;
   }
 
   function startCast(b, actor, sk) {
+    actor.stats.skills = (actor.stats.skills || 0) + 1;
     actor.casting = sk.id;
     actor.castTimer = sk.castTime || 0.6;
     actor.cds = actor.cds || {};
-    actor.cds[sk.id] = sk.cooldown || 4;
-    actor.energy = Math.max(0, (actor.energy || 0) - Math.max(1, (sk.cost || 0) - (actor.skillCostCut || 0)));
-    actor.atkSinceSkill = 0;
+    const siblings = actor.skillList.filter((s) => s.group === sk.group);
+    for (const s of siblings.some((s) => s.sharedCooldown) ? siblings : [sk]) {
+      actor.cds[cooldownKey(s)] = sk.cooldown || 4;
+    }
+    actor.energy = Math.max(0, (actor.energy || 0) - skillCost(actor, sk));
+    if (sk.group) actor.extraMs[sk.group - 1].atkSinceSkill = 0;
+    else actor.atkSinceSkill = 0;
+    if (actor.extraMs?.length) actor.nextGroup = ((sk.group || 0) + 1) % (actor.extraMs.length + 1);
     actor.pendingSkill = sk;
     log(b, {
       type: 'cast', actorId: actor.id,
@@ -551,34 +679,52 @@
     const tgt = pickTarget(b, actor, sk.target);
     if (!tgt) return;
     const eff = sk.effect || {};
+    const source = sk.group ? actor.extraMs[sk.group - 1].effects : null;
+    const skillMult = source ? (1 + source.boost.skillMult) * source.mainMult : (actor.skillMult || 1);
+    const supportMult = source ? source.supportMult : (actor.supportMult || 1);
+    const healMult = source ? (source.boost.healMult || 0) : (actor.healMult || 0);
+    const dotMult = source ? (source.boost.dotMult || 0) : (actor.dotMult || 0);
+    const shieldMult = source ? (source.boost.shieldMult || 0) : (actor.shieldMult || 0);
     const label = `「${sk.name}」`;
     if (eff.heal) {
-      const amount = actor.atk * eff.heal * (1 + (b.healBonus || 0));
+      const amount = actor.atk * eff.heal * supportMult * (1 + healMult) * (1 + (b.healBonus || 0));
       healUnit(b, actor, tgt, amount);
     } else {
-      doBasicAttack(b, actor, tgt.id, { mult: (eff.mult || 1.4) * (actor.skillMult || 1), label });
+      const foes = alive(actor.side === 'ally' ? b.enemies : b.allies).sort((a, c) => a.slot - c.slot);
+      const targets = eff.pierce ? foes.slice(0, eff.pierce) : [tgt];
+      targets.forEach((target) => {
+        for (let i = 0; i < (eff.hits || 1) && target.alive !== false; i++) {
+          doBasicAttack(b, actor, target.id, { mult: (eff.mult || 1.4) * skillMult, label });
+        }
+      });
+      if (eff.splash) foes.filter((u) => !targets.includes(u)).forEach((target) => {
+        doBasicAttack(b, actor, target.id, { mult: (eff.mult || 1.4) * skillMult * eff.splash, label: label + '余波', aoe: true });
+      });
     }
     if (eff.shield) {
-      const gained = addShield(actor, Math.round(actor.maxHp * eff.shield));
+      const gained = addShield(actor, Math.round(actor.maxHp * eff.shield * (1 + shieldMult)));
       log(b, { type: 'shield', actorId: actor.id, targetId: actor.id, amount: gained, text: `${actor.name} 获得 ${gained} 护盾` });
     }
     if (eff.dot && tgt.alive !== false) {
-      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * (eff.dot.dmgMult || 0.2))), d: eff.dot.turns || 2 });
+      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * (eff.dot.dmgMult || 0.2) * (1 + dotMult))), d: eff.dot.turns || 2 });
     }
     if (eff.buffAttack && actor.alive !== false) {
-      actor.buffs.push({ k: 'atkUp', v: (eff.buffAttack.mult || 1.5) - 1, d: eff.buffAttack.seconds || 3 });
+      actor.buffs = actor.buffs.filter((x) => x.k !== 'atkUp');
+      actor.buffs.push({ k: 'atkUp', v: (eff.buffAttack.mult || 1.5) - 1, seconds: eff.buffAttack.seconds || 3 });
     }
   }
 
   /** 平A：不耗能量、按间隔自动打出 */
-  function doAutoAttack(b, actor) {
+  function doAutoAttack(b, actor, targetIdIn) {
     const bonus = (actor.routedAtkBonus && actor.ms && actor.ms.routed) ? actor.routedAtkBonus : 0;
-    const targetId = gambitTarget(b, actor);
+    const targetId = targetIdIn || gambitTarget(b, actor);
     const res = doBasicAttack(b, actor, targetId, {
       mult: (actor.attackMult || D().DESIGN.autoAttack.mult) * (1 + bonus),
-      label: '平A',
+      ember: actor.emberAttack,
+      label: '平攻',
     });
     actor.atkSinceSkill = (actor.atkSinceSkill || 0) + 1;
+    for (const ms of actor.extraMs || []) ms.atkSinceSkill = (ms.atkSinceSkill || 0) + 1;
     if (actor.onAttackEnergy) {
       actor.energy = Math.min(actor.energyMax || 20, (actor.energy || 0) + actor.onAttackEnergy);
     }
@@ -588,13 +734,45 @@
   /* ------------------------------ 我方行动 ------------------------------ */
 
   function allyTurn(b, actor) {
-    /* 时间轴上没有「这回合做什么」的选择：能放技能就放，否则平A */
+    /* 招式优先：条件满足就放，指令的防御/保护是没有招式可放时的选择 */
     const sk = readySkill(b, actor);
     if (sk) {
       startCast(b, actor, sk);
       return { res: { dealtDamage: false, action: 'cast' }, action: 'cast' };
     }
-    const res = doAutoAttack(b, actor);
+
+    const plan = gambitPlan(b, actor);
+
+    if (plan.action === 'guard') {
+      actor.buffs = (actor.buffs || []).filter((x) => x.k !== 'guard');
+      actor.buffs.push({ k: 'guard', d: 1 });
+      actor.lastAction = 'guard';
+      log(b, { type: 'guard', actorId: actor.id, text: `${actor.name} 举盾防守` });
+      return { res: { dealtDamage: false, action: 'guard' }, action: 'guard' };
+    }
+
+    if (plan.action === 'support') {
+      const cd = actor.cds.__support || 0;
+      const mate = alive(b.allies).find((u) => u.id === plan.targetId) || actor;
+      const wasted = mate.shield >= Math.round(mate.maxHp * D().SUPPORT.shieldCapPct);
+      /* 同一个人不会连续两次护持：否则全队在挨打时会一直举盾不还手 */
+      const repeat = actor.lastAction === 'support';
+      if (cd <= 0 && !wasted && !repeat) {
+        const amount = Math.round(mate.maxHp * D().SUPPORT.shieldPct
+          * (actor.supportMult || 1) * (1 + (actor.shieldMult || 0)));
+        const gained = addShield(mate, amount);
+        actor.cds.__support = D().SUPPORT.cooldown || 4;
+        actor.lastAction = 'support';
+        log(b, {
+          type: 'support', actorId: actor.id, targetId: mate.id, amount: gained,
+          text: `${actor.name} 为 ${mate.name} 支起 ${gained} 点护盾`,
+        });
+        return { res: { dealtDamage: false, action: 'support' }, action: 'support' };
+      }
+    }
+
+    const res = doAutoAttack(b, actor, plan.targetId);
+    actor.lastAction = 'attack';
     return { res: { dealtDamage: res.dealtDamage, action: 'attack' }, action: 'attack' };
   }
 
@@ -609,10 +787,55 @@
     return ready[0];
   }
 
-  function enemyTurn(b, e) {
-    e.actionCount += 1;
+  /** 技能的附加效果：先剥盾、抽余裕、上眩光，再算伤害。 */
+  function enemySkillStrike(b, e, sk, list) {
+    list.filter((t) => t && t.alive !== false).forEach((tgt) => {
+      if (sk.blind) {
+        tgt.buffs.push({ k: 'blind', v: sk.blind.v, d: sk.blind.d });
+        log(b, { type: 'blind', actorId: e.id, targetId: tgt.id, text: `${tgt.name} 被${sk.name}晃了眼，命中下降` });
+      }
+      if (sk.stripShield && tgt.shield > 0) {
+        const lost = tgt.shield;
+        tgt.shield = 0;
+        log(b, { type: 'strip', actorId: e.id, targetId: tgt.id, text: `${e.name} 的${sk.name}剥掉 ${tgt.name} ${lost} 点护盾` });
+      }
+      if (sk.drainEnergy) {
+        const before = Math.floor(tgt.energy || 0);
+        tgt.energy = Math.max(0, (tgt.energy || 0) - sk.drainEnergy);
+        if (before > 0) log(b, { type: 'drain', actorId: e.id, targetId: tgt.id, text: `${e.name} 抽走 ${tgt.name} ${Math.round(before - tgt.energy)} 点余裕` });
+      }
+      if (!(sk.mult > 0)) return;
+      if (!rngChance(b, hitChance(e, tgt))) {
+        log(b, { type: 'miss', actorId: e.id, targetId: tgt.id, text: `${e.name} 的${sk.name}落空` });
+        return;
+      }
+      const dmg = e.atk * sk.mult * (1 - mitigation(tgt.def));
+      const r = applyDamage(b, e, tgt, dmg, { aoe: list.length > 1, pierce: !!sk.pierce });
+      log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, text: `${e.name} 的${sk.name}命中 ${tgt.name} -${r.dealt}` });
+      if (sk.lifesteal && r.dealt > 0) healUnit(b, e, e, r.dealt * sk.lifesteal);
+      if (sk.dot && tgt.alive !== false) tgt.buffs.push({ ...sk.dot });
+    });
+    if (sk.stress) list.forEach((t) => t && t.alive !== false && addStress(b, t, sk.stress));
+  }
 
-    /* 扰位石傀：每第三次行动把我方最后一名存活单位推到最前 */
+  /** 不造成伤害的招式：治疗同族、自修、护住自己。 */
+  function enemySkillSupport(b, e, sk) {
+    if (sk.healAllies) {
+      const hurt = alive(b.enemies).filter((t) => t.hp < t.maxHp);
+      hurt.forEach((t) => healUnit(b, e, t, e.atk * sk.healAllies));
+      log(b, { type: 'support', actorId: e.id, text: `${e.name} 的${sk.name}替同族续了一口气` });
+    }
+    if (sk.healSelf) healUnit(b, e, e, e.maxHp * sk.healSelf);
+    if (sk.selfShield) {
+      const got = addShield(e, e.maxHp * sk.selfShield);
+      if (got > 0) log(b, { type: 'shield', actorId: e.id, text: `${e.name} 结起 ${got} 点硬壳` });
+    }
+  }
+
+  function enemyTurn(b, e) {
+    /* actionCount 由 beginAction 统一递增；这里不能再加一次，否则扰位节奏会翻倍 */
+
+    /* 扰位石傀：每第 N 次行动把我方最后一名存活单位推到最前 */
     if (e.disrupt && e.actionCount % e.disrupt.everyActions === 0) {
       const mates = alive(b.allies).sort((a, c) => a.slot - c.slot);
       const last = mates[mates.length - 1];
@@ -631,34 +854,21 @@
       }
     }
 
+    const foesOf = (sk) => {
+      const foes = alive(b.allies).sort((a, c) => a.slot - c.slot);
+      if (sk.target === 'allFoe') return foes;
+      if (sk.target === 'lowestHpFoe') return foes.slice().sort((a, c) => hpPct(a) - hpPct(c)).slice(0, 1);
+      if (sk.target === 'backFoe') return foes.slice(-1);
+      return foes.slice(0, 1);
+    };
+
     /* 预告中的技能：这次真的打出去 */
     if (e.charging) {
       const sk = e.charging;
       e.charging = null;
       e.intent = null;
-      const foes = alive(b.allies).sort((a, c) => a.slot - c.slot);
-      if (sk.target === 'allFoe') {
-        foes.forEach((tgt) => {
-          if (!rngChance(b, clamp(e.hits - tgt.dodge, 0.05, 1))) return;
-          const dmg = e.atk * sk.mult * (1 - mitigation(tgt.def));
-          const r = applyDamage(b, e, tgt, dmg, { aoe: true });
-          log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, text: `${e.name} 的${sk.name}命中 ${tgt.name} -${r.dealt}` });
-          if (sk.stress && tgt.alive !== false) {
-            tgt.stress = Math.min(100, tgt.stress + sk.stress);
-          }
-        });
-      } else {
-        const tgt = foes[0];
-        if (tgt) {
-          if (!rngChance(b, clamp(e.hits - tgt.dodge, 0.05, 1))) {
-            log(b, { type: 'miss', actorId: e.id, targetId: tgt.id, text: `${e.name} 的${sk.name}被闪开` });
-          } else {
-            const dmg = e.atk * sk.mult * (1 - mitigation(tgt.def));
-            const r = applyDamage(b, e, tgt, dmg, { pierce: !!sk.pierce });
-            log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, text: `${e.name} 的${sk.name}命中 ${tgt.name} -${r.dealt}` });
-          }
-        }
-      }
+      enemySkillSupport(b, e, sk);
+      enemySkillStrike(b, e, sk, foesOf(sk));
       e.cds[sk.id] = (sk.cd || 0) + 1;
       return 'main';
     }
@@ -667,6 +877,10 @@
     if (!sk) {
       const tgt = frontOf(b.allies);
       if (tgt) {
+        if (!rngChance(b, hitChance(e, tgt))) {
+          log(b, { type: 'miss', actorId: e.id, targetId: tgt.id, text: `${e.name} 落空` });
+          return 'basic';
+        }
         const dmg = e.atk * 1.0 * (1 - mitigation(tgt.def));
         const r = applyDamage(b, e, tgt, dmg, {});
         log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, text: `${e.name} 撕咬 ${tgt.name} -${r.dealt}` });
@@ -683,43 +897,16 @@
     }
 
     e.cds[sk.id] = (sk.cd || 0) + 1;
+    enemySkillSupport(b, e, sk);
 
-    const foes = alive(b.allies).sort((a, c) => a.slot - c.slot);
-    if (sk.target === 'allFoe') {
-      foes.forEach((tgt) => {
-        if (!rngChance(b, clamp(e.hits - tgt.dodge, 0.05, 1))) return;
-        const dmg = e.atk * sk.mult * (1 - mitigation(tgt.def));
-        const r = applyDamage(b, e, tgt, dmg, { aoe: true });
-        log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, text: `${e.name} 的${sk.name}命中 ${tgt.name} -${r.dealt}` });
-      });
-      if (sk.stress) foes.forEach((t) => { t.stress = Math.min(100, t.stress + sk.stress); });
-      return 'main';
-    }
+    const list = foesOf(sk);
+    if (!list.length) return 'basic';
+    enemySkillStrike(b, e, sk, list);
 
-    const tgt = sk.target === 'lowestHpFoe'
-      ? foes.slice().sort((a, c) => hpPct(a) - hpPct(c))[0]
-      : foes[0];
-    if (!tgt) return 'basic';
-
-    if (sk.mult <= 0) {
-      const stress = sk.stress || 6;
-      foes.forEach((t) => { t.stress = Math.min(100, t.stress + stress); });
-      log(b, { type: 'stress', actorId: e.id, text: `${e.name} 的${sk.name}让全队压力 +${stress}` });
+    /* 纯辅助招式：没有伤害、没有压力时算一次增益出手 */
+    if (!(sk.mult > 0) && !sk.stress) {
+      log(b, { type: 'support', actorId: e.id, text: `${e.name} 的${sk.name}没有落在任何人身上` });
       return 'buff';
-    }
-
-    if (!rngChance(b, clamp(e.hits - tgt.dodge, 0.05, 1))) {
-      log(b, { type: 'miss', actorId: e.id, targetId: tgt.id, text: `${e.name} 落空` });
-      return 'main';
-    }
-    const dmg = e.atk * sk.mult * (1 - mitigation(tgt.def));
-    const r = applyDamage(b, e, tgt, dmg, { pierce: !!sk.pierce });
-    log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, text: `${e.name} 的${sk.name}命中 ${tgt.name} -${r.dealt}` });
-    if (sk.lifesteal && r.dealt > 0) {
-      healUnit(b, e, e, r.dealt * sk.lifesteal);
-    }
-    if (sk.dot && tgt.alive !== false) {
-      tgt.buffs.push({ k: sk.dot.k, v: sk.dot.v, d: sk.dot.d });
     }
     return 'main';
   }
@@ -773,13 +960,16 @@
 
     [...b.allies, ...b.enemies].forEach((u) => {
       if (u.alive === false) return;
+      u.buffs = (u.buffs || []).filter((x) => {
+        if (x.seconds == null) return true;
+        x.seconds -= dt;
+        return x.seconds > 0;
+      });
       Object.keys(u.cds || {}).forEach((k) => {
         if (u.cds[k] > 0) u.cds[k] = Math.max(0, u.cds[k] - dt);
       });
-      let regen = u.regen == null ? D().DESIGN.energyBase.regen : u.regen;
-      if (u.lowHpRegen && hpPct(u) < 0.5) regen += u.lowHpRegen;
       const emax = u.energyMax == null ? D().DESIGN.energyBase.max : u.energyMax;
-      u.energy = Math.min(emax, (u.energy || 0) + regen * dt);
+      u.energy = Math.min(emax, (u.energy || 0) + energyRegen(u) * dt);
 
       if (u.casting) {
         u.castTimer -= dt;
@@ -793,7 +983,8 @@
     const actors = [];
     [...b.allies, ...b.enemies].forEach((u) => {
       if (u.alive === false || u.casting) return;
-      const iv = u.attackInterval == null ? D().DESIGN.autoAttack.interval : u.attackInterval;
+      const spark = u.extraMs?.find((s) => s.spec.id === 'spark');
+      const iv = (u.attackInterval ?? D().DESIGN.autoAttack.interval) * (spark?.spec.attack.intervalScale ?? 1);
       if (u.atkTimer >= iv) {
         u.atkTimer -= iv;
         actors.push(u);
@@ -843,7 +1034,13 @@
       const pos = V.Positions.resolveAfterAction(b, rootAction);
       b.allies = pos.battle.allies;
       b.enemies = pos.battle.enemies;
-      pos.events.forEach((ev) => events.push(ev));
+      for (const ev of pos.events) {
+        events.push(ev);
+        if (ev.type === 'move') {
+          const moved = byId(b.allies, ev.actorId);
+          log(b, { ...ev, text: `${moved.name} · ${V.Positions.describe(ev)}（${ev.meta.from + 1}→${ev.meta.to + 1}位）` });
+        }
+      }
 
       if (endCheck(b)) break;
     }
@@ -859,6 +1056,8 @@
   /* ------------------------------ 报告与待确认 ------------------------------ */
 
   function unitReport(u) {
+    const resonances = [u.ms, ...(u.extraMs || [])].filter((s) => s?.ok)
+      .map((s) => ({ name: s.spec.name, pct: s.pct, routed: s.routed }));
     return {
       id: u.id,
       sourceUnitId: u.sourceUnitId,
@@ -886,7 +1085,8 @@
       intent: u.charging ? { name: u.charging.name, target: u.charging.target } : u.intent || null,
       isBoss: !!u.isBoss,
       bossPhase: u.bossPhase || 0,
-      lastBlockReason: u.lastBlockReason || '',
+      resonance: resonances[0] || null,
+      resonances,
       stats: u.stats,
     };
   }
@@ -932,7 +1132,7 @@
     const rewardSpec = { gold: 0, shards: 0, drops: [] };
     if (outcome === 'win') {
       const baseGold = { normal: 22, elite: 38, boss: 70 }[b.kind] || 22;
-      let gold = Math.round((baseGold + floor * 5));
+      let gold = Math.round((baseGold + D().chapterAt(floor).number * 5));
       if ((st.run.blessings || []).includes('scavenger')) gold = Math.round(gold * 1.2);
       rewardSpec.gold = gold;
       rewardSpec.shards = b.kind === 'boss' ? 6 : b.kind === 'elite' ? 3 : 1;
@@ -941,14 +1141,8 @@
       const r = A.Random.next(b.rngState >>> 0);
       for (let i = 0; i < drops; i++) {
         const pick = A.Random.next((r.state + i * 7919) >>> 0);
-        const isWeapon = (i === 0 && pick.value < 0.25);
-        if (isWeapon) {
-          /* 武器已移除：奖励只给构件，功法走自己的掉落表 */
-          rewardSpec.drops.push({ kind: 'circuit' });
-        } else {
-          const idx = Math.floor((pick.value * 1000) % D().TEMPLATE_ORDER.length);
-          rewardSpec.drops.push({ kind: 'circuit', templateId: D().TEMPLATE_ORDER[idx] });
-        }
+        const idx = Math.floor(pick.value * D().TEMPLATE_ORDER.length);
+        rewardSpec.drops.push({ kind: 'circuit', templateId: D().TEMPLATE_ORDER[idx] });
       }
     }
 
@@ -976,7 +1170,7 @@
 
   V.Combat = {
     generateEncounter, create, step, report, prepareResult, setTactic,
-    TICK_LIMIT,
+    TICK_LIMIT, pressureRegenMultiplier, energyRegen,
     _internal: {
       applyDamage, healUnit, checkBossPhase, buildAlly, buildEnemy,
       mitigation, addShield, rngValue, log,

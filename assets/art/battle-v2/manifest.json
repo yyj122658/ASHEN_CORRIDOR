@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "generator": "Built-in imagegen",
+  "assets": {
+    "veteran.enemy.hound": {
+      "path": "assets/art/battle-v2/hound.png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": true,
+      "bounds": [
+        91,
+        449,
+        1132,
+        463
+      ],
+      "bytes": 700799,
+      "sha256": "253ab565ab2012695fa64b7139f7034139a96528388c5ec9c425a73f61e3d0c1"
+    }
+  }
+}

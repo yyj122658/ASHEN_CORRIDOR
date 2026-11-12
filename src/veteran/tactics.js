@@ -90,6 +90,7 @@
 
   /** 主手在当前位置的能量消耗（重炮在 4 号位更便宜）。 */
   function mainCost(weaponId, slot) {
+    if (!weaponId) return 0;
     const w = D().weapon(weaponId);
     const m = w.main;
     if (m.energyAtSlot3 != null && slot === 3) return m.energyAtSlot3;
@@ -97,6 +98,7 @@
   }
 
   function mainAllowed(weaponId, slot) {
+    if (!weaponId) return true;
     const m = D().weapon(weaponId).main;
     if (!m.allowedSlots) return true;
     return m.allowedSlots.includes(slot);

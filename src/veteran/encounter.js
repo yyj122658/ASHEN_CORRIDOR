@@ -234,40 +234,41 @@
       }
     });
 
-    /* ② rewardSpec → 真实构件（此时才分配 ID） */
+    /* ② rewardSpec → 真实纹路（此时才分配 ID） */
     const gained = [];
-    const overflow = [];
+
     (res.rewardSpec.drops || []).forEach((drop) => {
       const part = ST().makePart(next, {
         kind: drop.kind === 'weapon' ? 'weapon' : 'circuit',
-        templateId: drop.kind === 'weapon' ? drop.templateId : undefined,
+        templateId: drop.templateId,
         weaponId: drop.kind === 'weapon' ? drop.templateId : undefined,
         acquiredRunId: next.run.id,
         acquiredSeq: next.run.bag.length + next.run.pendingLoot.length + 1,
       });
       next.itemsById[part.id] = part;
-      const used = next.run.bag.reduce((a, id) => a + ST().partCells(next.itemsById[id]), 0);
-      if (used + ST().partCells(part) <= D().DESIGN.bagCapacity) {
-        next.run.bag.push(part.id);
-        gained.push(part.id);
-      } else {
-        next.run.pendingLoot.push(part.id);
-        overflow.push(part.id);
-      }
+      next.run.pendingLoot.push(part.id);
+      gained.push(part.id);
     });
 
     next.run.goldFound += res.rewardSpec.gold || 0;
     next.run.shards += res.rewardSpec.shards || 0;
 
+    const harvest = (next.run.ingredientLoot ||= {});
+    for (const enemy of e.enemyBlueprint.units) {
+      const seed = A.Random.seedFrom(`${e.combatRngStart}:${enemy.slot}`);
+      V.Kitchen.addYield(harvest, V.Kitchen.harvestOptions(enemy.enemyType), seed);
+    }
+    if (e.kind === 'elite') V.Expedition.findFieldManuscript(next, 'elite');
+
     e.confirmId = 'cfm_' + e.id + '_' + e.attemptNumber;
     e.pendingResult = null;
     e.checkpoint = null; /* 确认后彻底删除检查点 */
     next.run.battle = null;
-    next.run.stage = overflow.length ? 'loot' : 'loot';
+    next.run.stage = 'loot';
 
     return ST().ok(next, [{
       type: 'confirm',
-      meta: { confirmId: e.confirmId, gained, overflow, gold: res.rewardSpec.gold },
+      meta: { confirmId: e.confirmId, gained, gold: res.rewardSpec.gold },
     }]);
   }
 

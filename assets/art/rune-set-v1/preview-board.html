@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>纹章 · 板面接入预览</title>
+<style>
+  body { margin:0; padding:26px 30px 60px; background:#0E0C14; color:#CFC6B8;
+         font-family: ui-sans-serif, system-ui, "Microsoft YaHei", sans-serif; }
+  h1 { font-size:19px; color:#EFD082; letter-spacing:.08em; margin:0 0 6px; font-weight:600; }
+  .sub { font-size:12.5px; color:#7A7386; margin-bottom:22px; line-height:1.7; }
+  .row { display:flex; gap:30px; flex-wrap:wrap; align-items:flex-start; }
+  svg.board { background:linear-gradient(180deg,#151220,#100E18); border:1px solid #2A2438; }
+  .cap { font-size:12px; color:#8E9CAC; margin-top:8px; line-height:1.6; }
+  .cap b { color:#D8CFC0; font-weight:500; }
+  code { color:#9FB4C8; }
+</style>
+</head>
+<body>
+<h1>纹章 · 板面接入预览</h1>
+<div class="sub">
+  直接用 <code>src/veteran/rune-art.js</code> 的 <code>V.RuneArt.image()</code> 画在真实板面坐标系里
+  （格 60、左上 34/26）。左右两板同一批构件，区别只在旋转与翻转，
+  用来确认「图跟着逻辑转」，端口与格线不打架。
+</div>
+<div class="row">
+  <div>
+    <div id="b1"></div>
+    <div class="cap"><b>rotation 0</b><br>直导管 / 弯管 / 棱镜分流 / 脉冲储能腔</div>
+  </div>
+  <div>
+    <div id="b2"></div>
+    <div class="cap"><b>旋转与翻转</b><br>直导管 rot1、阈值闸 rot1 + flip、弯管 rot2 + flip、余烬 rot3</div>
+  </div>
+</div>
+
+<script src="../../../src/core/random.js"></script>
+<script src="../../../src/veteran/data.js"></script>
+<script src="../../../src/veteran/circuit.js"></script>
+<script src="../../../src/veteran/rune-art.js"></script>
+<script>
+Ashen.Veteran.RuneArt.setBase('../../../assets/art/rune-set-v1/grid/');
+const CELL = 60, GX = 34, GY = 26;
+const W = GX * 2 + CELL * 4, H = GY * 2 + CELL * 4;
+
+function board(el) {
+  el.innerHTML = `<svg class="board" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <rect x="0" y="0" width="${W}" height="${H}" fill="#120F1B" rx="4"/>
+    ${gridLines()}
+  </svg>`;
+  return el.querySelector('svg');
+}
+
+function gridLines() {
+  let s = '';
+  for (let i = 0; i <= 4; i++) {
+    s += `<line x1="${GX + i * CELL}" y1="${GY}" x2="${GX + i * CELL}" y2="${GY + 4 * CELL}" stroke="rgba(120,110,150,.22)"/>`;
+    s += `<line x1="${GX}" y1="${GY + i * CELL}" x2="${GX + 4 * CELL}" y2="${GY + i * CELL}" stroke="rgba(120,110,150,.22)"/>`;
+  }
+  return s;
+}
+
+function place(svg, id, x, y, rotation, mirrorY) {
+  const RA = window.Ashen.Veteran.RuneArt;
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.innerHTML = RA.image(id, {
+    x: GX + x * CELL, y: GY + y * CELL, cell: CELL, rotation: rotation || 0, mirrorY: !!mirrorY,
+  });
+  svg.appendChild(g.firstChild);
+  // 端口位置标记，确认图形与逻辑端口不打架
+  const pts = portsFor(id, x, y, rotation || 0, mirrorY);
+  pts.forEach((p) => {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', GX + (p[0] + 0.5) * CELL);
+    c.setAttribute('cy', GY + (p[1] + 0.5) * CELL);
+    c.setAttribute('r', '3');
+    c.setAttribute('fill', 'rgba(232,196,106,.85)');
+    svg.appendChild(c);
+  });
+}
+
+/* 用真实逻辑算端口格：不复制旋转规则，直接问 Circuit */
+function portsFor(id, ox, oy, rotation, mirrorY) {
+  const A = window.Ashen.Veteran;
+  const state = { itemsById: { t: { id: 't', kind: 'circuit', templateId: id } } };
+  const L = A.Circuit.layout(state, [{ itemId: 't', x: 0, y: 0, rotation, mirrorY: !!mirrorY }]);
+  return L.built[0].aps.map((p) => [p.cell[0] + ox, p.cell[1] + oy]);
+}
+
+const s1 = board(document.getElementById('b1'));
+place(s1, 'straight', 0, 0);
+place(s1, 'elbow', 2, 0);
+place(s1, 'splitter', 0, 1);
+place(s1, 'capacitor', 2, 2);
+
+const s2 = board(document.getElementById('b2'));
+place(s2, 'straight', 0, 0, 1);          // 2x1 转 90° → 1 列 2 行
+place(s2, 'elbow', 1, 0, 2, true);       // 2x2 转 180° 且上下翻转
+place(s2, 'threshold', 3, 0, 1, true);   // 2x1 转 90° + 翻转
+place(s2, 'capacitor', 0, 2, 0);         // 2x2 原样
+place(s2, 'ember', 2, 2, 3);             // 2x1 转 270° → 1 列 2 行
+</script>
+</body>
+</html>

@@ -42,8 +42,13 @@
       return { ok: false, errors: [`state.version 不是 ${ST().VERSION}`], state: null };
     }
 
-    const v = ST().validate(st);
-    if (!v.ok) return { ok: false, errors: v.errors, state: null };
+    try {
+      const v = ST().validate(st);
+      if (!v.ok) return { ok: false, errors: v.errors, state: null };
+      V.Expedition.migrateChest(st);
+    } catch {
+      return { ok: false, errors: ['存档中的角色、板面或远征记录损坏'], state: null };
+    }
     return { ok: true, errors: [], state: st, savedAt: env.savedAt || 0 };
   }
 

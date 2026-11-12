@@ -1,0 +1,309 @@
+/* 回廊行图与远征界面。节点插画直接来自游戏图集。 */
+.ex-page {
+  --ex-metal: #1a242b;
+  --ex-edge: #394852;
+  --ex-copper: #e0ab7f;
+  --ex-type: #e4e8e9;
+  --ex-muted: #acbcc5;
+  color: var(--ex-type);
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.ex-page h1, .ex-page h2, .ex-page h3 { margin: 0; }
+.ex-page h2 { font-size: 18px; letter-spacing: .04em; }
+.ex-page > .btn { justify-self: start; }
+.ex-page .panel, .ex-page .contribution-card, .ex-page .unit-bar,
+.ex-page .choice, .ex-page .blessing-card, .ex-page .inscribe-card {
+  background: var(--ex-metal); border-color: var(--ex-edge);
+}
+.ex-page .panel-h { margin-bottom: 16px; }
+.ex-page .muted, .ex-page small { color: var(--ex-muted); }
+.ex-header {
+  min-height: clamp(145px, 15vw, 216px); position: relative; isolation: isolate;
+  overflow: hidden; display: grid; align-items: end; border: 1px solid var(--ex-edge);
+  background: #172129;
+}
+.ex-header .ex-backdrop {
+  z-index: -2; position: absolute; inset: 0; height: 100%; width: 100%;
+  object-fit: cover; image-rendering: pixelated;
+}
+.ex-header::after { content: ""; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(90deg, #0d151cea 0%, #1018209a 43%, #15202916 82%), linear-gradient(0deg,#0d141c8f, transparent 60%); }
+.ex-header-text { padding: clamp(18px, 3vw, 42px); }
+.ex-header-text > span { font-size: 12px; letter-spacing: .16em; color: #e6bb94; }
+.ex-header h1, .ex-combat-top h1 { font-family: var(--font-title); font-weight: 650; }
+.ex-header h1 { font-size: clamp(30px, 3.8vw, 54px); line-height: 1.25; letter-spacing: .075em; margin-top: 7px; color: #f4ece1; }
+.ex-header p { max-width: 62ch; line-height: 1.65; margin: 8px 0 0; color: #d3dce0; font-size: 14px; }
+.ex-depth { display: flex; list-style: none; padding: 0; margin: -18px 0 0; border: 1px solid var(--ex-edge); border-top: 0; background: #141d24; }
+.ex-depth li { min-width: 0; flex: 1; display: flex; align-items: baseline; justify-content: center; gap: 7px;
+  padding: 12px 2px; color: #a6b3bb; border-right: 1px solid #35414b; }
+.ex-depth li:last-child { border: 0; }
+.ex-depth b { font: 600 18px var(--font-mono); }
+.ex-depth span { font-size: 11px; }
+.ex-depth .here { background: #342c29; color: #f1bf95; box-shadow: inset 0 -3px #e0ab7f; }
+.ex-depth .passed { color: #b3d0cd; }
+.ex-map-layout, .ex-battle-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(210px, 1fr); gap: 20px; align-items: start; }
+.ex-fork h2 { text-align: center; }
+.ex-paths { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; position: relative; padding-top: 32px; }
+.ex-paths::before { content: ""; position: absolute; width: 1px; height: 16px; top: 0; left: 50%; background: var(--ex-copper); }
+.ex-paths::after { content: ""; position: absolute; top: 15px; left: calc(16.666% - 4px); right: calc(16.666% - 4px); border-top: 1px solid #9f7960; }
+.ex-road { min-width: 0; position: relative; text-align: left; font: inherit; cursor: pointer; padding: 0;
+  background: #1a252d; color: inherit; border: 1px solid var(--ex-edge); display: flex; flex-direction: column; }
+.ex-road::before { content: ""; position: absolute; top: -17px; height: 16px; left: 50%; border-left: 1px solid #9f7960; }
+.ex-road:hover:not(:disabled), .ex-road:focus-visible { border-color: var(--ex-copper); background: #25323a; }
+.ex-road:disabled { opacity: .55; }
+.ex-road-image { display: block; width: 100%; aspect-ratio: 1.5; overflow: hidden; border-bottom: 1px solid var(--ex-edge); }
+.ex-road-image img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+.ex-road-info { display: grid; gap: 8px; padding: clamp(11px, 1.5vw, 20px); }
+.ex-road-info strong { font: 600 clamp(17px, 1.8vw, 25px) var(--font-title); color: #f1e7d9; }
+.ex-road-info > span { font-size: 13px; color: var(--ex-muted); }
+.ex-road-info .ex-risk { font-size: 11px; color: #d1b497; }
+.ex-road-info .risk-none { color: #9ec3bc; }
+.ex-road-info .risk-high, .ex-road-info .risk-deadly { color: #f4a49b; }
+.ex-manifest, .ex-feed { border-left: 2px solid #937158; background: #172128; padding: 15px; min-width: 0; }
+.ex-crew { margin-block: 10px 14px; }
+.ex-crew-member { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 9px; padding: 6px 0; border-bottom: 1px solid var(--ex-edge); }
+.ex-crew-member .legend-portrait { height: 42px; width: 40px; min-height: 0; overflow: hidden; }
+.ex-crew-member strong, .ex-crew-member > span { font-size: 13px; }
+.ex-crew-member small, .ex-pack small { display: block; font-size: 11px; }
+.ex-crew-member > span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ex-crew-member > span small { display: inline; color: var(--ex-muted); }
+.ex-pack p { margin: 10px 0; font-size: 13px; }
+.ex-pack b, .ex-reward-line b { color: var(--ex-copper); }
+.ex-pack small { margin: 6px 0; }
+.ex-pack .btn { margin-top: 6px; width: 100%; }
+.ex-prep { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr); gap: 16px; align-items: start; }
+.ex-page .vet-slot { background: #202c33; border-color: var(--ex-edge); }
+.ex-page .enemy-row { display: grid; gap: 4px; padding: 9px 0; }
+.ex-rules, .ex-retreat { padding: 12px 0; font-size: 13px; }
+.ex-page summary { cursor: pointer; padding: 5px 0; color: #d6b89f; }
+.ex-combat .ex-combat-top { border: 0; border-bottom: 1px solid var(--ex-edge); background: none; margin: 0; padding: 0 0 12px; }
+.ex-combat-top h1 { font-size: clamp(22px, 2.6vw, 34px); margin-right: 12px; }
+.ex-battle-layout { align-items: stretch; }
+.ex-field, .ex-battle-layout > *, .ex-page .battle-bars > * { min-width: 0; }
+.ex-combat .battle-stage { border-color: var(--ex-edge); }
+.ex-combat .battle-actions { margin-top: 10px; }
+.ex-combat .battle-bars { margin: 0; }
+.ex-combat .side { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,117px),1fr)); gap: 6px; margin-top: 8px; }
+.ex-feed { display: flex; flex-direction: column; }
+.ex-feed .battle-log { flex: 1; max-height: clamp(150px,18vw,260px); background: none; border: 0; padding: 0; }
+.ex-feed .lg { border-bottom: 1px solid #2a3740; padding: 4px 0; line-height: 1.5; }
+.ex-feed .lg.warn { border-left: 2px solid #e4ad77; padding-left: 6px; font-weight: 600; }
+.ex-page .ex-reward-line { margin-top: 12px; font-size: 16px; }
+.ex-offers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 14px; }
+.ex-part { background: var(--ex-metal); border: 1px solid var(--ex-edge); display: flex; flex-direction: column; }
+.ex-specimen { display: grid; place-items: center; min-height: 110px; background-color: #111c23;
+  background-image: linear-gradient(#21313c 1px, transparent 1px), linear-gradient(90deg,#21313c 1px, transparent 1px); background-size: 19px 19px; }
+.ex-specimen .mini-shape { width: 76px; height: 76px; }
+.ex-part-info { display: flex; flex-direction: column; align-items: start; padding: 16px; flex: 1; }
+.ex-part-info h3 { margin-top: 4px; }
+.ex-part-info p { color: #c4ced2; font-size: 14px; line-height: 1.7; flex: 1; margin: 8px 0 14px; }
+.ex-event .choice { padding: 14px 18px; }
+@media (max-width: 900px) {
+  .ex-map-layout, .ex-battle-layout { grid-template-columns: 1fr; }
+  .ex-manifest { display: grid; grid-template-columns: 1.3fr 1fr; gap: 0 20px; }
+  .ex-manifest > h2, .ex-crew { grid-column: 1; }
+  .ex-pack { grid-column: 2; grid-row: 1 / 3; }
+  .ex-feed .battle-log { max-height: 100px; }
+  .ex-prep { grid-template-columns: 1fr; }
+  .ex-prep .enemy-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); gap: 12px; }
+}
+@media (max-width: 600px) {
+  .ex-page { gap: 14px; }
+  .ex-depth { margin-top: -14px; }
+  .ex-depth li { flex-direction: column; gap: 2px; align-items: center; padding: 7px 0; }
+  .ex-depth b { font-size: 15px; }
+  .ex-fork h2 { text-align: left; }
+  .ex-paths { grid-template-columns: 1fr; gap: 8px; padding: 12px 0 0 16px; }
+  .ex-paths::before { left: 2px; top: 4px; bottom: 48px; width: 1px; height: auto; }
+  .ex-paths::after { display: none; }
+  .ex-road { display: grid; grid-template-columns: 30% 1fr; align-items: stretch; }
+  .ex-road::before { top: 50%; left: -15px; width: 14px; height: 1px; border: 0; background: #9f7960; }
+  .ex-road-image { aspect-ratio: auto; border: 0; }
+  .ex-road-info { padding: 10px 12px; gap: 3px; }
+  .ex-manifest { display: block; }
+  .ex-header-text { padding: 16px; }
+  .ex-header p { font-size: 13px; }
+  .ex-combat-top h1 { width: 100%; }
+  .ex-page .btn, .ex-page .choice, .ex-page summary { min-height: 44px; }
+  .ex-page .battle-bars { grid-template-columns: 1fr; }
+  .ex-combat .side { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .ex-offers { grid-template-columns: 1fr; }
+  .ex-part { display: grid; grid-template-columns: 76px 1fr; }
+  .ex-specimen .mini-shape { width: 60px; height: 60px; }
+  .ex-part-info { padding: 12px; }
+}
+
+/* 随行背包。纹路的后续占格淡显，仍可从任一格抓起整件。 */
+.camp-pack { padding: 12px 18px; margin-block: 12px; }
+.camp-pack summary { cursor: pointer; color: #dfc9a3; }
+.camp-pack .item-label { vertical-align: middle; }
+.camp-pack .btn { margin-inline-start: auto; }
+.hud-pack { order: 3; white-space: nowrap; }
+.hud-pack kbd { font: 10px var(--font-mono); color: #d0b790; border: 1px solid #796b56; border-radius: 2px; padding: 0 3px; }
+.pack-dialog { width: min(730px, 100%); max-height: min(90dvh, 870px); padding: clamp(14px, 2.5vw, 28px); overflow-y: auto; overscroll-behavior: contain; background: #202426; color: #e2d9ca; }
+.pack-heading, .pack-tools, .pack-folio, .pack-ground > div { display: flex; align-items: center; gap: 10px; }
+.pack-heading { margin-bottom: 17px; padding-bottom: 14px; border-bottom: 1px solid #595044; }
+.pack-heading h2 { margin: 0; font: 500 clamp(20px, 3vw, 29px) var(--font-title); color: #f2d7a9; }
+.pack-heading small, .pack-tools > span, .pack-folio small, .pack-ground small, .pack-detail small, .pack-quantity { color: #c1b39e; font-size: 12px; }
+.pack-count { margin-left: auto; color: #e5c28a; font: 500 20px var(--font-mono); white-space: nowrap; }
+.pack-count span { color: #beb4a7; font-size: 12px; }
+.pack-layout { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(140px, 1fr); gap: 16px; }
+.pack-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.pack-slot { position: relative; isolation: isolate; display: grid; place-items: center; aspect-ratio: 1; width: 100%; padding: 2px; min-width: 0; color: #e3d3b4; border: 1px solid #4b4841; border-radius: 3px; background: #191d20; }
+.pack-slot[data-kind="rune"] { border-color: #817054; background: linear-gradient(150deg,#3b372f,#232a2a); }
+.pack-slot[data-kind="ingredient"] { border-color: #667567; background: linear-gradient(150deg,#303a34,#222c2a); }
+.pack-slot[draggable="true"] { cursor: grab; }
+.pack-slot:hover:not(:disabled), .pack-slot:focus-visible { outline: 1px solid #b3a188; outline-offset: -2px; }
+.pack-slot.related { border-color: #baa276; }
+.pack-slot.selected, .pack-slot.drop-target { border-color: #ffe0a5; outline: 2px solid #efcb91; outline-offset: -3px; }
+.pack-slot.dragging { opacity: .6; }
+.pack-slot .catalogue-icon { width: 82%; height: auto; aspect-ratio: 1; display: block; border-radius: 0; pointer-events: none; }
+.pack-slot[data-segment="true"] .catalogue-icon { opacity: .52; }
+.pack-slot small { position: absolute; right: 3px; bottom: 2px; font: 9px var(--font-mono); background: #222525e8; padding: 1px 2px; color: #ddc595; }
+.pack-tools { justify-content: space-between; margin-top: 8px; min-height: 36px; }
+.pack-detail { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; min-width: 0; padding: 15px; background: #191d1f; border-left: 2px solid #7d6950; }
+.pack-detail h3, .pack-ground h3 { margin: 0; font: 500 18px var(--font-title); color: #f0d7ad; }
+.pack-detail p { margin: 0; font-size: 13px; color: #c8c3b9; line-height: 1.65; }
+.pack-detail .pack-message { color: #f3ac8f; }
+.pack-detail .btn { margin-top: auto; }
+.pack-inspect-art { display: grid; place-items: center; width: 76px; height: 76px; max-width: 100%; }
+.pack-inspect-art .catalogue-icon, .pack-inspect-art .mini-shape { width: 100%; height: 100%; }
+.pack-folio { border-block: 1px solid #544c41; padding: 10px 0; margin-top: 14px; font-size: 13px; flex-wrap: wrap; }
+.pack-folio small { margin-left: auto; }
+.pack-ground { margin-top: 15px; }
+.pack-ground > div { padding: 6px 0; border-bottom: 1px solid #393c3b; }
+.pack-ground > div > .item-label { flex: 1; min-width: 0; }
+.pack-ground .btn, .pack-heading .btn, .pack-tools .btn, .pack-detail .btn { flex-shrink: 0; }
+@media (max-width: 620px) {
+  .hud-pack kbd { display: none; }
+  .modal-backdrop:has(.pack-dialog) { padding: 8px; }
+  .pack-dialog { max-height: 94dvh; }
+  .pack-layout { grid-template-columns: 1fr; gap: 8px; }
+  .pack-detail { display: flow-root; min-height: 44px; padding: 10px; }
+  .pack-inspect-art { width: 48px; height: 48px; float: left; margin: 0 10px 3px 0; }
+  .pack-detail .btn { float: right; margin-top: 4px; }
+  .pack-detail p { margin: 3px 0; }
+  .pack-folio { margin-top: 10px; }
+  .pack-dialog .btn { min-height: 40px; }
+}
+
+/* 搜刮台两边共享现场状态，窄屏将背包缩成三列。 */
+.loot-page { max-width:1160px; margin-inline:auto; }
+.loot-columns { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; align-items:start; }
+.loot-pack,.loot-ground { min-width:0; padding:clamp(12px,2vw,26px); background:#202425; border:1px solid #504a40; border-radius:5px; }
+.loot-pack .pack-layout { display:block; }
+.loot-pack .pack-detail { display:flow-root; margin-top:12px; min-height:0; }
+.loot-pack .pack-inspect-art { float:left; margin-right:10px; }
+.loot-pack .pack-detail .btn { margin-top:8px; }
+.loot-rune,.loot-exit { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.loot-rune { padding:12px 0; border-bottom:1px solid #474541; }
+.loot-rune .item-label,.loot-exit small { margin-right:auto; }
+.loot-ground .ex-offers { grid-template-columns:1fr; }
+.loot-exit { margin-top:14px; padding:12px 0 0; border-top:1px solid #504a40; }
+@media(max-width:650px) {
+  .loot-columns { gap:6px; grid-template-columns:minmax(0, .96fr) minmax(0,1.04fr); }
+  .loot-pack,.loot-ground { padding:8px; }
+  .loot-pack .pack-grid { gap:2px; }
+  .loot-columns .pack-heading,.loot-columns .pack-tools,.loot-columns .k-stock-row { flex-wrap:wrap; }
+  .loot-columns .pack-heading h2 { font-size:20px; }
+  .loot-ground .k-stock-row { display:grid; grid-template-columns:1fr; }
+  .loot-ground .k-stock-row small { display:none; }
+  .loot-ground .ex-part { display:block; }
+  .loot-pack .pack-inspect-art { float:none; }
+  .loot-pack .pack-folio { gap:4px; }
+}
+
+.pack-grid { isolation:isolate; position:relative; }
+.pack-footprint { position:absolute; inset:0; container-type:size; pointer-events:none; display:grid; place-items:center; min-width:0; min-height:0; z-index:1; }
+.pack-footprint .rune-thumb { width:100%; height:100%; display:block; }
+.pack-footprint .catalogue-icon { width:min(84cqw,84cqh); height:min(84cqw,84cqh); mix-blend-mode:lighten; }
+.pack-grid .pack-slot { isolation:auto; }
+.pack-grid .pack-slot small { z-index:2; }
+@media(max-width:650px) {
+  .loot-pack .pack-grid .pack-slot small { font-size:9px; padding:0 1px; bottom:0; right:0; }
+}
+
+/* 地面上的物件共用六列格距。透明缺口让光标直接落到相邻物件。 */
+.ground-grid {
+  display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); grid-template-rows:repeat(var(--ground-rows),minmax(0,1fr));
+  width:100%; aspect-ratio:6 / var(--ground-rows); position:relative; isolation:isolate; background-color:#141b1e;
+  background-image:linear-gradient(to right,#454b4870 1px,transparent 1px),linear-gradient(to bottom,#454b4870 1px,transparent 1px);
+  background-size:calc(100% / 6) calc(100% / var(--ground-rows)); border-right:1px solid #454b4870; border-bottom:1px solid #454b4870;
+}
+.ground-item { position:relative; border:0; background:none; padding:0; min-width:0; min-height:0; margin:0; overflow:visible; isolation:isolate; color:#e8cf9e; }
+.ground-item:disabled { opacity:1; cursor:default; }
+.ground-cell { position:absolute; box-sizing:border-box; width:100%; height:100%; border:solid #a38c69; background:#514a39; }
+.ground-item[data-scan="waiting"] .ground-cell { background:#273034; border-color:#566366; }
+.ground-item[data-scan="scanning"] .ground-cell {
+  border-color:#c0c3aa; background-color:#3c4541; background-image:linear-gradient(115deg,transparent 28%,#abb79c88 51%,transparent 72%);
+  background-size:230% 100%; animation:ground-search .34s ease-out var(--scan-lag,0ms) both;
+}
+@keyframes ground-search { from { background-position:170% 0; } to { background-position:-55% 0; } }
+.ground-item[data-scan="revealed"]:disabled .ground-cell { background:#413a34; border-color:#806b57; }
+.ground-item:not(:disabled):is(:hover,:focus-visible) .ground-cell { background:#6d6247; border-color:#f3d795; }
+.ground-face { position:absolute; container-type:size; display:grid; place-items:center; pointer-events:none; }
+.ground-face * { pointer-events:none; }
+.ground-item:not([data-scan="revealed"]) :is(.ground-face,.ground-quantity) { visibility:hidden; }
+.ground-face .catalogue-icon { width:min(84cqw,84cqh); height:min(84cqw,84cqh); mix-blend-mode:lighten; }
+.ground-face .rune-thumb { display:block; width:100%; height:100%; }
+.ground-quantity { position:absolute; bottom:1px; right:2px; padding:1px 2px; font:10px var(--font-mono); background:#232623; color:#eddbb7; pointer-events:none; }
+.ground-register { margin-top:10px; }
+.loot-ground .ground-note { display:block; min-width:0; position:relative; border-bottom:1px solid #484840; padding:5px 0; }
+.ground-unseen { position:absolute; inset:0; display:flex; align-items:center; font:12px var(--font-body); color:#a4afa8; }
+.ground-note[data-scan="revealed"] .ground-unseen { display:none; }
+.ground-known { display:flex; flex-wrap:wrap; align-items:center; min-height:40px; gap:5px; }
+.ground-note:not([data-scan="revealed"]) .ground-known { opacity:0; pointer-events:none; }
+.ground-note:not([data-scan="revealed"]) :is(.ground-name > span:not(.catalogue-icon),.ground-known p,.ground-known .btn) { visibility:hidden; }
+.ground-known p { flex:1 0 100%; color:#c0b9ab; font-size:12px; line-height:1.5; margin:0 0 4px; }
+.ground-name { display:flex; align-items:center; gap:8px; flex:1; min-width:0; text-align:left; background:transparent; padding:3px; border:0; color:#e5d5b6; }
+.ground-name span { min-width:0; overflow-wrap:anywhere; line-height:1.4; }
+.ground-name .catalogue-icon { width:34px; height:34px; flex:none; }
+.ground-known .ground-name small { display:block; font-size:11px; color:#b1aa99; }
+.ground-name:disabled { opacity:.82; }
+.ground-empty { margin:14px 0; text-align:center; }
+@media(max-width:650px) {
+  .ground-register { margin-top:5px; }
+  .ground-name { font-size:12px; gap:4px; min-height:40px; }
+  .ground-name .catalogue-icon { width:24px; height:24px; }
+  .ground-known .btn { min-height:32px; padding:2px 5px; font-size:11px; }
+  .ground-quantity { font-size:8px; }
+}
+@media(prefers-reduced-motion:reduce) { .ground-cell { animation:none !important; } }
+
+.pack-grid .pack-slot[data-token]:not([data-token=""]) { background:transparent; border-color:transparent; outline:none; }
+.pack-shell { position:absolute; inset:0; width:100%; height:100%; z-index:-1; }
+.pack-surface { fill:#38332b; }
+.pack-footprint[data-pack-kind="ingredient"] .pack-surface { fill:#283631; }
+.pack-rim { fill:none; stroke:#9c8865; stroke-width:3px; stroke-linecap:square; }
+.pack-footprint[data-pack-kind="ingredient"] .pack-rim { stroke:#667f71; }
+.pack-footprint.is-selected .pack-rim,.pack-footprint.is-pointed .pack-rim { stroke:#ffe0a2; stroke-width:5px; }
+.pack-nameplate { position:absolute; color:#f4dfbb; background:#26231fe8; padding:1px 4px; border-radius:2px; font-size:clamp(9px,1vw,12px); line-height:1.4; white-space:nowrap; }
+.pack-slot.drop-target::after { content:''; position:absolute; inset:0; z-index:3; background:#92cc8f55; border:2px solid #b2d9a1; pointer-events:none; }
+.pack-slot.drop-target.bad-fit::after { background:#ba584855; border-color:#dc8f79; }
+@media(max-width:650px) { .loot-pack .pack-nameplate { display:none; } }
+
+/* 地面与背包共用真实格距，浮起的轮廓不接收命中。 */
+.ground-item { touch-action:none; user-select:none; -webkit-user-select:none; }
+.ground-item:not(:disabled) { cursor:grab; }
+.loot-pack :is([data-pack-slot]:not([data-token=""]),[data-pack-overflow]) { touch-action:none; user-select:none; cursor:grab; }
+.ground-slot.drop-target { z-index:2; pointer-events:none; background:#92cc8f55; outline:2px solid #b2d9a1; outline-offset:-2px; }
+.ground-slot.drop-target.bad-fit { background:#ba584855; outline-color:#dc8f79; }
+.loot-ground .ground-grid { width:min(100%, 54vh); margin-inline:auto; }
+.loot-pack [data-pack-overflow] { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:4px 0; }
+.ground-item.loot-lifting { opacity:.35; }
+.loot-drop-ghost { position:fixed; top:0; left:0; z-index:1100; pointer-events:none; opacity:.92; filter:drop-shadow(0 6px 8px #0009); }
+.loot-drop-ghost i { position:absolute; box-sizing:border-box; border:2px solid #d9c494; background:#5c5745ee; }
+.loot-drop-ghost .ground-face { visibility:visible; }
+.loot-drop-ghost.bad-fit i { border-color:#e39b85; background:#704a42ee; }
+.loot-drop-ghost .rune-thumb { width:100%; height:100%; }
+
+.chapter-itinerary { margin:0 0 14px; color:#cbbda3; font-size:13px; }
+.chapter-itinerary summary { cursor:pointer; width:fit-content; padding:5px 0; }
+.chapter-itinerary ol { display:grid; grid-template-columns:repeat(auto-fit,minmax(112px,1fr)); gap:8px; padding:0; list-style:none; }
+.chapter-itinerary li { display:grid; gap:3px; padding:6px 9px; border-left:2px solid #57534a; }
+.chapter-itinerary li[aria-current] { border-color:#e3be82; color:#efce99; }
+.chapter-itinerary small { color:#aaa699; }
+
+:is(.pack-footprint,.ground-face) .catalogue-icon { rotate:var(--item-turn,0deg); }

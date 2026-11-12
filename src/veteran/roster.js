@@ -6,17 +6,24 @@
   const D = () => V.Data;
   const ST = () => V.State;
 
-  /** 有效属性：底盘 + 本局 maxHp 修正（远征中才有）。 */
-  function stats(st, unit) {
+  /** 有效属性：共同基数 + 已装蚀刻法阶位 + 本局生命修正，经典板兼容旧值。 */
+  function stats(st, unit, placements) {
     if (!unit) return { maxHp: 1, atk: 0, def: 0, spd: 1 };
     const body = D().body(unit.bodyPreset);
+    const base = V.Circuit.plateOf(unit).generated ? D().DESIGN.metalBase : body;
+    const rarity = Math.max(1, ...ST().manuscriptsOf(unit).map(m => m.rarity || 1)) - 1;
+    const rs = D().DESIGN.rarityStat;
+    const bonus = { maxHp: 0, atk: 0, def: 0 };
+    V.Circuit.scarState(st, unit, placements).filter((s) => s.active).forEach((s) => {
+      Object.keys(bonus).forEach((key) => { bonus[key] += s.effect[key] || 0; });
+    });
     const mod = (st.run && st.run.maxHpModifiers && st.run.maxHpModifiers[unit.id]) || 1;
     return {
-      maxHp: Math.round(body.hp * mod),
-      atk: body.atk,
-      def: body.def,
-      spd: body.spd,
-      loadCap: body.loadCap,
+      maxHp: Math.max(1, Math.round((base.hp + bonus.maxHp) * mod * (1 + rarity * rs.hp))),
+      atk: Math.max(1, Math.round((base.atk + bonus.atk) * (1 + rarity * rs.atk))),
+      def: Math.max(0, Math.round((base.def + bonus.def) * (1 + rarity * rs.def))),
+      spd: base.spd,
+      loadCap: V.Circuit.loadCap(unit),
       blocked: body.blocked,
       mod,
     };
@@ -40,31 +47,33 @@
 
   function refreshShop(st, pay) {
     const next = ST().clone(st);
+    const available = D().SKINS.filter((s) => !st.roster.some((u) => u.skinId === s.id));
+    if (!available.length) return ST().fail(st, 'roster_full', '来客已全部加入营地');
     const cost = 12;
     if (pay && next.gold < cost) return ST().fail(st, 'no_gold', `刷新需要 ${cost} 金币`);
     if (pay) next.gold -= cost;
 
     const offers = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3 && available.length; i++) {
       const bodyIds = Object.keys(D().BODIES);
       const bi = A.Random.int(next.rngState, 0, bodyIds.length - 1);
       next.rngState = bi.state;
-      const si = A.Random.int(next.rngState, 0, D().SKINS.length - 1);
+      const si = A.Random.int(next.rngState, 0, available.length - 1);
       next.rngState = si.state;
-      const wi = A.Random.int(next.rngState, 0, D().WEAPON_ORDER.length - 1);
+      const wi = A.Random.int(next.rngState, 0, 0xFFFFFFFF);
       next.rngState = wi.state;
       const ni = A.Random.int(next.rngState, 0, D().NAMES.length - 1);
       next.rngState = ni.state;
       const pi = A.Random.int(next.rngState, D().DESIGN.recruitCost.min, D().DESIGN.recruitCost.max);
       next.rngState = pi.state;
 
-      const skin = D().SKINS[si.value];
+      const skin = available.splice(si.value, 1)[0];
       offers.push({
         id: 'rc' + next.nextId + '_' + i,
         bodyPreset: bodyIds[bi.value],
         skinId: skin.id,
-        name: D().NAMES[ni.value],
-        weaponId: D().WEAPON_ORDER[wi.value],
+        name: skin.name,
+        plateSeed: wi.value,
         price: pi.value,
       });
     }
@@ -77,7 +86,7 @@
     if (!offer) return ST().fail(st, 'no_offer', '没有这个招募位');
     if (offer.sold) return ST().fail(st, 'sold', '已经招募过了');
     if (st.gold < offer.price) return ST().fail(st, 'no_gold', '金币不够');
-    if (st.roster.length >= 8) return ST().fail(st, 'roster_full', '营地已经满了');
+    if (st.roster.some((u) => u.skinId === offer.skinId)) return ST().fail(st, 'already_recruited', '这位来客已经加入营地');
 
     const next = ST().clone(st);
     next.gold -= offer.price;
@@ -86,13 +95,11 @@
 
     const unit = ST().makeUnit(next, {
       name: offer.name, skinId: offer.skinId, bodyPreset: offer.bodyPreset,
+      plateSeed: offer.plateSeed == null ? A.Random.seedFrom(offer.id) : offer.plateSeed,
     });
-    const weapon = ST().makePart(next, { kind: 'weapon', weaponId: offer.weaponId });
-    next.itemsById[weapon.id] = weapon;
-    unit.weaponId = weapon.id;
-    /* 招募的人也不带功法：功法靠掉落与祭坛 */
+    /* 招募的人也不带蚀刻法：蚀刻法靠掉落与祭坛 */
     ST().equipPreset(next, unit, 'basic');
-    /* 招募自带一阶微功法 + 两件刻印，开箱即可战斗 */
+    /* 招募自带一阶微蚀刻法 + 两件纹路，开箱即可战斗 */
     V.State.equipManuscript(next, unit, 'spark');
     ['capacitor', 'straight'].forEach((tpl) => {
       const part = ST().makePart(next, { kind: 'circuit', templateId: tpl });
@@ -167,7 +174,7 @@
 
   /**
    * saveBoard：保存工坊板面，并同步归属（仓库 → 板面 / 板面 → 仓库）。
-   * 本局背包里的构件不能在这里直接装上，只能走营火烙印。
+   * 本局背包里的纹路不能在这里直接装上，只能走营火烙印。
    */
   function saveBoard(st, unitId, placements) {
     const unit = st.roster.find((u) => u.id === unitId);
@@ -176,7 +183,7 @@
 
     const listed = (placements || []).map((p) => p.itemId);
     const unknown = listed.find((id) => !st.itemsById[id]);
-    if (unknown) return ST().fail(st, 'no_item', `构件不存在：${unknown}`);
+    if (unknown) return ST().fail(st, 'no_item', `纹路不存在：${unknown}`);
 
     const res = V.Circuit.saveLoadout(st, unitId, placements);
     if (!res.ok) return ST().fail(st, 'bad_board', res.errors.join('；'), { details: res.errors });
@@ -245,11 +252,11 @@
         unit.logicSlots = D().DESIGN.logicSlotsMax;
       }
 
-      /* 一阶调谐：同一角色带同一主手 3 次合格撤离 */
-      const used = (rec.usedWeapons || []).find((w) => w.uid === uid);
-      if (eligible && used && used.partId) {
-        const part = st.itemsById[used.partId];
-        if (part && part.kind === 'weapon') {
+      if (eligible && !already) {
+        const used = (rec.usedManuscripts || []).find(entry => entry.uid === uid);
+        for (const id of used?.manuscriptIds || []) {
+          const ledger = (unit.history.msAttune ||= {});
+          (ledger[id] ||= { eligibleRunIds: [] }).eligibleRunIds.push(rec.runId);
         }
       }
 
@@ -262,9 +269,14 @@
   function history(st, unitId) {
     const u = st.roster.find((x) => x.id === unitId);
     if (!u) return null;
-    /* 武器已移除：调谐改为按「当前功法的合格撤离次数」统计，不做永久强化 */
-    const ms = u.manuscript || null;
-    const att = ms ? (u.history.msAttune || {})[ms.id] : null;
+    const attunementOf = (ms) => ({
+      manuscriptId: ms?.id || null,
+      manuscriptName: ms?.name || null,
+      runs: u.history.msAttune?.[ms?.id]?.eligibleRunIds?.length || 0,
+      need: D().DESIGN.attuneRuns,
+      traitId: null, traitName: null, traitDesc: null,
+    });
+    const attunements = ST().manuscriptsOf(u).map(attunementOf);
     return {
       unitId,
       name: u.name,
@@ -272,15 +284,8 @@
       logicSlots: u.logicSlots,
       eligibleRuns: u.history.eligibleRunIds.length,
       nextSlotIn: Math.max(0, D().DESIGN.logicUnlockExtracts - u.history.eligibleRunIds.length),
-      attunement: {
-        manuscriptId: ms ? ms.id : null,
-        manuscriptName: ms ? ms.name : null,
-        runs: att ? (att.eligibleRunIds || []).length : 0,
-        need: D().DESIGN.attuneRuns,
-        traitId: null,
-        traitName: null,
-        traitDesc: null,
-      },
+      attunement: attunements[0] || attunementOf(null),
+      attunements,
       records: u.history.records.slice(-8).reverse(),
     };
   }
