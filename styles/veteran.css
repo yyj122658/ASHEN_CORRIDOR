@@ -756,3 +756,24 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .drop-ghost-cell.ok { stroke: #9BE0B0; fill-opacity: .26; }
 .drop-ghost-cell.bad { fill-opacity: .38; stroke: #F08078; stroke-dasharray: none; }
 .drop-ghost-port-svg { pointer-events: none; stroke: #0B0910; stroke-width: 1; }
+
+/* 功法谱表条目：可抓起拖到板面，观感与构件库一致 */
+.ms-chips { gap: 6px; }
+.ms-chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 5px 9px; border-radius: 6px; cursor: grab;
+  background: rgba(126, 107, 184, .12);
+  border: 1px solid rgba(150, 132, 200, .38);
+  color: #D8CFEA; font-size: 12px; line-height: 1;
+  user-select: none; -webkit-user-select: none;
+  transition: background .14s, border-color .14s, transform .14s;
+}
+.ms-chip:hover { background: rgba(126, 107, 184, .22); border-color: rgba(180, 162, 226, .62); transform: translateY(-1px); }
+.ms-chip.is-active { background: rgba(226, 190, 110, .16); border-color: rgba(226, 190, 110, .66); color: #F2D48A; }
+.ms-chip.is-locked {
+  cursor: not-allowed; opacity: .45;
+  background: rgba(120, 120, 140, .08); border-style: dashed; color: #8C8798;
+}
+.ms-chip-meta { font-size: 10px; color: rgba(200, 192, 220, .72); }
+.ms-chip.is-locked .ms-chip-meta { color: rgba(160, 152, 178, .8); }
+.ms-chip:active { cursor: grabbing; }
