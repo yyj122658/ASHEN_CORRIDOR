@@ -89,7 +89,7 @@ async function launch() {
   ok('A4 进入营地', (await snap()).screen === 'camp');
   ok('A5 四位老兵', await ev(() => window.Ashen.Veteran.App.state.roster.length === 4));
 
-  /* ---------- B 工坊（异形金属板面 + 功法膜） ---------- */
+  /* ---------- B 工坊（异形金属板面 + 蚀刻法膜） ---------- */
   await click('[data-act="go"][data-v="workshop"]');
   ok('B1 异形板面能打开工坊', (await snap()).screen === 'workshop');
   ok('B2 渲染 7×7 异形金属板面', await ev(() => {
@@ -99,7 +99,10 @@ async function launch() {
     const noBlockedText = !document.body.innerText.includes('屏蔽格：');
     return !!slab && noBlockedText;
   }));
-  ok('B3 默认板面合法', await ev(() => document.body.innerText.includes('板面合法')));
+  ok('B3 默认板面合法', await ev(() => {
+    const V = Ashen.Veteran;
+    return V.Circuit.preview(V.App.state, V.App.ui.wsUnit, V.App.ui.wsDraft).ok && !document.querySelector('.err-box');
+  }));
 
   const partId = await ev(() => {
     const st = window.Ashen.Veteran.App.state;
@@ -112,7 +115,7 @@ async function launch() {
   if (partId && firstHitCell) {
     await click(`[data-act="wsPick"][data-id="${partId}"]`);
     await click(`[data-act="wsCell"][data-id="${firstHitCell}"]`);
-    ok('B4 异形板面能放下构件', (await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length)) === 3);
+    ok('B4 异形板面能放下纹路', (await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length)) === 3);
     await click('[data-act="wsUndo"]');
     ok('B5 撤销', (await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length)) === 2);
     await click('[data-act="wsRedo"]');
@@ -176,7 +179,7 @@ async function launch() {
     }
   });
   await wait(160);
-  ok('B10b 放置对齐构件后覆盖率上升（分母仍为膜格数）', await ev(() => {
+  ok('B10b 放置对齐纹路后覆盖率上升（分母仍为膜格数）', await ev(() => {
     const covEl = document.querySelector('[data-ms-cov]');
     if (!covEl) return false;
     const A = window.Ashen.Veteran;
@@ -210,7 +213,7 @@ async function launch() {
     const backUid = await ev(() => window.Ashen.Veteran.App.state.roster[0].id);
     await click(`[data-act="wsUnit"][data-id="${backUid}"]`);
   } else {
-    ok('B10c 跳过（当前所有板面都放得下这套功法）', true);
+    ok('B10c 跳过（当前所有板面都放得下这套蚀刻法）', true);
   }
 
   /* 新增：四个终端画在板面边界上 */
@@ -239,8 +242,10 @@ async function launch() {
   }));
 
   /* ---------- B8~B9 拖拽装配 ---------- */
-  /* 落点不能随便取：异形板面上「第一个空格」多半摆不下 2 格构件，
+  /* 落点不能随便取：异形板面上「第一个空格」多半摆不下 2 格纹路，
      拖过去会被几何校验拒回原位。所以按 preview 搜一个真能放下的落点。 */
+  /* 原生 mouse 不会自动滚动；先把板面放入视口再取屏幕坐标。 */
+  await page.locator('svg.board').scrollIntoViewIfNeeded();
   const dragGeo = await ev(() => {
     const A = window.Ashen.Veteran;
     const svg = document.querySelector('svg.board');
@@ -274,9 +279,13 @@ async function launch() {
     }
     if (!target) return null;
 
+    // 在纹路实际占用的格上抓取，并在目标位置保持相同的抓取偏移。
+    const grab = center(part.querySelector('.part-hit'));
+    const origin = toScreen(cur.x, cur.y);
+    const destination = toScreen(target[0], target[1]);
     return {
-      part: Object.assign({ id: itemId }, center(part)),
-      hit: Object.assign({ id: target.join(',') }, toScreen(target[0], target[1])),
+      part: Object.assign({ id: itemId }, grab),
+      hit: { id: target.join(','), x: grab.x + destination.x - origin.x, y: grab.y + destination.y - origin.y },
       cur: cur.x + ',' + cur.y,
     };
   });
@@ -298,12 +307,12 @@ async function launch() {
       const u = A.App.state.roster.find((x) => x.id === ui.wsUnit) || A.App.state.roster[0];
       return A.Circuit.preview(A.App.state, u.id, ui.wsDraft).ok;
     }, dragGeo.part.id);
-    ok('B8 拖动已有构件吸附到合法位置', !!after && after !== before && geoOk, `${before} -> ${after} 合法=${geoOk}`);
+    ok('B8 拖动已有纹路吸附到合法位置', !!after && after !== before && geoOk, `${before} -> ${after} 合法=${geoOk}`);
   } else {
-    ok('B8 跳过（没有可拖的构件或没有别的合法落点）', true);
+    ok('B8 跳过（没有可拖的纹路或没有别的合法落点）', true);
   }
 
-  /* B16：松手即结束——拖完不该还握在手上，否则点别处会把构件搬走 */
+  /* B16：松手即结束——拖完不该还握在手上，否则点别处会把纹路搬走 */
   ok('B16 拖拽落位后解除手持', (await ev(() => window.Ashen.Veteran.App.ui.wsPick)) === null);
 
   const blankPick = await ev(() => {
@@ -318,7 +327,7 @@ async function launch() {
     A.App.dispatch({ type: 'wsPick', id: ui.wsDraft[0].itemId });
     const picked = ui.wsPick;
     const draft = ui.wsDraft.map((x) => x.itemId + '@' + x.x + ',' + x.y).join('|');
-    /* 找一个「不落在构件上」的板面格当空白处点 */
+    /* 找一个「不落在纹路上」的板面格当空白处点 */
     for (const [x, y] of plate.cellsList) {
       pt.x = gx + x * cell + cell / 2; pt.y = gy + y * cell + cell / 2;
       const p = pt.matrixTransform(ctm);
@@ -336,17 +345,29 @@ async function launch() {
       pick: window.Ashen.Veteran.App.ui.wsPick,
       draft: window.Ashen.Veteran.App.ui.wsDraft.map((x) => x.itemId + '@' + x.x + ',' + x.y).join('|'),
     }));
-    ok('B16b 点板面空白处取消选中且构件不动', afterBlank.pick === null && afterBlank.draft === blankPick.draft,
+    ok('B16b 点板面空白处取消选中且纹路不动', afterBlank.pick === null && afterBlank.draft === blankPick.draft,
       JSON.stringify({ pick: afterBlank.pick, moved: afterBlank.draft !== blankPick.draft }));
   } else {
     ok('B16b 跳过（找不到可点的空白格）', true);
   }
 
-  /* B12：仓库里的功法要能像构件一样「抓起来拖到板面上」 */
+  /* B12：仓库里的蚀刻法要能像纹路一样「抓起来拖到板面上」 */
+  const revert = page.locator('[data-act="wsRevert"]');
+  if (await revert.count()) {
+    await page.locator('.layout-tools summary').click();
+    await revert.click();
+    ok('B14b 还原布局后草稿与存档一致', await ev(() => {
+      const V = Ashen.Veteran;
+      const u = V.State.unitById(V.App.state, V.App.ui.wsUnit);
+      return JSON.stringify(V.App.ui.wsDraft) === JSON.stringify(u.board.placements);
+    }));
+  }
+  const vaultChip = '.ms-chip[data-source="vault"][data-id="rivet"]';
+  await page.locator(vaultChip).scrollIntoViewIfNeeded();
   const msDrag = await ev(() => {
     const A = window.Ashen.Veteran;
     const ui = A.App.ui;
-    const chip = document.querySelector('.ms-chip[data-ms-drag="1"]');
+    const chip = document.querySelector('.ms-chip[data-source="vault"][data-id="rivet"]');
     const svg = document.querySelector('svg.board');
     if (!chip || !svg) return null;
     const msId = chip.dataset.id;
@@ -354,10 +375,7 @@ async function launch() {
     const plate = A.Circuit.plateOf(u);
     const norm = A.Manuscript.normalize(A.Data.manuscript(msId));
     const spots = A.Manuscript.placements(norm, plate.cellsList);
-    const lay = A.Circuit.layout(A.App.state, ui.wsDraft || []);
-    const used = new Set(lay.cells.map((c) => c.x + ',' + c.y));
-    /* 落点要避开已放构件，否则会被几何校验拦住 */
-    const spot = spots.find(([ox, oy]) => norm.cells.every((c) => !used.has((ox + c[0]) + ',' + (oy + c[1]))));
+    const spot = spots.find(([x, y]) => A.State.canPlaceManuscript(u, msId, { x, y, rotation: 0 }));
     if (!spot) return null;
 
     const cell = +svg.dataset.cell, gx = +svg.dataset.gx, gy = +svg.dataset.gy;
@@ -368,7 +386,7 @@ async function launch() {
     pt.y = gy + (spot[1] + Math.floor((Math.max.apply(null, ys) - Math.min.apply(null, ys)) / 2)) * cell + cell / 2;
     const p = pt.matrixTransform(ctm);
     const r = chip.getBoundingClientRect();
-    return { msId, chip: { x: r.x + r.width / 2, y: r.y + r.height / 2 }, target: { x: p.x, y: p.y } };
+    return { msId, primary: u.manuscript.id, chip: { x: r.x + r.width / 2, y: r.y + r.height / 2 }, target: { x: p.x, y: p.y } };
   });
 
   if (msDrag) {
@@ -381,17 +399,17 @@ async function launch() {
       const A = window.Ashen.Veteran;
       const u = A.App.state.roster.find((x) => x.id === A.App.ui.wsUnit) || A.App.state.roster[0];
       return {
-        equipped: u.manuscript ? u.manuscript.id : null,
-        inVault: (A.App.state.manuscriptVault || []).some((m) => m.id === (u.manuscript && u.manuscript.id)),
+        equipped: A.State.manuscriptsOf(u).map((m) => m.id),
+        inVault: (A.App.state.manuscriptVault || []).some((m) => m.id === 'rivet'),
       };
     });
-    ok('B15 功法可从谱表拖到板面装上', after.equipped === msDrag.msId, JSON.stringify({ want: msDrag.msId, ...after }));
+    ok('B15 从仓库拖入第二套，原主修保留', after.equipped[0] === msDrag.primary && after.equipped.includes(msDrag.msId), JSON.stringify({ want: msDrag.msId, ...after }));
     ok('B15b 装上后不再留在仓库（不会被复制）', after.inVault === false, String(after.inVault));
   } else {
-    ok('B15 跳过（仓库里没有可拖的功法）', true);
-    ok('B15b 跳过', true);
+    ok('B15 缺少可装的起始合修或落点', false);
   }
 
+  await page.locator('svg.board').scrollIntoViewIfNeeded();
   const stashDropGeo = await ev(() => {
     const A = window.Ashen.Veteran;
     const svg = document.querySelector('svg.board');
@@ -424,7 +442,7 @@ async function launch() {
     await page.mouse.up();
     await wait(300);
     const n1 = await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length);
-    ok('B9 从构件库拖到板面能放置', n1 === n0 + 1, `${n0} -> ${n1}`);
+    ok('B9 从纹路库拖到板面能放置', n1 === n0 + 1, `${n0} -> ${n1}`);
     await click('[data-act="wsUndo"]');
 
     /* 新增操作逻辑验证：悬停预落点+端口虚影、Esc 取消选中、双击快速装卸 */
@@ -436,7 +454,7 @@ async function launch() {
       const g = document.querySelector('svg.board .drop-ghost');
       return !!g && g.style.display !== 'none' && !!g.querySelector('.drop-ghost-port-svg');
     });
-    ok('B12 选中构件悬停显示预落点虚影与端口', hoverOk);
+    ok('B12 选中纹路悬停显示预落点虚影与端口', hoverOk);
     await page.keyboard.press('Escape');
     await wait(100);
     const clearedPick = await ev(() => window.Ashen.Veteran.App.ui.wsPick === null);
@@ -446,10 +464,10 @@ async function launch() {
     await page.mouse.dblclick(stashDropGeo.item.x, stashDropGeo.item.y);
     await wait(220);
     const nAfterDbl = await ev(() => window.Ashen.Veteran.App.ui.wsDraft.length);
-    ok('B13 双击构件库可快速装上并支持撤销', nAfterDbl === nBeforeDbl + 1, `${nBeforeDbl} -> ${nAfterDbl}`);
+    ok('B13 双击纹路库可快速装上并支持撤销', nAfterDbl === nBeforeDbl + 1, `${nBeforeDbl} -> ${nAfterDbl}`);
     await click('[data-act="wsUndo"]');
   } else {
-    ok('B9 跳过（构件库为空或无合法空位）', true);
+    ok('B9 跳过（纹路库为空或无合法空位）', true);
     ok('B12 跳过', true);
     ok('B15b 跳过', true);
     ok('B13 跳过', true);
@@ -583,6 +601,9 @@ async function launch() {
       || document.querySelector('[data-act="inscribeStart"]');
     return btnEl ? btnEl.dataset.id : null;
   });
+  if (inscribeUid && !await page.locator('.field-inscription').evaluate(el => el.open)) {
+    await page.locator('.field-inscription summary').click();
+  }
   const inscribeClick = inscribeUid ? await click(`[data-act="inscribeStart"][data-id="${inscribeUid}"]`) : false;
   await wait(200); /* 进入烙印要重渲染一次板面，别抢在下一次绘制前断言 */
   const inscribeDiag = await ev(() => ({

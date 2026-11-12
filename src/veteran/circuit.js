@@ -67,7 +67,7 @@
   }
 
   /**
-   * 一个单位实际能放构件的板面：{cells:Set<'x,y'>, terminals, size, generated}
+   * 一个单位实际能放纹路的板面：{cells:Set<'x,y'>, terminals, size, generated}
    * - 底盘带 plate 配置 → 用 PlateGen 按 seed 生成异形板面，终端由板面派生；
    * - 否则退回旧的 4x4 网格（老存档 / 测试用）。
    * 这是唯一决定「哪一格能放」的地方，别处不要再写死 4。
@@ -92,23 +92,22 @@
         archetype: conf.archetype,
         target: conf.target,
       });
-      /* 能量经济住在功法里：四个具名点由装备的功法给，板面不再决定。
-         没有功法 → 没有终端 → 板面只是一块带槽位的金属。 */
+      /* 能量经济住在蚀刻法里：四个具名点由装备的蚀刻法给，板面不再决定。
+         没有蚀刻法 → 没有终端 → 板面只是一块带槽位的金属。 */
       const terminals = {};
-      if (unit.manuscript && V.Manuscript) {
+      V.State.manuscriptsOf(unit).forEach((ms, index) => {
         const oriented = V.Manuscript.orient(
-          V.Manuscript.normalize(unit.manuscript),
-          unit.manuscript.rotation || 0,
-          !!unit.manuscript.mirrorY,
+          V.Manuscript.normalize(ms), ms.rotation || 0, !!ms.mirrorY,
         );
-        const ox = unit.manuscript.x || 0;
-        const oy = unit.manuscript.y || 0;
-        const LABEL = { clock: '时钟', damage: '受击', main: '攻势', support: '守势' };
+        const ox = ms.x || 0;
+        const oy = ms.y || 0;
+        const LABEL = { clock: '入口', damage: '回响', main: '出口', support: '护持' };
         Object.keys((oriented && oriented.io) || {}).forEach((id) => {
           const p = oriented.io[id];
           const isIn = id === 'clock' || id === 'damage';
-          terminals[id] = {
-            id,
+          const key = index ? ms.id + ':' + id : id;
+          terminals[key] = {
+            id: key, channel: id, manuscriptId: ms.id,
             cell: [p.cell[0] + ox, p.cell[1] + oy],
             dir: p.dir,
             role: isIn ? 'in' : 'out',
@@ -117,7 +116,7 @@
             fromManuscript: true,
           };
         });
-      }
+      });
       return {
         cells: new Set(gen.cells.map((c) => c[0] + ',' + c[1])),
         terminals,
@@ -145,6 +144,28 @@
    * preview(st, unitId, placements) -> {ok, errors, occupied, load, graph, reachableOutputs}
    * 同一函数供 UI 预览与真实保存使用；非法时 state 不变（本函数不写 state）。
    */
+  /** 装配上限统一取板面配置，经典板保留原值。@param {object} unit @returns {number} */
+  function loadCap(unit) {
+    const plate = plateOf(unit);
+    const body = D().body(unit.bodyPreset);
+    return plate.generated ? body.plate.loadCap : body.loadCap;
+  }
+
+  /** 瘢痕不随拆装消失，只由真实占格决定激活。@param {object} st @param {object} unit @param {object[]} [placements] @returns {object[]} */
+  function scarState(st, unit, placements) {
+    if (!unit.scars || !unit.scars.length) return [];
+    const draft = placements || (st.run && st.run.fieldLayouts && st.run.fieldLayouts[unit.id]) || unit.board.placements;
+    const occupied = new Set(layout(st, draft).cells.map((c) => c.x + ',' + c.y));
+    V.State.manuscriptsOf(unit).forEach(ms => {
+      V.State.manuscriptCells(ms).forEach(cell => occupied.add(cell.join(',')));
+    });
+    return unit.scars.map((s) => {
+      const tpl = D().TEMPLATES[s.templateId];
+      const source = tpl && s.source === tpl.legacyName ? tpl.name : s.source;
+      return { ...s, source, active: occupied.has(s.x + ',' + s.y), effect: D().SCAR_EFFECTS[s.templateId] || {} };
+    });
+  }
+
   function preview(st, unitId, placements) {
     const errors = [];
     const unit = st.roster.find((u) => u.id === unitId);
@@ -152,21 +173,14 @@
     const body = D().body(unit.bodyPreset);
     const plate = plateOf(unit);
 
-    /* 功法自己占格：构件不许压上去 */
-    const msCells = new Set();
-    if (plate.generated && unit.manuscript && V.Manuscript) {
-      const or = V.Manuscript.orient(
-        V.Manuscript.normalize(unit.manuscript),
-        unit.manuscript.rotation || 0,
-        !!unit.manuscript.mirrorY,
-      );
-      const ox = unit.manuscript.x || 0;
-      const oy = unit.manuscript.y || 0;
-      if (V.Manuscript.fits(or, plate.cellsList, ox, oy)) {
-        or.cells.forEach((c) => msCells.add((c[0] + ox) + ',' + (c[1] + oy)));
-      } else {
-        errors.push(`功法「${unit.manuscript.name || unit.manuscript.id}」没有完整落在板面上`);
-      }
+    /* 蚀刻法是拓片：必须落在金属上，纹路可在同格填入纹路。 */
+    const etchings = V.State.manuscriptsOf(unit);
+    const stencilCells = new Set();
+    for (const ms of etchings) {
+      const cells = V.State.manuscriptCells(ms).map(cell => cell.join(','));
+      if (!cells.length || cells.some(cell => !plate.cells.has(cell))) errors.push(`蚀刻法「${ms.name}」没有完整落在板面上`);
+      if (cells.some(cell => stencilCells.has(cell))) errors.push(`蚀刻法「${ms.name}」与另一张拓片重叠`);
+      cells.forEach(cell => stencilCells.add(cell));
     }
 
     const list = placements || [];
@@ -179,9 +193,9 @@
 
     list.forEach((p) => {
       const item = st.itemsById[p.itemId];
-      if (!item) { errors.push(`构件不存在：${p.itemId}`); return; }
-      if (item.kind !== 'circuit') { errors.push(`不是回路构件：${p.itemId}`); return; }
-      if (seenItems.has(p.itemId)) { errors.push(`同一构件被放置两次：${p.itemId}`); return; }
+      if (!item) { errors.push(`纹路不存在：${p.itemId}`); return; }
+      if (item.kind !== 'circuit') { errors.push(`不是回路纹路：${p.itemId}`); return; }
+      if (seenItems.has(p.itemId)) { errors.push(`同一纹路被放置两次：${p.itemId}`); return; }
       seenItems.add(p.itemId);
 
       const tpl = D().template(item.templateId);
@@ -207,12 +221,9 @@
             : `${tpl.name}（${item.id}）的格 (${c.x},${c.y}) 是屏蔽格`);
           return;
         }
-        if (msCells.has(key)) {
-          errors.push(`${tpl.name}（${item.id}）压在了功法上（${c.x},${c.y}）`);
-        }
         if (cellOwner.has(key)) {
           const other = cellOwner.get(key);
-          if (other !== item.id) errors.push(`构件 ${other} 与 ${item.id} 在 (${c.x},${c.y}) 重叠`);
+          if (other !== item.id) errors.push(`纹路 ${other} 与 ${item.id} 在 (${c.x},${c.y}) 重叠`);
         } else {
           cellOwner.set(key, item.id);
         }
@@ -223,13 +234,10 @@
       built.push({ itemId: item.id, templateId: item.templateId, tpl, x: p.x, y: p.y, rotation: p.rotation || 0, mirrorY: !!p.mirrorY, cells, ports });
     });
 
-    /* 功法也吃负荷：多修一套就少放构件，这是唯一的平衡阀 */
-    if (unit.manuscript) {
-      const msLoad = Number(unit.manuscript.load) || 0;
-      load += msLoad;
-    }
+    /* 蚀刻法也吃负荷：多修一套就少放纹路，这是唯一的平衡阀 */
+    for (const ms of etchings) load += Number(ms.load) || 0;
     /* 异形板面格数多，负荷上限单独给；经典模式沿用老值 */
-    const cap = (plate.generated && body.plate && body.plate.loadCap) ? body.plate.loadCap : body.loadCap;
+    const cap = loadCap(unit);
     if (load > cap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${cap}`);
 
     if (errors.length) {
@@ -253,7 +261,7 @@
   function portKey(itemId, portId) { return itemId + ':' + portId; }
 
   /**
-   * 构造有向图：极 → 构件入口 → 内部 links → 出口 → 相邻构件入口 … → 输出极。
+   * 构造有向图：极 → 纹路入口 → 内部 links → 出口 → 相邻纹路入口 … → 输出极。
    * 节点使用 placementId(即 itemId)+portId，保证可序列化与稳定排序。
    */
   function buildGraph(st, built, terminalSet) {
@@ -265,7 +273,7 @@
 
     Object.values(terminals).forEach((t) => {
       nodes.set('T:' + t.id, {
-        key: 'T:' + t.id, kind: 'terminal', terminal: t.id,
+        key: 'T:' + t.id, kind: 'terminal', terminal: t.channel || t.id,
         dir: t.dir, cell: t.cell.slice(), role: t.role,
       });
     });
@@ -283,7 +291,7 @@
       });
     });
 
-    /* 入口端口 ← 相邻构件出口，或 ← 输入极 */
+    /* 入口端口 ← 相邻纹路出口，或 ← 输入极 */
     built.forEach((b) => {
       b.ports.filter((p) => p.role === 'in').forEach((pt) => {
         const key = portKey(b.itemId, pt.id);
@@ -311,7 +319,7 @@
         void matched;
       });
 
-      /* 出口端口 → 相邻构件入口，或 → 输出极 */
+      /* 出口端口 → 相邻纹路入口，或 → 输出极 */
       b.ports.filter((p) => p.role === 'out').forEach((pt) => {
         const key = portKey(b.itemId, pt.id);
         const [dx, dy] = DIRS[pt.dir];
@@ -387,7 +395,8 @@
       reach.add(k);
       (outAdj.get(k) || []).forEach((to) => { if (!reach.has(to)) stack.push(to); });
     }
-    const reachableOutputs = ['main', 'support'].filter((id) => reach.has('T:' + id));
+    const reachableOutputs = ['main', 'support'].filter(id => Object.values(terminals)
+      .some(t => (t.channel || t.id) === id && reach.has('T:' + t.id)));
 
     return {
       ok: true,
@@ -516,53 +525,60 @@
   }
 
   /**
-   * 功法状态：覆盖率台阶 + 是否贯通 → 战斗要用的效果。
+   * 蚀刻法状态：覆盖率台阶 + 是否贯通 → 战斗要用的效果。
    * 覆盖率给「量」（乘算、起手能量），贯通只给额外乘算，不解锁机制——
    * 这样「只填满不管流向」也玩得下去，懂路由的人多吃一档。
    */
-  function manuscriptState(st, unitId, placementsIn) {
+  function manuscriptState(st, unitId, placementsIn, msId) {
     const EMPTY = { mainMult: 1, supportMult: 1, startEnergy: 0 };
     const unit = (st.roster || []).find((u) => u.id === unitId);
-    if (!unit || !unit.manuscript || !V.Manuscript) {
-      return { ok: false, reason: '没有功法', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
+    const ms = msId ? V.State.manuscriptsOf(unit).find(m => m.id === msId) : unit?.manuscript;
+    if (!ms || !V.Manuscript) {
+      return { ok: false, reason: '没有蚀刻法', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
     }
     const plate = plateOf(unit);
     const oriented = V.Manuscript.orient(
-      V.Manuscript.normalize(unit.manuscript),
-      unit.manuscript.rotation || 0,
-      !!unit.manuscript.mirrorY,
+      V.Manuscript.normalize(ms), ms.rotation || 0, !!ms.mirrorY,
     );
-    const ox = unit.manuscript.x || 0;
-    const oy = unit.manuscript.y || 0;
+    const ox = ms.x || 0;
+    const oy = ms.y || 0;
     if (!V.Manuscript.fits(oriented, plate.cellsList, ox, oy)) {
-      return { ok: false, reason: '功法没落在板面上', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
+      return { ok: false, reason: '蚀刻法没落在板面上', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
     }
     const lay = layout(st, placementsIn || unit.board.placements || [], plate.terminals);
     const idx = V.Manuscript.pieceIndex(lay);
     const cov = V.Manuscript.coverage(oriented, ox, oy, idx);
     const rt = V.Manuscript.route(oriented, ox, oy, idx);
 
-    /* 构件增益：只要它压到一格「已对齐」的功法格，就计入 */
+    /* 纹路增益按「对上的端口比例」结算：一枚纹章蹭一格只拿一份，压满才吃全额。
+       portCells 只数是带开口的格——纹章内部的实心格本来就对不上任何蚀刻法格。 */
     const alignedSet = new Set(cov.alignedCells || []);
-    const boost = { regen: 0, max: 0, skillCostCut: 0, attackMult: 0, skillMult: 0, lowHpRegen: 0 };
+    const boost = {
+      regen: 0, max: 0, skillCostCut: 0, attackMult: 0, skillMult: 0, lowHpRegen: 0,
+      healMult: 0, dotMult: 0, shieldMult: 0,
+    };
     ((lay && lay.built) || []).forEach((b) => {
-      const hit = (b.abs || []).some((c) => alignedSet.has(c.x + ',' + c.y));
-      if (!hit) return;
       const bo = (b.tpl && b.tpl.boost) || {};
+      const ports = new Set((b.aps || []).map((p) => p.cell.join(',')));
+      if (!ports.size) return;
+      let hit = 0;
+      ports.forEach((key) => { if (alignedSet.has(key)) hit += 1; });
+      if (!hit) return;
+      const factor = Math.min(1, hit / ports.size);
       Object.keys(bo).forEach((k) => {
-        if (typeof bo[k] === 'number') boost[k] = (boost[k] || 0) + bo[k];
+        if (typeof bo[k] === 'number') boost[k] = (boost[k] || 0) + bo[k] * factor;
       });
     });
 
     const eff = Object.assign({ mainMult: 1, supportMult: 1, startEnergy: 0 }, (cov.tier && cov.tier.effect) || {});
     eff.boost = boost;
     if (rt.ok) {
-      eff.mainMult = Math.round(eff.mainMult * 1.1 * 100) / 100;
-      eff.supportMult = Math.round(eff.supportMult * 1.1 * 100) / 100;
+      eff.mainMult = Math.round(eff.mainMult * 1.15 * 100) / 100;
+      eff.supportMult = Math.round(eff.supportMult * 1.15 * 100) / 100;
     }
     return {
       ok: true,
-      spec: unit.manuscript,
+      spec: D().manuscript(ms.id) || ms,
       pct: cov.pct,
       aligned: cov.aligned,
       total: cov.total,
@@ -571,6 +587,41 @@
       routed: rt.ok,
       effects: eff,
     };
+  }
+
+  /** 快速试铺一件闲置纹路，优先补齐选中拓片，其他纹路留在原位。 */
+  function suggestPlacement(st, unit, draft, itemId, ms, rotation = 0, mirrorY = false) {
+    const item = st.itemsById[itemId];
+    if (item?.kind !== 'circuit' || draft.some(p => p.itemId === itemId)) return null;
+    const plate = plateOf(unit);
+    const used = new Set(layout(st, draft).cells.map(c => c.x + ',' + c.y));
+    const target = ms?.fits ? ms : null;
+    const previewState = { ...st, roster: [unit] };
+    let best = null;
+    let bestAligned = -1;
+    for (const mirror of [mirrorY, !mirrorY]) {
+      for (let turn = 0; turn < 4; turn++) {
+        const rot = (rotation + turn) % 4;
+        const shape = transformTemplate(D().template(item.templateId), rot, mirror);
+        for (let y = 0; y < plate.size; y++) {
+          for (let x = 0; x < plate.size; x++) {
+            const legal = shape.cells.every(c => {
+              const key = (c.x + x) + ',' + (c.y + y);
+              return plate.cells.has(key) && !used.has(key);
+            });
+            if (!legal) continue;
+            const pose = { itemId, x, y, rotation: rot, mirrorY: mirror };
+            const aligned = target ? V.Manuscript.coverage(target.oriented, target.ox, target.oy,
+              V.Manuscript.pieceIndex(layout(st, [pose]))).aligned : 0;
+            if (aligned <= bestAligned || !preview(previewState, unit.id, [...draft, pose]).ok) continue;
+            best = pose;
+            bestAligned = aligned;
+            if (!target || aligned === Math.min(shape.cells.length, target.oriented.cells.length)) return best;
+          }
+        }
+      }
+    }
+    return best;
   }
 
   /* ------------------------------ 能量路由 ------------------------------ */
@@ -689,23 +740,17 @@
         }
 
         const outs = (adj.get(key) || []).slice().sort();
-        if (tpl.split && tpl.split.length === 2) {
-          /* 轮流分配给两个出口：2 单位 → 1+1，绝不复制 */
-          let cursor = rt.splitCursor[node.itemId] || 0;
-          const buckets = { 0: [], 1: [] };
-          toks.forEach((t) => {
+        if (tpl.split) {
+          const ordered = splitTargets(outs, tpl, node.itemId);
+          if (!ordered.length) { rt.dissipated += toks.length; return; }
+          const buckets = ordered.map(() => []);
+          let cursor = (rt.splitCursor[node.itemId] || 0) % ordered.length;
+          for (const t of toks) {
             buckets[cursor].push(t);
-            cursor = cursor === 0 ? 1 : 0;
-          });
-          rt.splitCursor[node.itemId] = cursor;
-          /* 出口顺序固定：split 数组顺序对应 outs 排序后的两个出口 */
-          const ordered = splitTargets(adj.get(key) || [], tpl, node.itemId);
-          if (ordered.length === 2) {
-            inject(ordered[0], buckets[0]);
-            inject(ordered[1], buckets[1]);
-          } else {
-            outs.forEach((to) => inject(to, toks));
+            cursor = (cursor + 1) % ordered.length;
           }
+          rt.splitCursor[node.itemId] = cursor;
+          ordered.forEach((target, i) => inject(target, buckets[i]));
           return;
         }
 
@@ -771,7 +816,7 @@
   }
 
   V.Circuit = {
-    plateOf, manuscriptState,
+    plateOf, loadCap, scarState, manuscriptState, suggestPlacement,
     opposite, rotateDir, flipNS, transformTemplate, preview, compile, saveLoadout, layout,
     buildGraph, route, emptyRuntime, pulse, token, outputTokens,
     hasSurge, hasEmber, consumeOutput, refund, portKey,

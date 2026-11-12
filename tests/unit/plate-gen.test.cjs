@@ -32,7 +32,7 @@ test('所有原型种子都能命中目标格数', () => {
   });
 });
 
-test('永远单连通、无孤立格（否则 2 格构件放不进去）', () => {
+test('永远单连通、无孤立格（否则 2 格纹路放不进去）', () => {
   Object.keys(G.ARCHETYPES).forEach((arch) => {
     for (let seed = 1; seed <= 12; seed++) {
       const { cells } = G.generate({ seed: seed * 31337, archetype: arch, target: G.ARCHETYPES[arch].target });

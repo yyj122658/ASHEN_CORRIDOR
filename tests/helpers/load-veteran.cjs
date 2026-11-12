@@ -14,6 +14,8 @@ const ORDER = [
   /* 玩法模块 */
   'src/veteran/data.js',
   'src/veteran/state.js',
+  'src/veteran/kitchen.js',
+  'src/veteran/catalogue-art.js',
   'src/veteran/circuit.js',
   'src/veteran/tactics.js',
   'src/veteran/positions.js',

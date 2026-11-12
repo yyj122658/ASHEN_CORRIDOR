@@ -3,7 +3,62 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { boot, startRun, setNodes } = require('../helpers/veteran-run.cjs');
 
-/** 放一件本局新构件进背包。 */
+test('背包用仓库材料永久扩容，旧档、余额不足、远征中与满级均有边界', () => {
+  const { A, V } = boot();
+  const E = V.Expedition;
+  let s = V.State.create(42);
+  delete s.packLevel;
+  assert.equal(E.bagCapacity(s), 24);
+  assert.equal(V.Storage.decode(V.Storage.encode(s)).ok, true);
+  assert.equal(E.upgradePack(s).ok, false);
+  assert.equal(V.State.validate({ ...s, packLevel: -1 }).ok, false);
+  for (const step of E.PACK_UPGRADES) {
+    s.pantry = { ...step.needs, boneCap: 1 };
+    const result = E.upgradePack(s);
+    assert.ok(result.ok);
+    s = result.state;
+    assert.deepEqual(Object.keys(s.pantry), ['boneCap']);
+    assert.equal(E.bagCapacity(s), step.capacity);
+    const trip = startRun(A, s);
+    assert.equal(E.upgradePack(trip).ok, false);
+    assert.equal(E.packSlots(trip).length, step.capacity);
+    trip.run.ingredients = { boneCap: step.capacity * E.foodPack('boneCap').limit };
+    assert.equal(E.bagFree(trip), 0);
+    assert.ok(V.Storage.decode(V.Storage.encode(trip)).ok);
+    trip.run.ingredients.boneCap++;
+    assert.equal(V.State.validate(trip).ok, false);
+  }
+  assert.equal(E.upgradePack(s).ok, false);
+});
+
+test('手排纹路整件移动，丢弃末堆腾出选中格；战斗中锁定整理', () => {
+  const { A, V, st } = boot(42);
+  const E = V.Expedition;
+  let s = startRun(A, st);
+  const part = addNewPart(A, s, 'elbow');
+  s.run.ingredients = { boneCap: 5 };
+  const token = 'part:' + part.id;
+  const moved = E.movePack(s, 0, 16);
+  assert.ok(moved.ok);
+  assert.deepEqual(E.packSlots(moved.state).flatMap((v,i) => v === token ? [i] : []), [16,17,23]);
+  assert.equal(E.movePack(s, 0, 5).ok, false, '整件不能跨右边折行');
+  const second = 'food:boneCap#1';
+  const index = E.packSlots(moved.state).indexOf(second);
+  s = E.discardPack(moved.state, second, index).state;
+  assert.equal(E.packSlots(s)[index], null);
+  assert.equal(E.stackCount(s, 'food:boneCap'), 4);
+  s = E.sortPack(s).state;
+  assert.equal(E.packSlots(s)[0], token);
+  const dropped = E.discardPack(s, token).state;
+  assert.equal(dropped.itemsById[part.id], undefined);
+  assert.equal(E.bagUsed(dropped), 1);
+  s.run.stage = 'battle';
+  assert.equal(E.sortPack(s).ok, false);
+  assert.equal(E.movePack(s, 0, 1).ok, false);
+  assert.equal(E.discardPack(s, token).ok, false);
+});
+
+/** 放一件本局新纹路进背包。 */
 function addNewPart(A, s, templateId, seq) {
   const V = A.Veteran;
   const part = V.State.makePart(s, {
@@ -56,7 +111,7 @@ test('掉落可以替换掉背包里的一件', () => {
   assert.ok(r.ok, JSON.stringify(r.error));
   assert.ok(r.state.run.bag.includes(incoming.id));
   assert.ok(!r.state.run.bag.includes(keep.id));
-  assert.equal(r.state.itemsById[keep.id], undefined, '被替换的构件要从 registry 清掉');
+  assert.equal(r.state.itemsById[keep.id], undefined, '被替换的纹路要从 registry 清掉');
 });
 
 test('营火烙印未提交时不扣生命与压力', () => {
@@ -96,6 +151,12 @@ test('营火烙印：生命 ×0.8、当前 HP 等比、压力 +40，每角色每
   assert.ok(s.run.fieldInscribedUnitIds.includes(unit.id));
   assert.ok(!s.run.bag.includes(newPart.id), '新件从背包转成临时绑定');
   assert.ok(s.roster[0].board.placements.length === 2, '永久板面不变');
+  assert.equal(s.roster[0].scars.length, 1, '确认营火烙印才留下一个底层瘢痕');
+  assert.equal(s.roster[0].scars[0].source, '余烬纹');
+  const scarRecord = JSON.stringify(s.roster[0].scars);
+  const retreat = V.Expedition.retreat(s, 'emergency');
+  assert.ok(retreat.ok);
+  assert.equal(JSON.stringify(retreat.state.roster[0].scars), scarRecord, '撤退不能洗去已确认瘢痕');
 
   /* 第二次必须拒绝 */
   const second = addNewPart(A, s, 'ember', 2);
@@ -106,7 +167,24 @@ test('营火烙印：生命 ×0.8、当前 HP 等比、压力 +40，每角色每
   assert.equal(r2.error.code, 'cannot_inscribe');
 });
 
-test('烙印不能丢掉原构件，也不能塞两件新件', () => {
+test('已有瘢痕不叠加时，烙印重排也按新生命上限同步当前生命', () => {
+  const { A, V } = boot(304);
+  let s = atCamp(A, startRun(A, V.State.create(4242, { classicPlate: true }), 304));
+  const u = s.roster[0];
+  u.scars = [[0, 1, 'ember'], [1, 1, 'ember'], [2, 1, 'capacitor']].map(([x, y, templateId]) => ({
+    x, y, templateId, source: V.Data.template(templateId).name, floor: 1, runId: 'prior',
+  }));
+  s.run.party[0].hp = V.Roster.stats(s, u).maxHp;
+  const part = addNewPart(A, s, 'ember', 1);
+  const proposed = u.board.placements.map((p) => ({ ...p, x: 0, y: p.x === 0 ? 0 : 2 }))
+    .concat([{ itemId: part.id, x: 0, y: 1, rotation: 0, mirrorY: false }]);
+  const r = V.Expedition.inscribe(s, u.id, part.id, proposed);
+  assert.ok(r.ok, JSON.stringify(r.error));
+  assert.equal(r.state.roster[0].scars.length, 3);
+  assert.equal(r.state.run.party[0].hp, V.Roster.stats(r.state, r.state.roster[0]).maxHp);
+});
+
+test('烙印不能丢掉原纹路，也不能塞两件新件', () => {
   const { A, V } = boot(305);
   let s = startRun(A, V.State.create(4242, { classicPlate: true }), 305);
   s = atCamp(A, s);
@@ -296,4 +374,367 @@ test('事件里的战斗分支能正常开战（openForEvent 走本模块，不�
   }
   assert.ok(s.run.battle.over, '战斗应能结束');
   assert.ok(V.State.validate(s).ok, JSON.stringify(V.State.validate(s).errors));
+});
+
+test('固定种子的每层路线都有战斗与补给，阶段解锁和首领保留', () => {
+  const { A, V, st } = boot(420);
+  const seen = new Set();
+  for (let seed = 0; seed < 48; seed++) {
+    const s = startRun(A, st, seed);
+    const resumed = V.Storage.decode(V.Storage.encode(s)).state;
+    for (let floor = 1; floor <= 49; floor++) {
+      for (const runState of [s, resumed]) {
+        runState.run.floor = floor;
+        V.Expedition.genNodes(runState);
+      }
+      const types = s.run.nodes.map((n) => n.type);
+      types.forEach((t) => seen.add(t));
+      assert.deepEqual(s.run.nodes, resumed.run.nodes);
+      if (floor % 7 === 0) {
+        assert.deepEqual(Array.from(types), ['boss']);
+        continue;
+      }
+      assert.equal(new Set(types).size, 3);
+      assert.ok(types.some((t) => ['battle', 'elite', 'boss'].includes(t)));
+      assert.ok(types.some((t) => ['camp', 'chest', 'merchant'].includes(t)));
+      assert.equal(types.includes('boss'), floor === 7);
+      if (floor === 1) assert.ok(!types.includes('camp'));
+      if (floor < 3) assert.ok(!types.includes('elite') && !types.includes('merchant'));
+    }
+  }
+  assert.equal(seen.size, 7);
+});
+
+test('普通宝箱可拾全部、任选或直接离开，余物与重复领取均有明确归属', () => {
+  const { A, V, st } = boot(421);
+  const E = V.Expedition;
+  const start = setNodes(A, startRun(A, st, 421), ['chest']);
+  const opened = E.chooseNode(start, start.run.nodes[0].id).state;
+  const s = V.Storage.decode(V.Storage.encode(opened)).state;
+  const [first, second] = s.run.pendingLoot;
+  assert.equal(s.run.pendingLoot.length, 2);
+  assert.notEqual(s.itemsById[first].templateId, s.itemsById[second].templateId);
+  assert.equal(V.State.itemLocation(s, first).where, 'pending');
+  assert.equal(E.chooseNode(s, s.run.activeNodeId).ok, false);
+  assert.equal(E.extract(s).ok, false);
+  for (const ids of [[], [first], [second], [second, first]]) {
+    let taken = s;
+    for (const id of ids) {
+      const result = E.resolveLoot(taken, id, 'take');
+      assert.ok(result.ok);
+      taken = result.state;
+      assert.equal(E.resolveLoot(taken, id, 'take').ok, false);
+      assert.deepEqual(taken.run.ingredientLoot, s.run.ingredientLoot);
+      assert.equal(taken.rngState, s.rngState);
+    }
+    const left = E.finishNode(taken, true);
+    assert.ok(left.ok);
+    assert.deepEqual(left.state.run.bag, ids);
+    assert.deepEqual(left.state.run.ingredientLoot, {});
+    for (const id of [first, second]) assert.equal(!!left.state.itemsById[id], ids.includes(id));
+    const back = E.extract(left.state).state;
+    for (const id of ids) assert.equal(back.stash.filter(x => x === id).length, 1);
+    assert.ok(V.State.validate(back).ok);
+  }
+  const retreat = E.retreat(s, 'emergency').state;
+  assert.equal(retreat.itemsById[first], undefined);
+  assert.equal(retreat.itemsById[second], undefined);
+});
+
+test('旧档未决宝箱恢复两件原物，食材与拓本按原随机进度只生成一次', () => {
+  const { A, V, st } = boot(428);
+  for (let seed = 1; seed <= 12; seed++) {
+    const start = setNodes(A, startRun(A, st, seed), ['chest']);
+    const opened = V.Expedition.chooseNode(start, start.run.nodes[0].id).state;
+    const old = V.State.clone(opened);
+    old.run.chestChoices = old.run.pendingLoot;
+    old.run.pendingLoot = [];
+    for (const id of old.run.chestChoices) Object.assign(old.itemsById[id], { acquiredRunId: null, acquiredSeq: 0 });
+    old.run.ingredientLoot = {};
+    delete old.run.fieldManuscript;
+    old.rngState = A.Random.shuffle(start.rngState, V.Data.TEMPLATE_ORDER).state;
+    const decoded = V.Storage.decode(V.Storage.encode(old));
+    assert.ok(decoded.ok, JSON.stringify(decoded.errors));
+    const restored = decoded.state;
+    assert.equal(restored.run.chestChoices, undefined);
+    assert.deepEqual(restored.run.pendingLoot, opened.run.pendingLoot);
+    assert.deepEqual(restored.itemsById, opened.itemsById);
+    assert.deepEqual(restored.run.ingredientLoot, opened.run.ingredientLoot);
+    assert.equal(restored.run.fieldManuscript, opened.run.fieldManuscript);
+    assert.equal(restored.rngState, opened.rngState);
+    assert.deepEqual(V.Storage.decode(V.Storage.encode(restored)).state, restored);
+    const one = V.Expedition.resolveLoot(restored, restored.run.pendingLoot[0], 'take').state;
+    assert.deepEqual(V.Storage.decode(V.Storage.encode(one)).state, one);
+    const invalid = V.State.clone(old);
+    invalid.run.chestChoices[1] = invalid.run.chestChoices[0];
+    assert.equal(V.Storage.decode(V.Storage.encode(invalid)).ok, false);
+  }
+});
+
+test('满包宝箱仍保留两件，替换只消耗指定一件，放弃或离开清理余物', () => {
+  const { A, V, st } = boot(422);
+  const E = V.Expedition;
+  const s = setNodes(A, startRun(A, st, 422), ['chest']);
+  const pending = E.chooseNode(s, s.run.nodes[0].id).state;
+  const [id, other] = pending.run.pendingLoot;
+  addNewPart(A, pending, pending.itemsById[id].templateId);
+  while (E.bagFree(pending)) addNewPart(A, pending, 'rivet', pending.run.bag.length + 1);
+  assert.equal(E.resolveLoot(pending, id, 'take').state, pending);
+  const replaced = E.resolveLoot(pending, id, 'replace:' + pending.run.bag[0]).state;
+  assert.equal(V.State.itemLocation(replaced, id).where, 'bag');
+  assert.deepEqual(replaced.run.pendingLoot, [other]);
+  const left = E.finishNode(replaced, true).state;
+  assert.equal(left.itemsById[other], undefined);
+  const discard = E.resolveLoot(pending, id, 'discard').state;
+  assert.equal(discard.itemsById[id], undefined);
+  assert.deepEqual(discard.run.pendingLoot, [other]);
+  assert.equal(E.retreat(pending, 'emergency').state.itemsById[id], undefined);
+});
+
+test('商人陈列三种模板，未售物离店清理，已购物正常记账', () => {
+  const { A, V, st } = boot(423);
+  const s = setNodes(A, startRun(A, st, 423), ['merchant']);
+  s.gold = 150;
+  const shop = V.Expedition.chooseNode(s, s.run.nodes[0].id).state;
+  const offers = shop.run.shop;
+  assert.equal(new Set(offers.map((o) => shop.itemsById[o.itemId].templateId)).size, 3);
+  assert.equal(V.State.itemLocation(shop, offers[0].itemId).where, 'merchant');
+  assert.deepEqual(V.Storage.decode(V.Storage.encode(shop)).state.run.shop, offers);
+  const bought = V.Expedition.buy(shop, offers[0].id).state;
+  assert.equal(bought.gold, s.gold - offers[0].price);
+  assert.deepEqual(bought.run.bag, [offers[0].itemId]);
+  for (const end of [V.Expedition.finishNode(bought), V.Expedition.retreat(bought, 'emergency')]) {
+    assert.ok(end.ok);
+    assert.ok(V.State.validate(end.state).ok);
+    assert.ok(end.state.itemsById[offers[0].itemId]);
+    assert.equal(end.state.itemsById[offers[1].itemId], undefined);
+    assert.equal(end.state.itemsById[offers[2].itemId], undefined);
+  }
+});
+
+test('宝箱开盖时按种子抽取三分之一携谱机会，读档与拾取顺序不能重抽', () => {
+  const { A, V, st } = boot(440);
+  const outcomes = new Set();
+  for (let seed = 1; seed <= 24; seed++) {
+    const s = setNodes(A, startRun(A, st, seed), ['chest']);
+    const drawn = A.Random.shuffle(s.rngState, V.Data.TEMPLATE_ORDER);
+    const expected = A.Random.chance(drawn.state, 1 / 3).value;
+    const opened = V.Expedition.chooseNode(s, s.run.nodes[0].id).state;
+    assert.equal(!!opened.run.fieldManuscript, expected);
+    outcomes.add(expected);
+    const restored = V.Storage.decode(V.Storage.encode(opened)).state;
+    const [first, second] = restored.run.pendingLoot;
+    for (const itemId of [first, second]) {
+      const taken = V.Expedition.resolveLoot(restored, itemId, 'take').state;
+      assert.equal(taken.run.fieldManuscript, opened.run.fieldManuscript);
+      assert.equal(taken.rngState, opened.rngState);
+    }
+    if (!expected) continue;
+    const id = restored.run.fieldManuscript;
+    assert.equal(V.Data.manuscript(id).fieldSource, 'chest');
+    assert.equal(V.Data.manuscript(id).fieldDepth, 1);
+    assert.equal(V.Expedition.bagUsed(restored), 0);
+    const leaving = V.Expedition.finishNode(restored, true).state;
+    const extracted = V.Expedition.extract(leaving).state;
+    assert.equal(extracted.settlement.fieldManuscript, id);
+    assert.equal(extracted.manuscriptVault.filter((m) => m.id === id).length, 1);
+    assert.equal(V.Expedition.extract(extracted).ok, false);
+    for (const mode of ['emergency', 'defeat']) {
+      const lost = V.Expedition.retreat(restored, mode).state;
+      assert.equal(lost.settlement.fieldManuscript, undefined);
+      assert.deepEqual(lost.manuscriptVault, st.manuscriptVault);
+    }
+  }
+  assert.equal(outcomes.size, 2);
+});
+
+test('精英战胜确认才给谱，重复确认及回转不能刷；优先缺本且每趟限一份', () => {
+  const { A, V, st } = boot(441);
+  const s = startRun(A, st, 441);
+  s.run.floor = 49;
+  setNodes(A, s, ['elite', 'boss']);
+  const pool = Object.values(V.Data.MANUSCRIPTS).filter((m) => m.fieldSource === 'elite');
+  assert.equal(pool.length, 17);
+  for (const m of pool.slice(1)) s.manuscriptVault.push(V.State.clone(m));
+  const expected = pool[0].id;
+  const opened = V.Expedition.chooseNode(s, s.run.nodes[0].id).state;
+  function win(start) {
+    const battle = V.Encounter.startAttempt(start).state;
+    battle.run.battle.over = true;
+    battle.run.battle.outcome = 'win';
+    assert.ok(V.Combat.prepareResult(battle).ok);
+    return battle;
+  }
+  const review = win(opened);
+  assert.equal(review.run.fieldManuscript, undefined);
+  const retried = win(V.Encounter.rewind(review).state);
+  const won = V.Encounter.confirm(review).state;
+  assert.equal(won.run.fieldManuscript, expected);
+  assert.equal(V.Encounter.confirm(retried).state.run.fieldManuscript, expected);
+  assert.equal(V.Encounter.confirm(won).state.rngState, won.rngState);
+  assert.equal(V.Encounter.rewind(won).ok, false);
+  assert.deepEqual(won.manuscriptVault, s.manuscriptVault);
+  const finalMap = V.Expedition.finishNode(won, true).state;
+  const boss = V.Expedition.chooseNode(finalMap, finalMap.run.nodes.find((n) => n.type === 'boss').id).state;
+  const cleared = V.Encounter.confirm(win(boss)).state;
+  const settled = V.Expedition.finishNode(cleared, true).state;
+  assert.equal(settled.settlement.fieldManuscript, expected);
+  assert.notEqual(settled.settlement.manuscript.id, expected);
+  assert.equal(settled.manuscriptVault.length, s.manuscriptVault.length + 2);
+  const carried = Object.values(V.Data.MANUSCRIPTS).find((m) => m.fieldSource === 'chest').id;
+  s.run.fieldManuscript = carried;
+  const both = V.Expedition.chooseNode(s, s.run.nodes[0].id).state;
+  assert.equal(V.Encounter.confirm(win(both)).state.run.fieldManuscript, carried);
+  assert.equal(V.Encounter.rewind(win(both)).state.run.fieldManuscript, carried);
+  both.run.encounter.checkpoint.run.fieldManuscript = expected;
+  assert.equal(V.Storage.decode(V.Storage.encode(both)).ok, false);
+  s.run.fieldManuscript = 'spark';
+  assert.equal(V.Storage.decode(V.Storage.encode(s)).ok, false);
+});
+
+test('满盘食材可合并未满的一堆；腾出轮廓后取纹路，未采集随离场清理', () => {
+  const { A, V, st } = boot(450);
+  const E = V.Expedition;
+  const s = setNodes(A, startRun(A, st, 450), ['chest']);
+  const id = V.Kitchen.biome(1).forage;
+  const profile = E.foodPack(id);
+  const cap = E.bagCapacity(s);
+  s.run.ingredients = { [id]: cap / profile.cells.length * profile.limit };
+  const opened = E.chooseNode(s, s.run.nodes[0].id).state;
+  const part = opened.run.pendingLoot[0];
+  const loot = opened;
+  assert.equal(loot.run.pendingLoot.length, 2);
+  assert.equal(loot.run.ingredientLoot[id], 1);
+  assert.equal(Object.keys(loot.run.ingredientLoot).length, 2);
+  assert.equal(E.takeIngredient(loot, id).state, loot);
+  const free = E.dropIngredient(loot, id).state;
+  assert.equal(E.bagFree(free), 0);
+  assert.ok(E.canPack(free, 'food:' + id));
+  const gathered = E.takeIngredient(free, id).state;
+  assert.equal(E.takeIngredient(gathered, id).ok, false);
+  assert.equal(E.bagUsed(gathered), cap);
+  assert.deepEqual(V.Storage.decode(V.Storage.encode(gathered)).state.run.ingredients, s.run.ingredients);
+  let room = loot;
+  while (!E.canPack(room, 'part:' + part)) {
+    const drop = E.dropIngredient(room, id);
+    assert.ok(drop.ok);
+    room = drop.state;
+  }
+  const taken = E.resolveLoot(room, part, 'take');
+  assert.ok(taken.ok);
+  assert.ok(taken.state.run.bag.includes(part));
+  const left = E.finishNode(taken.state, true).state;
+  assert.deepEqual(left.run.ingredientLoot, {});
+  assert.equal(E.takeIngredient(left, id).ok, false);
+  assert.ok(E.dropIngredient(left, id).ok);
+  const camp = atCamp(A, left);
+  assert.ok(E.dropIngredient(camp, id).ok);
+  assert.equal(E.takeIngredient(camp, id).ok, false);
+});
+
+test('真实敌群每只产一份基础和一份副产食材，回转及重复确认不会多产', () => {
+  const { A, V, st } = boot(451);
+  const s = setNodes(A, startRun(A, st, 451), ['battle']);
+  const id = V.Kitchen.biome(1).forage;
+  const profile = V.Expedition.foodPack(id);
+  s.run.ingredients = { [id]: V.Expedition.bagCapacity(s) / profile.cells.length * profile.limit };
+  const opened = V.Expedition.chooseNode(s, s.run.nodes[0].id).state;
+  const expected = {};
+  for (const enemy of opened.run.encounter.enemyBlueprint.units) {
+    const ingredient = V.Kitchen.ECOSYSTEM[enemy.enemyType].ingredient;
+    expected[ingredient] = (expected[ingredient] || 0) + 1;
+  }
+  assert.equal(V.Expedition.dropIngredient(opened, id).ok, false);
+  const battle = V.Encounter.startAttempt(opened).state;
+  battle.run.battle.over = true;
+  battle.run.battle.outcome = 'win';
+  V.Combat.prepareResult(battle);
+  assert.deepEqual(V.Encounter.rewind(battle).state.run.ingredientLoot, {});
+  const won = V.Encounter.confirm(battle).state;
+  for (const [id, amount] of Object.entries(expected)) assert.equal(won.run.ingredientLoot[id], amount);
+  assert.equal(Object.values(won.run.ingredientLoot).reduce((a, b) => a + b, 0), opened.run.encounter.enemyBlueprint.units.length * 2);
+  assert.deepEqual(won.run.bag, []);
+  assert.ok(won.run.pendingLoot.length > 0, '背包全是食材时，确认战利纹路进待处理区');
+  const restored = V.Storage.decode(V.Storage.encode(won)).state;
+  assert.deepEqual(V.Encounter.confirm(restored).state.run.ingredientLoot, won.run.ingredientLoot);
+});
+
+test('实际开箱、确认战利并拾取可随种子收齐120种食材', () => {
+  const { A, V, st } = boot(453);
+  const gathered = new Set();
+  for (let seed = 1; seed <= 256 && gathered.size < 120; seed++) {
+    for (const [floor, type] of [[1, 'chest'], [15, 'chest'], [29, 'chest'], [1, 'battle'], [15, 'battle'], [29, 'battle'], [29, 'elite'], [7, 'boss'], [14, 'boss'], [28, 'boss']]) {
+      const s = startRun(A, st, seed);
+      s.run.floor = floor;
+      s.stats.runs = seed;
+      setNodes(A, s, [type]);
+      const opened = V.Expedition.chooseNode(s, s.run.nodes[0].id).state;
+      let loot;
+      if (type === 'chest') {
+        loot = opened;
+      } else {
+        const battle = V.Encounter.startAttempt(opened).state;
+        battle.run.battle.over = true;
+        battle.run.battle.outcome = 'win';
+        V.Combat.prepareResult(battle);
+        loot = V.Encounter.confirm(battle).state;
+      }
+      for (const id of Object.keys(loot.run.ingredientLoot)) {
+        const taken = V.Expedition.takeIngredient(loot, id);
+        assert.ok(taken.ok, id);
+        loot = taken.state;
+        gathered.add(id);
+      }
+    }
+  }
+  assert.deepEqual([...gathered].sort(), Object.keys(V.Kitchen.INGREDIENTS).sort());
+});
+
+test('食材正常撤离全入仓、紧急按总量保留一半、败退清空；旧档及计数校验', () => {
+  const { A, V, st } = boot(452);
+  const s = startRun(A, st, 452);
+  const [first, second] = Object.keys(V.Kitchen.INGREDIENTS).sort();
+  s.pantry = { [first]: 5 };
+  s.run.ingredients = { [second]: 4, [first]: 1 };
+  const total = V.Expedition.extract(s).state;
+  assert.deepEqual(total.settlement.ingredients, { [first]: 1, [second]: 4 });
+  assert.deepEqual(total.pantry, { [first]: 6, [second]: 4 });
+  const emergency = V.Expedition.retreat(s, 'emergency').state;
+  assert.deepEqual(emergency.settlement.ingredients, { [first]: 1, [second]: 2 });
+  assert.deepEqual(emergency.pantry, { [first]: 6, [second]: 2 });
+  const loss = V.Expedition.retreat(s, 'defeat').state;
+  assert.deepEqual(loss.settlement.ingredients, {});
+  assert.deepEqual(loss.pantry, s.pantry);
+  assert.ok(V.Storage.decode(V.Storage.encode(emergency)).ok);
+  const legacy = V.State.clone(s);
+  delete legacy.pantry; delete legacy.cookedRecipes;
+  delete legacy.run.ingredients; delete legacy.run.ingredientLoot;
+  assert.ok(V.Storage.decode(V.Storage.encode(legacy)).ok);
+  for (const bad of [
+    { ...s, pantry: { bogus: 2 } },
+    { ...s, cookedRecipes: { [Object.keys(V.Kitchen.RECIPES)[0]]: 0 } },
+    { ...s, run: { ...s.run, ingredients: { [first]: -1 } } },
+    { ...s, run: { ...s.run, ingredients: { [first]: 25 } } },
+    { ...s, run: { ...s.run, ingredientLoot: { [first]: 1 } } },
+  ]) assert.equal(V.Storage.decode(V.Storage.encode(bad)).ok, false);
+});
+
+test('每处营火只免费休息一次，读档保留次数，下一处重新开放', () => {
+  const { A, V, st } = boot(453);
+  let s = atCamp(A, startRun(A, st, 453));
+  const p = s.run.party[0];
+  p.hp = 1;
+  p.stress = 80;
+  const maxHp = V.Roster.stats(s, V.State.unitById(s, p.uid)).maxHp;
+  const rested = V.Expedition.campRest(s);
+  assert.ok(rested.ok);
+  assert.equal(rested.state.run.party[0].hp, 1 + Math.round(maxHp * 0.45));
+  assert.equal(rested.state.run.party[0].stress, 50);
+  s = V.Storage.decode(V.Storage.encode(rested.state)).state;
+  const again = V.Expedition.campRest(s);
+  assert.equal(again.error.code, 'already_rested');
+  assert.equal(again.state, s);
+  const second = atCamp(A, V.Expedition.finishNode(s).state);
+  assert.equal(second.run.campRested, false);
+  assert.ok(V.Expedition.campRest(second).ok);
 });

@@ -63,7 +63,7 @@ function stepUntilOver(A, st, limit) {
   return { st, ticks };
 }
 
-/** 造一件指定模板的构件并放进仓库。 */
+/** 造一件指定模板的纹路并放进仓库。 */
 function makePart(A, st, spec) {
   const V = A.Veteran;
   const part = V.State.makePart(st, spec || { kind: 'circuit', templateId: 'straight' });

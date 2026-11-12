@@ -88,7 +88,7 @@ test('输出储存上限 4，溢出消散但不复制', () => {
   assert.ok(rt.dissipated >= 2, '溢出应记消散');
 });
 
-test('阈值闸：满血时能量消散，半血以下才通过', () => {
+test('闭鳞纹：满血时能量消散，半血以下才通过', () => {
   const { st, unit } = baseState();
   const cc = compiled(st, unit.id, [
     { templateId: 'threshold', x: 0, y: 1 },
@@ -103,7 +103,7 @@ test('阈值闸：满血时能量消散，半血以下才通过', () => {
   assert.equal(V.Circuit.outputTokens(pass.runtime, 'main').length, 2);
 });
 
-test('余烬导管给流经的能量打 ember 标记', () => {
+test('余烬纹给流经的能量打 ember 标记', () => {
   const { st, unit } = baseState();
   const cc = compiled(st, unit.id, [
     { templateId: 'ember', x: 0, y: 1 },
@@ -167,4 +167,19 @@ test('编译结果可 JSON 序列化，无函数/循环引用', () => {
   const json = JSON.stringify(cc.value);
   assert.ok(json.length > 0);
   assert.deepEqual(JSON.parse(json).reachableOutputs, ['main']);
+});
+
+test('四通纹章三路轮转，每个单脉冲只从一个出口送出', () => {
+  const { st, unit } = baseState();
+  const tpl = D.template('cross');
+  const [entry, north, east, south] = tpl.ports;
+  unit.plateOverride.terminals = Object.fromEntries([
+    ['clock', entry, 'clock'], ['top', north, 'main'], ['right', east, 'support'], ['bottom', south, 'main'],
+  ].map(([id, p, channel]) => [id, { id, role: p.role, cell: p.cell, dir: p.dir, channel }]));
+  const cc = compiled(st, unit.id, [{templateId: 'cross', x: 0, y: 0}]);
+  let rt = V.Circuit.emptyRuntime();
+  for (const expected of [[1,0], [1,1], [2,1], [3,1]]) {
+    rt = V.Circuit.route(cc, rt, { clock: V.Circuit.pulse(1) }).runtime;
+    assert.deepEqual([rt.outputs.main.length, rt.outputs.support.length], expected);
+  }
 });

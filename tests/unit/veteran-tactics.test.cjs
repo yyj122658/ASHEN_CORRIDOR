@@ -31,22 +31,22 @@ test('默认规则：满血时走主手', () => {
   assert.equal(r.cost, 2);
 });
 
-test('默认规则：队友残血时先保护', () => {
+test('默认不再自动护持：护持是玩家自己挂的取舍', () => {
   const c = ctx();
   c.allies[1].hp = 10;
   const r = T.evaluate(c, D.defaultGambits());
-  assert.equal(r.action, 'support');
-  assert.deepEqual(r.targetIds, ['a2']);
+  assert.equal(r.action, 'main', '默认只攻击，否则全队会一直举盾不还手');
+  assert.deepEqual(r.targetIds, ['e1']);
 });
 
-test('条件不满足会解释并继续下一条', () => {
-  const c = ctx();
+test('显式挂上护持就真的护持，且不花余裕', () => {
+  const c = ctx({ energy: { main: 0, support: 0 } });
   c.allies[1].hp = 10;
-  c.energy.support = 0;
-  const r = T.evaluate(c, D.defaultGambits());
-  assert.equal(r.action, 'main', '保护没能量就该退回主手');
-  const failed = r.reasons.filter((x) => !x.ok);
-  assert.ok(failed.some((x) => x.reason.includes('保护需要')), JSON.stringify(failed));
+  const rules = [{ id: 's', enabled: true, conditions: [{ type: 'allyHpBelow', value: 50 }], target: 'lowestHpAlly', action: 'support' }];
+  const r = T.evaluate(c, rules);
+  assert.equal(r.action, 'support');
+  assert.deepEqual(r.targetIds, ['a2']);
+  assert.equal(r.cost, 0, '护持不吃余裕，余裕留给招式');
 });
 
 test('主手在非法身位时跳过并说明', () => {
@@ -105,7 +105,8 @@ test('atSlot 与 enemyCharging 条件按身位和蓄力解析', () => {
 
 test('validator 拒绝超槽、未知动作、三个条件、非法阈值', () => {
   assert.ok(T.validate(D.defaultGambits(), 2).ok);
-  assert.ok(!T.validate(D.defaultGambits(), 1).ok, '超槽应拒绝');
+  const twoRules = [D.defaultGambits()[0], { ...D.defaultGambits()[0], id: 'g2' }];
+  assert.ok(!T.validate(twoRules, 1).ok, '超槽应拒绝');
 
   const badAction = [{ id: 'x', conditions: [{ type: 'always' }], target: 'frontFoe', action: 'nuke' }];
   assert.ok(!T.validate(badAction, 2).ok);
@@ -125,12 +126,14 @@ test('validator 拒绝超槽、未知动作、三个条件、非法阈值', () =
 });
 
 test('禁用规则不参与求值', () => {
-  const rules = D.defaultGambits();
-  rules[0].enabled = false;
+  const rules = [
+    { id: 's', enabled: false, conditions: [{ type: 'allyHpBelow', value: 50 }], target: 'lowestHpAlly', action: 'support' },
+    { id: 'm', enabled: true, conditions: [{ type: 'always' }], target: 'frontFoe', action: 'main' },
+  ];
   const c = ctx();
   c.allies[1].hp = 5;
   const r = T.evaluate(c, rules);
-  assert.equal(r.action, 'main');
+  assert.equal(r.action, 'main', '停用的护持不该再生效');
 });
 
 test('没有敌人时退回基础攻击，不抛错', () => {

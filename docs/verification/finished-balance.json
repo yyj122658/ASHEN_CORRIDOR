@@ -1,0 +1,118 @@
+{
+  "seeds": [
+    3,
+    9,
+    17,
+    31
+  ],
+  "results": [
+    {
+      "mode": "完整入门构筑",
+      "floor": 1,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 13.5,
+      "hpPct": 80,
+      "healing": 74
+    },
+    {
+      "mode": "完整入门构筑",
+      "floor": 4,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 30.5,
+      "hpPct": 57,
+      "healing": 162
+    },
+    {
+      "mode": "完整入门构筑",
+      "floor": 7,
+      "samples": 4,
+      "wins": 0,
+      "seconds": 22.8,
+      "hpPct": 0,
+      "healing": 139
+    },
+    {
+      "mode": "移除刻印",
+      "floor": 1,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 16.1,
+      "hpPct": 75,
+      "healing": 85
+    },
+    {
+      "mode": "移除刻印",
+      "floor": 4,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 41.3,
+      "hpPct": 46,
+      "healing": 229
+    },
+    {
+      "mode": "移除刻印",
+      "floor": 7,
+      "samples": 4,
+      "wins": 0,
+      "seconds": 21.3,
+      "hpPct": 0,
+      "healing": 102
+    },
+    {
+      "mode": "逆序编队",
+      "floor": 1,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 13.5,
+      "hpPct": 80,
+      "healing": 74
+    },
+    {
+      "mode": "逆序编队",
+      "floor": 4,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 30.5,
+      "hpPct": 57,
+      "healing": 162
+    },
+    {
+      "mode": "逆序编队",
+      "floor": 7,
+      "samples": 4,
+      "wins": 0,
+      "seconds": 22.7,
+      "hpPct": 0,
+      "healing": 111
+    },
+    {
+      "mode": "高阶功法控制组",
+      "floor": 1,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 6.1,
+      "hpPct": 89,
+      "healing": 0
+    },
+    {
+      "mode": "高阶功法控制组",
+      "floor": 4,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 10.6,
+      "hpPct": 87,
+      "healing": 0
+    },
+    {
+      "mode": "高阶功法控制组",
+      "floor": 7,
+      "samples": 4,
+      "wins": 4,
+      "seconds": 9.7,
+      "hpPct": 77,
+      "healing": 0
+    }
+  ]
+}

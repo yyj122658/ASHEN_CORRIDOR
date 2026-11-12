@@ -96,7 +96,7 @@ const rows = [];
 let illegalCount = 0;
 
 for (const cfg of CONFIGS) {
-  for (const [kind, floor] of [['normal', 1], ['normal', 4], ['elite', 4], ['boss', 7]]) {
+  for (const [kind, floor] of [['normal', 1], ['normal', 22], ['elite', 36], ['boss', 49]]) {
     let n = 0;
     let win = 0;
     let rounds = 0;
@@ -145,7 +145,7 @@ function fullRun(seed, policy) {
   st = started.state;
   const log = { confirm: 0, retry: 0, inscribe: 0, extract: null, depth: 0, illegal: null };
 
-  for (let guard = 0; guard < 120; guard++) {
+  for (let guard = 0; guard < 400; guard++) {
     if (!st.run) break;
     const r = st.run;
 
@@ -213,14 +213,14 @@ function fullRun(seed, policy) {
     }
 
     if (r.stage === 'loot') {
-      for (let i = 0; i < 10; i++) {
-        const pend = st.run.pendingLoot;
-        if (!pend.length) break;
-        const fixed = V.Expedition.resolveLoot(st, pend[0], 'discard');
-        if (!fixed.ok) { log.illegal = fixed.error.message; break; }
-        st = fixed.state;
+      for (const id of r.pendingLoot) {
+        if (!V.Expedition.canPack(st, 'part:' + id)) continue;
+        const taken = V.Expedition.resolveLoot(st, id, 'take');
+        if (!taken.ok) { log.illegal = taken.error.message; break; }
+        st = taken.state;
       }
-      const f = V.Expedition.finishNode(st);
+      if (log.illegal) break;
+      const f = V.Expedition.finishNode(st, true);
       if (!f.ok) { log.illegal = f.error.message; break; }
       st = f.state;
       continue;
@@ -348,6 +348,6 @@ for (const p of POLICIES) {
   });
 }
 
-console.log('\n七层端到端（每策略 30 局）：');
+console.log(`\n七层端到端（每策略 ${Math.min(N, 30)} 局）：`);
 console.table(runRows);
 console.log(`\n单场战斗中出现的非法状态总数：${illegalCount}`);

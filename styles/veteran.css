@@ -317,10 +317,21 @@ button.v-cta:active { transform: translate(5px, 5px); box-shadow: 0 0 0; }
 .grid { stroke: rgba(110, 90, 110, .42); stroke-width: 1; }
 
 /* 功法膜层与覆盖率面板 */
-.ms-cell-off { fill: rgba(18, 14, 28, .48); stroke: rgba(142, 132, 178, .55); stroke-width: 1.2; stroke-dasharray: 4 3; }
-.ms-cell-on { fill: rgba(242, 207, 126, .14); stroke: rgba(242, 207, 126, .75); stroke-width: 1.3; }
-.ms-io-mark { fill: #7FBBC8; stroke: #0B0910; stroke-width: 1; opacity: .82; }
-.ms-io-mark.exit { fill: #F2CF7E; }
+.ms-contour, .part-unified-frame {
+  fill: none; stroke: #ba9878; stroke-width: 1; stroke-dasharray: 7 3 1 3; pointer-events: none;
+}
+.part-unified-frame { stroke: #f1ce96; stroke-dasharray: 5 2; }
+.part-unified-frame.bad { stroke: #e88679; }
+.ms-field { fill: #998369; fill-opacity: .12; }
+.ms-incision.aligned .ms-field { fill: #c49162; fill-opacity: .22; }
+.etch-cut, .etch-lip, .etch-burr { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.etch-cut { stroke: #201c18; stroke-width: 2; }
+.etch-lip { stroke: #a49478; stroke-width: 2; }
+.etch-fleck { fill: none; stroke: #d7c49d; stroke-width: .65; stroke-dasharray: 1.2 4 .7 7 2 5; }
+.etch-burr { stroke: #867865; stroke-width: .85; }
+.ms-incision.aligned .etch-lip { stroke: #c6ad83; }
+.etch-mark .ms-field { fill-opacity: .23; }
+.etch-mark .etch-lip, .etch-mark .etch-cut { stroke-width: 2.8; }
 .ms-panel { transition: opacity .15s, border-color .15s; }
 .ms-panel.ms-unfit { opacity: .66; filter: saturate(.55); border-color: rgba(180, 95, 88, .45); }
 .ms-reason {
@@ -332,36 +343,14 @@ button.v-cta:active { transform: translate(5px, 5px); box-shadow: 0 0 0; }
   width: 28px; height: 28px; object-fit: contain; flex: 0 0 28px;
   border: 1px solid var(--border-soft); background: #14101D; border-radius: 2px;
 }
-.part-unified-frame { pointer-events: none; }
 
-.terminal { fill: #25202E; stroke: #6E593F; stroke-width: 1.3; }
-.terminal.term-lit-in { fill: #7FBBC8; stroke: #B8E7F0; }
-.terminal.term-lit-out { fill: #F2CF7E; stroke: #FFF0B8; }
-.terminal-label { fill: var(--text-dim); font-size: 8.5px; font-family: var(--font-body); }
+
+.terminal-label { fill: #beb4a4; paint-order: stroke; stroke: #232627; stroke-width: 2; font-size: 10px; font-family: var(--font-body); }
 .terminal-label.lit { fill: var(--text); font-weight: 500; }
 
-.link { stroke: rgba(127, 187, 200, .25); stroke-width: 1.3; stroke-dasharray: 3 3; fill: none; }
-.link-in { stroke: rgba(127, 187, 200, .3); }
-.link-out { stroke: rgba(141, 182, 155, .3); }
-.link.term-wire-lit { stroke: rgba(242, 207, 126, .65); stroke-dasharray: none; stroke-width: 1.8; }
-.link-flow { stroke: rgba(160, 145, 130, .35); stroke-dasharray: 3 3; stroke-width: 1.5; }
-.link-flow.charged { stroke: rgba(127, 187, 200, .78); stroke-dasharray: none; stroke-width: 2; }
-.link-flow.live { stroke: #F2CF7E; stroke-dasharray: none; stroke-width: 2.3; }
-.link-spark { fill: #FFF2C2; }
-
-.rune-groove { fill: none; stroke: rgba(9, 7, 13, .85); stroke-width: 5.5; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-.rune-flow { fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-.rune-flow.dormant { stroke: rgba(130, 118, 138, .42); }
-.rune-flow.charged { stroke: #7FBBC8; }
-.rune-flow.charged.overlay { stroke: rgba(127, 187, 200, .78); stroke-width: 2.4; stroke-dasharray: 4 4; }
-.rune-flow.live { stroke: #F2CF7E; }
-.rune-pulse {
-  fill: none; stroke: rgba(255, 241, 189, .72); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 5 11;
-  animation: runeFlow 1.2s linear infinite; pointer-events: none;
-}
-.rune.rune-dormant image { opacity: .72; filter: saturate(.38) brightness(.78); }
-.rune.rune-charged image { opacity: .9; filter: saturate(.85); }
-.rune.rune-live image { filter: drop-shadow(0 0 3px rgba(242, 207, 126, .25)); }
+.link { fill: none; stroke: #96836e; stroke-width: .8; stroke-dasharray: 2 3; }
+.link.term-wire-lit, .link-flow.charged { stroke: #a5bcb2; stroke-dasharray: none; stroke-width: 1; }
+.link-flow.live { stroke: #dcaf76; stroke-dasharray: none; stroke-width: 1.15; }
 .drag-ghost-rune { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 .drag-ghost-cell-ov {
   position: absolute; box-sizing: border-box; pointer-events: none; z-index: 2;
@@ -370,19 +359,15 @@ button.v-cta:active { transform: translate(5px, 5px); box-shadow: 0 0 0; }
 .drag-ghost-cell-ov.bad {
   background: rgba(211, 106, 101, .42); border: 1.5px solid #FF8B84;
 }
-.drag-ghost-port { z-index: 3; }
-@keyframes runeFlow { to { stroke-dashoffset: -16; } }
 
 .part-label {
   fill: #EFE5D3; font-size: 8.2px; font-family: var(--font-body); pointer-events: none;
   paint-order: stroke; stroke: #0B0910; stroke-width: 3px; stroke-linejoin: round;
 }
 .part-lock { fill: #D87843; font-size: 8px; pointer-events: none; }
-.port-in { fill: #4E7A88; stroke: #0B0910; stroke-width: 1; }
-.port-in.charged, .port-in.lit { fill: #7FBBC8; }
-.port-out { fill: #7E6838; stroke: #0B0910; stroke-width: 1; }
-.port-out.charged { fill: #C8A458; }
-.port-out.lit { fill: #F2CF7E; }
+.port-cut { stroke: #211f1b; stroke-width: .45; stroke-linejoin: round; pointer-events: none; }
+.port-in { fill: #91a9a5; }.port-out { fill: #b79770; }
+.port-in.charged, .port-in.lit { fill: #c3dbcf; }.port-out.charged, .port-out.lit { fill: #f5c994; }
 
 .hit { fill: transparent; cursor: pointer; }
 .hit:hover { fill: rgba(232, 196, 106, .10); }
@@ -550,6 +535,10 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
   background: var(--surface-raised); border: 1px solid var(--border); color: var(--text); cursor: pointer;
 }
 .choice:hover { border-color: var(--accent); background: #251E15; }
+.choice:disabled, .choice[aria-disabled="true"] {
+  cursor: not-allowed; opacity: 0.55; border-style: dashed;
+}
+.choice:disabled:hover, .choice[aria-disabled="true"]:hover { border-color: var(--border); background: var(--surface-raised); }
 .choice .hint { display: block; font-size: 10.5px; color: var(--text-dim); margin-top: 2px; }
 .blessing-card {
   text-align: left; font-family: inherit; padding: 12px;
@@ -716,7 +705,10 @@ img.art-broken, .art-broken { display: none !important; }
 /* ---------------- 板面拖拽 ---------------- */
 .board { touch-action: none; }
 .part-group { cursor: grab; }
-.part-group:hover .part-cell { stroke: rgba(232, 196, 106, .5); }
+.part-group:hover .part-hit { fill: #d5b98d13; }
+.board .rune-live .etch-relief { filter: sepia(.22) brightness(1.12); }
+.board .rune-charged .etch-relief { filter: brightness(1.06); }
+.board .rune-dormant { opacity: .8; }
 .part-group.dragging { cursor: grabbing; opacity: .35; }
 .part-item[data-act="wsPick"] { cursor: grab; }
 .part-item[data-act="wsPick"].on { cursor: grabbing; }
@@ -724,21 +716,15 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 /* 跟随指针的构件虚影：按真实格子数、端口与配色拼 */
 .drag-ghost {
   position: fixed; left: 0; top: 0; z-index: 9999; pointer-events: none;
-  opacity: .72; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .7));
+  opacity: .96;
 }
-.drag-ghost.snapped { opacity: .85; }
+.drag-ghost.snapped > :not(.drag-ghost-name) { visibility: hidden; }
 .drag-ghost.bad i { border-color: #D36A65 !important; }
 .drag-ghost.bad .drag-ghost-name { color: #F09B96; }
 .drag-ghost i {
   position: absolute; display: block; box-sizing: border-box;
-  border: 1.5px solid rgba(232, 196, 106, .85);
+  background: #393531e8; border: 1px solid #b69a7966;
 }
-.drag-ghost-port {
-  position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
-  border-radius: 50%; border: 1px solid #0B0910;
-}
-.drag-ghost-port.in { background: #7FBBC8; }
-.drag-ghost-port.out { background: #F2CF7E; }
 .drag-ghost-name {
   position: absolute; left: 50%; bottom: -20px; transform: translateX(-50%);
   white-space: nowrap; font-size: 11px; letter-spacing: .06em; color: #EFD082;
@@ -750,12 +736,10 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
   background: rgba(20, 16, 28, .94); border: 1px solid #5E7285;
 }
 /* 板面上的吸附预览 */
-.drop-ghost-cell {
-  fill-opacity: .24; stroke-width: 1.6; stroke-dasharray: 4 3; pointer-events: none;
-}
-.drop-ghost-cell.ok { stroke: #9BE0B0; fill-opacity: .26; }
-.drop-ghost-cell.bad { fill-opacity: .38; stroke: #F08078; stroke-dasharray: none; }
-.drop-ghost-port-svg { pointer-events: none; stroke: #0B0910; stroke-width: 1; }
+.drop-ghost-cell { fill: #3c3b36; stroke-width: 1; pointer-events: none; }
+.drop-ghost-cell.ok { stroke: #b9c4ab; fill-opacity: .92; stroke-dasharray: 5 3; }
+.drop-ghost-cell.bad { stroke: #ff9c88; fill: #6d3b33; fill-opacity: .92; stroke-dasharray: 2 2; }
+
 
 /* 功法谱表条目：可抓起拖到板面，观感与构件库一致 */
 .ms-chips { gap: 6px; }

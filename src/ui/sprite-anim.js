@@ -1,85 +1,173 @@
 'use strict';
-/* 逐帧战斗动画：只负责表现。
-   - 读取 assets/art/battle-v1/atlas 的 rect / pivot / durationMs
-   - 按战斗单位 ID 独立保存播放状态
-   - 事件由战斗日志增量驱动，不修改任何战斗结果
-   目前支持 blade（剑士）与 bone（骸骨兵），其余单位回退到原程序绘制。 */
+/* 战斗图集按单位身份加载，动作只消费表现事件。 */
 (function (A) {
   'use strict';
 
   const BASE = 'assets/art/battle-v1/';
-  const PRIORITY = { idle: 0, attack: 1, hurt: 2, death: 3 };
+  const PRIORITY = { idle: 0, attack: 1, cast: 1, move: 1, guard: 2, dodge: 2, hurt: 2, death: 3 };
+
+  // 脚底为原点。三个关键姿势依次为预备、出手、收势，单位为格宽的百分之一及角度。
+  const choreography = {
+    blade:     ['sweep','#d5bc91', [-8,0,-9], [22,-4,14], [7,0,5]],
+    warden:    ['ring','#b0b9ae', [-4,3,-6], [11,3,9], [4,2,2]],
+    ranger:    ['shaft','#d9b578', [2,1,5], [-9,-2,-9], [-3,0,-2]],
+    warlock:   ['coil','#a993c9', [-2,-3,-5], [4,-13,7], [2,-5,2]],
+    cleric:    ['ring','#f5ca83', [0,2,4], [3,-8,-4], [1,-3,-2]],
+    rogue:     ['shaft','#a3bcb9', [-12,4,-12], [32,-7,19], [9,2,8]],
+    wanderer0: ['sweep','#cfb48a', [-5,4,-15], [17,-6,20], [6,1,9]],
+    wanderer1: ['ring','#97b5c4', [-4,4,-8], [9,5,13], [5,1,6]],
+    wanderer2: ['shaft','#c6b5a3', [-8,1,-4], [22,0,9], [4,0,1]],
+    wanderer3: ['coil','#c5b9ba', [-7,-3,-6], [9,-7,10], [-2,-2,-3]],
+    wanderer4: ['sweep','#a4aac9', [-6,1,-9], [15,-14,15], [6,-5,5]],
+    wanderer5: ['ring','#d0af77', [0,-7,-8], [9,5,14], [3,2,7]],
+    wanderer6: ['shaft','#add7d8', [4,-3,6], [-6,-5,-8], [0,-2,-2]],
+    wanderer7: ['sweep','#d78e6d', [-9,4,-13], [16,3,22], [8,2,10]],
+    wanderer8: ['ring','#bcd2ab', [-4,1,-4], [2,-10,5], [-1,-3,0]],
+    wanderer9: ['coil','#c7afd1', [-4,-2,-7], [7,-5,8], [3,-1,3]],
+    wanderer10:['sweep','#b2bdcc', [-7,3,-8], [25,-18,18], [10,-5,8]],
+    wanderer11:['coil','#a4bd8e', [-5,3,-9], [9,0,12], [4,1,6]],
+    wanderer12:['ring','#b5b4d1', [-5,-5,-10], [8,-2,13], [3,-3,3]],
+    wanderer13:['coil','#edab75', [-7,2,-10], [14,-6,16], [5,-2,6]],
+    wanderer14:['shaft','#e0d8b7', [-4,3,-6], [26,-2,11], [6,1,4]],
+  };
+  const reactions = {
+    move:[[0,1,-5],[0,-7,7],[0,-2,2]],
+    dodge:[[-2,2,-6],[-19,-4,-17],[-6,1,-5]],
+    guard:[[-3,2,-6],[-5,4,-9],[-2,2,-3]],
+    cast:[[0,2,-5],[-2,-7,-7],[3,-2,5]],
+  };
+
+  function drawGesture(ctx, anim, score, time, scale) {
+    const poses = reactions[anim] || (anim === 'attack' && score.slice(2));
+    if (!poses) return;
+    const stops = [0,.27,.54,.77,1], rest = [0,0,0];
+    const i = time < stops[1] ? 0 : time < stops[2] ? 1 : time < stops[3] ? 2 : 3;
+    const a = poses[i-1] || rest, b = poses[i] || rest;
+    const t = (time - stops[i]) / (stops[i+1] - stops[i]);
+    const ease = t*t*(3-2*t);
+    const value = k => a[k] + (b[k]-a[k])*ease;
+    ctx.translate(value(0)*scale, value(1)*scale);
+    ctx.rotate(value(2)*Math.PI/180);
+    if ((anim !== 'attack' && anim !== 'cast') || time < .26 || time > .86) return;
+    const p = (time-.26)/.6;
+    ctx.save();
+    ctx.scale(scale,scale);
+    ctx.globalAlpha *= Math.sin(p*Math.PI)*.9;
+    ctx.strokeStyle = score[1];
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const kind = anim === 'cast' ? 'ring' : score[0];
+    if (kind === 'sweep') {
+      ctx.arc(7,-43,32,-1.5+p*.6,-1.4+p*2.8);
+    } else if (kind === 'shaft') {
+      ctx.moveTo(16+p*28,-45+p*3);
+      ctx.lineTo(23+p*57,-48+p*3);
+    } else if (kind === 'ring') {
+      ctx.ellipse(12,-36,9+p*25,5+p*13,-.3,0,2*Math.PI);
+    } else {
+      ctx.moveTo(8,-32);
+      ctx.bezierCurveTo(24,-64+p*20,33,-18-p*16,25+p*34,-45);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
 
   let atlas = null;
-  const images = {};      // 'blade.idle' -> HTMLImageElement
-  const loadState = {};   // 'blade.idle' -> 'idle'|'loading'|'ready'|'failed'
-  const states = {};      // unitId -> { anim, frame, elapsed, done }
-  let lastSeq = 0;
-  let ready = false;
+  const sheets = new Map();
+  const loading = new Map();
+  const states = Object.create(null);
 
-  /* ---------- 初始化 ---------- */
+  function characterStrip(id, facing) {
+    const size = 192;
+    const sheet = '../battle-v3/' + id + '.webp';
+    function sequence(poses, durations, loop, impactFrame) {
+      return { sheet, loop, impactFrame, frameCount: poses.length,
+        frames: poses.map((pose, i) => ({
+          rect: { x: pose * size, y: 0, w: size, h: size },
+          pivot: { x: 96, y: 184 }, durationMs: durations[i],
+        })),
+      };
+    }
+    return { facing, frameSize: size, animations: {
+      idle: sequence([0, 1], [610, 410], true),
+      attack: sequence([1, 2, 3, 0], [80, 130, 180, 75], false, 2),
+      hurt: sequence([4, 0], [170, 75], false),
+      death: sequence([4, 5], [145, 260], false),
+    } };
+  }
 
   function init() {
     if (atlas) return true;
     const raw = typeof window !== 'undefined' ? window.ASHEN_BATTLE_ATLAS : null;
     if (!raw || !raw.characters) return false;
-    atlas = raw;
+    const characters = { ...raw.characters };
+    A.Veteran.Data.SKINS.forEach(({id}) => { if (!characters[id]) characters[id] = characterStrip(id, 'right'); });
+    A.Veteran.Data.SKINS.forEach(({id}) => {
+      const c = characters[id], clips = c.animations;
+      const gesture = (source, indices, durations) => ({
+        sheet:source.sheet, frameCount:indices.length, loop:false,
+        frames:indices.map((index,i) => ({...source.frames[Math.min(index,source.frames.length-1)], durationMs:durations[i]})),
+      });
+      characters[id] = {...c, animations:{...clips,
+        cast:gesture(clips.attack,[0,1,2,1],[95,140,150,85]),
+        move:gesture(clips.idle,[0,1,0],[70,100,80]),
+        guard:gesture(clips.hurt,[0,0,1],[75,105,90]),
+        dodge:gesture(clips.idle,[1,0,1],[65,90,75]),
+      }};
+    });
+    for (const {id,sprite} of Object.values(A.Veteran.Data.ENEMIES)) {
+      if (!characters[id]) characters[id] = characters[sprite] || characterStrip(sprite || id, 'left');
+    }
+    atlas = { ...raw, characters };
     return true;
   }
 
-  function sheetKey(charId, animId) { return charId + '.' + animId; }
-
-  function loadOne(charId, animId) {
-    const key = sheetKey(charId, animId);
-    if (loadState[key] === 'ready' || loadState[key] === 'loading') return Promise.resolve(loadState[key] === 'ready' ? { key, ok: true } : { key, ok: false });
-    const an = atlas.characters[charId].animations[animId];
-    if (!an || !an.sheet) return Promise.resolve({ key, ok: false });
-
-    loadState[key] = 'loading';
-    return new Promise((resolve) => {
+  function loadSheet(sheet) {
+    if (sheets.has(sheet)) return Promise.resolve(true);
+    if (loading.has(sheet)) return loading.get(sheet);
+    const job = new Promise((resolve) => {
       const img = new Image();
-      img.onload = () => { images[key] = img; loadState[key] = 'ready'; resolve({ key, ok: true }); };
-      img.onerror = () => { loadState[key] = 'failed'; resolve({ key, ok: false }); };
-      img.src = BASE + an.sheet;
+      img.onload = () => { sheets.set(sheet, img); resolve(true); };
+      img.onerror = () => resolve(false);
+      img.src = BASE + sheet;
     });
+    loading.set(sheet, job);
+    job.then(() => loading.delete(sheet));
+    return job;
   }
 
-  /** 预加载指定角色（默认两个都加载）的四个动作图集。 */
   function preload(chars) {
     if (!init()) return Promise.resolve({ loaded: 0, failed: 0, supported: false });
-    const list = chars && chars.length ? chars : Object.keys(atlas.characters);
+    const list = chars ? new Set(chars) : Object.keys(atlas.characters);
     const jobs = [];
     list.forEach((cid) => {
       const c = atlas.characters[cid];
       if (!c) return;
-      Object.keys(c.animations).forEach((aid) => jobs.push(loadOne(cid, aid)));
+      for (const action of ['idle','attack','hurt','death']) jobs.push(loadSheet(c.animations[action].sheet));
     });
-    return Promise.all(jobs).then((res) => {
-      ready = res.some((r) => r.ok);
-      return { loaded: res.filter((r) => r.ok).length, failed: res.filter((r) => !r.ok).length, supported: ready };
-    });
+    return Promise.all(jobs).then((res) => ({
+      loaded: res.filter(Boolean).length, failed: res.filter((ok) => !ok).length, supported: isReady(),
+    }));
   }
 
-  function isReady() { return ready; }
+  function isReady() { return sheets.size > 0; }
 
-  /* ---------- 角色识别 ---------- */
-
-  /** 剑士按职业；骸骨兵必须按 enemyType === 'bone'，不猜名字/ID/shape。 */
   function charIdFor(u) {
-    if (!u) return null;
-    /* 旧模式按 cls 识别；老兵回路版没有职业，按 skinId 复用同一套动画。
-       skinId 只决定显示，不参与任何能力计算。 */
-    if (u.side === 'ally' && (u.cls === 'blade' || u.skinId === 'blade')) return 'blade';
-    if (u.side === 'enemy' && u.enemyType === 'bone') return 'bone';
-    return null;
+    if (!u || !init()) return null;
+    if (u.side === 'ally') {
+      const id = u.skinId || u.cls;
+      return A.Veteran.Data.SKINS.some((skin) => skin.id === id) ? id : null;
+    }
+    if (u.side !== 'enemy' || !Object.hasOwn(A.Veteran.Data.ENEMIES, u.enemyType)) return null;
+    /* 亚种复用同族立绘：sprites 只在 identity 上分身，动作表还是那一套 */
+    const want = A.Veteran.Data.ENEMIES[u.enemyType].sprite || u.enemyType;
+    if (Object.hasOwn(atlas.characters, want)) return want;
+    return Object.hasOwn(atlas.characters, u.enemyType) ? u.enemyType : null;
   }
 
   function supports(u) {
-    if (!ready) return false;
     const cid = charIdFor(u);
-    if (!cid) return false;
-    // 必须四个动作图集都在，否则整只降级，避免动画播到一半卡住
-    return ['idle', 'attack', 'hurt', 'death'].every((a) => loadState[sheetKey(cid, a)] === 'ready');
+    return !!cid && Object.values(atlas.characters[cid].animations).every((anim) => sheets.has(anim.sheet));
   }
 
   /* ---------- 状态 ---------- */
@@ -88,18 +176,11 @@
     let st = states[u.id];
     if (!st) {
       st = { anim: u.alive === false ? 'death' : 'idle', frame: 0, elapsed: 0, done: u.alive === false };
-      if (st.anim === 'death') st.frame = 5;
+      const cid = charIdFor(u);
+      if (cid && st.anim === 'death') st.frame = atlas.characters[cid].animations.death.frameCount - 1;
       states[u.id] = st;
     }
     return st;
-  }
-
-  function animationOf(u) {
-    const cid = charIdFor(u);
-    if (!cid || !atlas) return null;
-    const st = ensure(u);
-    const c = atlas.characters[cid];
-    return c.animations[st.anim] || c.animations.idle;
   }
 
   /**
@@ -109,7 +190,7 @@
    * - 低优先级不能打断未完成的高优先级
    */
   function play(u, anim, opts) {
-    if (!u || !supports(u)) return false;
+    if (!charIdFor(u)) return false;
     if (!atlas.characters[charIdFor(u)].animations[anim]) return false;
     const st = ensure(u);
     const force = !!(opts && opts.force);
@@ -128,14 +209,7 @@
   /** 恢复战斗时按存活状态初始化，不重放历史事件。 */
   function syncFromBattle(b) {
     Object.keys(states).forEach((k) => { delete states[k]; });
-    if (!b) { lastSeq = 0; return; }
-    const all = [...(b.allies || []), ...(b.enemies || [])];
-    all.forEach((u) => {
-      const st = { anim: 'idle', frame: 0, elapsed: 0, done: false };
-      if (u.alive === false) { st.anim = 'death'; st.frame = 5; st.done = true; }
-      states[u.id] = st;
-    });
-    lastSeq = b.logSeq || (b.logs && b.logs.length ? (b.logs[b.logs.length - 1].seq || 0) : 0);
+    if (b) [...(b.allies || []), ...(b.enemies || [])].forEach(ensure);
   }
 
   /* ---------- 推进 ---------- */
@@ -145,9 +219,9 @@
    * @param dtMs 已按暂停/倍率处理过的时间增量
    */
   function update(units, dtMs, hooks) {
-    if (!ready || !dtMs) return;
+    if (!dtMs) return;
     units.forEach((u) => {
-      if (!supports(u)) return;
+      if (!charIdFor(u)) return;
       const st = ensure(u);
       if (st.done) return;
       const prevFrame = st.frame;
@@ -200,17 +274,17 @@
    * 在 footX/footY 处绘制（逻辑坐标，已由调用方设定好世界变换）。
    * @returns true 表示已用动画绘制，false 表示应回退原绘制
    */
-  function draw(ctx, u, footX, footY, cellPx) {
+  function draw(ctx, u, footX, footY, cellPx, reduceMotion = false) {
     if (!supports(u)) return false;
     const cid = charIdFor(u);
     const st = ensure(u);
     const c = atlas.characters[cid];
     const anim = c.animations[st.anim] || c.animations.idle;
     const f = anim.frames[Math.min(st.frame, anim.frames.length - 1)];
-    const img = images[sheetKey(cid, st.anim)] || images[sheetKey(cid, 'idle')];
+    const img = sheets.get(anim.sheet);
     if (!img || !f) return false;
 
-    const s = cellPx / atlas.frameSize[0];
+    const s = cellPx / (c.frameSize || atlas.frameSize[0]);
     const wantRight = u.side === 'ally';
     const artRight = c.facing === 'right';
     const flip = wantRight !== artRight;
@@ -218,11 +292,24 @@
     ctx.save();
     ctx.translate(footX, footY);
     if (flip) ctx.scale(-1, 1);
+    if (!reduceMotion && u.side === 'ally' && (st.anim === 'attack' || reactions[st.anim])) {
+      let elapsed = st.elapsed, duration = 0;
+      anim.frames.forEach((frame,i) => {
+        if (i < st.frame) elapsed += frame.durationMs;
+        duration += frame.durationMs;
+      });
+      drawGesture(ctx, st.anim, choreography[cid], Math.min(1,elapsed/duration), cellPx/100);
+    }
+    /* 亚种靠色调与主人区分：叠加在已有的受击亮化之上，不改任何数值 */
+    if (u.filter) {
+      const prev = ctx.filter && ctx.filter !== 'none' ? ctx.filter + ' ' : '';
+      ctx.filter = prev + u.filter;
+    }
     ctx.drawImage(
       img,
-      f.rect.x, f.rect.y, f.rect.w || 512, f.rect.h || 512,
+      f.rect.x, f.rect.y, f.rect.w, f.rect.h,
       -f.pivot.x * s, -f.pivot.y * s,
-      512 * s, 512 * s
+      f.rect.w * s, f.rect.h * s
     );
     ctx.restore();
     return true;
@@ -242,7 +329,6 @@
 
   function reset() {
     Object.keys(states).forEach((k) => { delete states[k]; });
-    lastSeq = 0;
   }
 
   A.SpriteAnim = {

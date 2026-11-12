@@ -51,7 +51,7 @@
       units: next,
       event: {
         type: 'swap', actorId: aId, targetId: bId,
-        meta: { from: tmp, to: nb.slot },
+        meta: { from: tmp, to: na.slot },
       },
     };
   }
@@ -98,7 +98,13 @@
     return units.filter((x) => x.slot < beforeSlot).map((x) => x.id);
   }
 
-  /* ------------------------------ 主手 mod ------------------------------ */
+  // 旧档中的拓片尚无阵形动作字段，按谱号从现行谱目补取。
+  function hasMove(actor, id) {
+    return actor.modId === id || [actor.ms, ...(actor.extraMs || [])].some(ms =>
+      ms?.spec && (ms.spec.modId === id || D().manuscript(ms.spec.id)?.modId === id));
+  }
+
+  /* ------------------------------ 阵形动作 ------------------------------ */
 
   /** 一次根行动结束后：主动换位 → 援护检查。返回新战斗对象与事件。 */
   function resolveAfterAction(battle, rootAction) {
@@ -114,27 +120,21 @@
     const actor = byId(allies, actorId);
     const dealt = rootAction.action === 'attack' || rootAction.action === 'main';
     if (actor && rootAction.side !== 'enemy' && dealt && rootAction.dealtDamage) {
-      /* 武器已移除：位移类效果改由功法声明 */
-      const msSpec = (actor.ms && actor.ms.spec) || null;
-      const modId = actor.modId || (msSpec && msSpec.modId) || null;
-
-      if (modId === 'shadowAdvance' && actor.slot >= 2) {
+      if (hasMove(actor, 'shadowAdvance') && actor.slot >= 2) {
         if (actor.movementUsedRound !== round) {
           const r = insertFront(allies, actorId);
           if (r.ok && r.event) {
             allies = r.units;
             const me = byId(allies, actorId);
             me.movementUsedRound = round;
-            actor.movementUsedRound = round;
-            byId(battle.allies, actorId).movementUsedRound = round;
-            events.push({ type: 'move', actorId, meta: { kind: 'shadowAdvance', from: r.event.meta.from, to: 0 } });
+            events.push({ type: 'move', actorId, meta: { kind: 'shadowAdvance', ...r.event.meta } });
           } else if (!r.ok) {
             events.push({ type: 'moveBlocked', actorId, meta: { kind: 'shadowAdvance', reason: r.reason } });
           }
         }
       }
 
-      if (modId === 'refractRetreat' && actor.slot === 0 && actor.movementUsedRound !== round) {
+      if (hasMove(actor, 'refractRetreat') && actor.slot === 0 && actor.movementUsedRound !== round) {
         const behind = bySlot(allies, 1);
         if (behind && behind.alive !== false) {
           const r = swap(allies, actorId, behind.id);
@@ -142,10 +142,8 @@
             allies = r.units;
             const me = byId(allies, actorId);
             me.movementUsedRound = round;
-            me.refract = (me.refract || 0) + 1;
-            byId(battle.allies, actorId).movementUsedRound = round;
-            byId(battle.allies, actorId).refract = me.refract;
-            events.push({ type: 'move', actorId, meta: { kind: 'refractRetreat', from: 0, to: 1 } });
+            me.refract = 1;
+            events.push({ type: 'move', actorId, targetId: behind.id, meta: { kind: 'refractRetreat', from: 0, to: 1 } });
             events.push({ type: 'refract', actorId, meta: { charges: me.refract } });
           }
         }
@@ -153,9 +151,9 @@
     }
 
     /* ② 援护：敌方一次行动（含多段）全部结束后，紧邻前方友军残血则前插 */
-    if (rootAction.side === 'enemy') {
+    if (rootAction.side === 'enemy' && rootAction.dealtDamage) {
       const candidates = allies
-        .filter((u) => u.alive !== false && u.modId === 'ironCover' && u.coverUsedRound !== round)
+        .filter((u) => u.alive !== false && hasMove(u, 'ironCover') && u.coverUsedRound !== round)
         .sort((a, b) => a.slot - b.slot || String(a.id).localeCompare(String(b.id)));
 
       for (const guard of candidates) {
@@ -173,19 +171,16 @@
         const me = byId(allies, guard.id);
         const hurt = byId(allies, front.id);
         me.coverUsedRound = round;
-        byId(battle.allies, guard.id).coverUsedRound = round;
 
         /* 转移灼烧/流血 */
         const transfer = (hurt.buffs || []).filter((b) => b.k === 'burn' || b.k === 'bleed');
         if (transfer.length) {
           hurt.buffs = hurt.buffs.filter((b) => !(b.k === 'burn' || b.k === 'bleed'));
           me.buffs = (me.buffs || []).concat(transfer.map((b) => ({ ...b })));
-          byId(battle.allies, front.id).buffs = hurt.buffs;
-          byId(battle.allies, guard.id).buffs = me.buffs;
           events.push({ type: 'statusTransfer', actorId: guard.id, targetId: front.id, meta: { kinds: transfer.map((b) => b.k) } });
         }
 
-        events.push({ type: 'move', actorId: guard.id, meta: { kind: 'ironCover', from: guard.slot, to: r.event.meta.to } });
+        events.push({ type: 'move', actorId: guard.id, targetId: front.id, meta: { kind: 'ironCover', from: guard.slot, to: r.event.meta.to } });
         break; /* 一次根行动最多一个援护 */
       }
     }
@@ -200,7 +195,7 @@
     const map = {
       shadowAdvance: '影进：插到最前',
       refractRetreat: '折光：与后排互换',
-      ironCover: '铁壁：替身前友军接阵',
+      ironCover: '铁壁援护：替残血同伴接阵',
       swap: '交换位置',
       insertFront: '前插',
     };

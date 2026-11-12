@@ -150,7 +150,7 @@ test('确认双击不会重复发奖、掉落或战史', () => {
 
   const twice = V.Encounter.confirm(once);
   assert.ok(twice.ok);
-  assert.equal(V.State.ownItemIds(twice.state).length, items1, '不能多出构件');
+  assert.equal(V.State.ownItemIds(twice.state).length, items1, '不能多出纹路');
   assert.equal(twice.state.gold + twice.state.run.goldFound, gold1, '不能多出金币');
   assert.equal(twice.state.roster.reduce((a, u) => a + u.history.records.length, 0), history1,
     '不能重复写战史');
@@ -180,7 +180,8 @@ test('victory 确认后进入 loot 且未处理完不能进下一层', () => {
 
   const taken = V.Expedition.resolveLoot(s2, part.id, 'discard');
   assert.ok(taken.ok);
-  const done = V.Expedition.finishNode(taken.state);
+  const done = V.Expedition.finishNode(taken.state, true);
+  for (const id of taken.state.run.pendingLoot) assert.equal(done.state.itemsById[id], undefined);
   assert.ok(done.ok, JSON.stringify(done.error));
 });
 

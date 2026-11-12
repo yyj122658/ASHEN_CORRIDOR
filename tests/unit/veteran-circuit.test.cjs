@@ -7,7 +7,7 @@ const A = loadVeteran();
 const V = A.Veteran;
 const D = V.Data;
 
-/** 现造指定布局的构件实例，返回 placements（只含这些新件）。 */
+/** 现造指定布局的纹路实例，返回 placements（只含这些新件）。 */
 function mk(st, layout) {
   return layout.map((slot) => {
     if (slot.itemId) return { itemId: slot.itemId, x: slot.x, y: slot.y, rotation: slot.rotation || 0, mirrorY: !!slot.mirrorY };
@@ -161,7 +161,7 @@ test('非法板面不修改 state', () => {
 test('saveLoadout 允许保存不连通的半成品板面', () => {
   const st = fresh();
   const u = st.roster[0];
-  /* 只有一块直导管、接不到任何输出：几何合法就该能存 */
+  /* 只有一块顺丝纹、接不到任何输出：几何合法就该能存 */
   const half = mk(st, [
     { templateId: 'straight', x: 0, y: 0 },
   ]);

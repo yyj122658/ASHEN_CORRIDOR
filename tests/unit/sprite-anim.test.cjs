@@ -21,24 +21,32 @@ function fakeUnit(over) {
   }, over || {});
 }
 
-test('角色识别：剑士按职业，骸骨兵只认 enemyType', () => {
-  assert.equal(SA.charIdFor(fakeUnit({ side: 'ally', cls: 'blade' })), 'blade');
-  assert.equal(SA.charIdFor(fakeUnit({ side: 'enemy', cls: null, enemyType: 'bone' })), 'bone');
-  // 不按名字、ID、shape 猜
-  assert.equal(SA.charIdFor(fakeUnit({ side: 'enemy', cls: null, enemyType: 'hound', name: '骸骨兵' })), null);
-  assert.equal(SA.charIdFor(fakeUnit({ side: 'enemy', cls: null, enemyType: null, shape: 'human' })), null);
-  // 其他职业保持程序绘制
-  assert.equal(SA.charIdFor(fakeUnit({ side: 'ally', cls: 'cleric' })), null);
-  assert.equal(SA.charIdFor(fakeUnit({ side: 'ally', cls: 'warden' })), null);
-  // 我方不能误用骸骨兵
-  assert.equal(SA.charIdFor(fakeUnit({ side: 'ally', cls: 'blade', enemyType: 'bone' })), 'blade');
-});
-
-test('support：四个动作齐备才算支持', () => {
-  assert.equal(SA.supports(fakeUnit({ side: 'ally', cls: 'blade' })), true);
-  assert.equal(SA.supports(fakeUnit({ side: 'enemy', cls: null, enemyType: 'bone' })), true);
-  assert.equal(SA.supports(fakeUnit({ side: 'enemy', cls: null, enemyType: 'hound' })), false);
-  assert.equal(SA.supports(fakeUnit({ side: 'ally', cls: 'cleric' })), false);
+test('所有传奇与敌人按真实身份选图，换位不换外观', async () => {
+  const heroes = A.Veteran.Data.SKINS.map(({id}) => fakeUnit({id,skinId:id}));
+  const enemies = Object.keys(A.Veteran.Data.ENEMIES).map(id => fakeUnit({id,side:'enemy',enemyType:id}));
+  const units = [...heroes, ...enemies];
+  assert.equal(heroes.length,21);
+  const first = SA.preload(units.map(SA.charIdFor));
+  const second = SA.preload(units.map(SA.charIdFor));
+  for (const result of await Promise.all([first, second])) assert.equal(result.failed,0);
+  const paths = new Set();
+  for (const u of units) {
+    /* 亚种复用同族立绘：外观键是 sprite（没有 sprite 才是自己的 id） */
+    const look = u.side === 'enemy'
+      ? (A.Veteran.Data.ENEMIES[u.enemyType].sprite || u.enemyType)
+      : u.id;
+    assert.equal(SA.charIdFor({...u,slot:3}),look);
+    assert.equal(SA.supports(u),true);
+    const anim = SA.atlas.characters[look].animations;
+    paths.add(anim.attack.sheet);
+    assert.ok(new Set(anim.attack.frames.map(f => f.rect.x + ',' + f.rect.y)).size >= 3);
+    SA.syncFromBattle({allies:[{...u,alive:false}]});
+    assert.equal(SA.stateOf(u.id).frame,anim.death.frames.length-1);
+  }
+  const bodies = new Set(Object.values(A.Veteran.Data.ENEMIES).map(e => e.sprite || e.id));
+  assert.equal(paths.size, heroes.length + bodies.size);
+  assert.equal(SA.charIdFor(fakeUnit({side:'enemy',enemyType:null,name:'骸骨兵'})),null);
+  assert.equal(SA.charIdFor(fakeUnit({skinId:'unknown'})),null);
 });
 
 test('play：同一动画未播完不重启（多段伤害不重复抽刀）', () => {

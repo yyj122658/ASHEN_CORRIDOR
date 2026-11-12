@@ -1,0 +1,122 @@
+/* 前哨的铜框与灰蓝石面沿用场景画中的门楼配色。 */
+#app:has(.gate-title) { max-width: none; padding: 0; }
+#app:has(.gate-title) > :is(#hud, #nav) { display: none; }
+.gate-title {
+  min-height: 100svh;
+  align-items: stretch;
+  background: #191820;
+}
+.gate-title .title-bg-img { opacity: 1; filter: saturate(.94); object-position: 63% 58%; }
+.gate-title .v-title-bg::after {
+  background: linear-gradient(90deg, #100f19dc, #17162399 34%, transparent 69%),
+    linear-gradient(0deg, #100f18ad, transparent 35%);
+}
+.gate-title .v-title-frame {
+  align-items: flex-start; text-align: left;
+  padding: clamp(32px, 7vw, 126px);
+}
+.gate-inscription {
+  display: flex; align-items: center; gap: 14px;
+  color: #dfb58b; font: 12px/1.6 var(--font-mono); letter-spacing: .26em;
+}
+.gate-inscription i { width: 48px; height: 1px; background: #c89765; }
+.gate-title .v-title-main {
+  margin: 14px 0 12px; text-indent: 0; letter-spacing: .09em;
+  font-size: clamp(48px, 6.6vw, 110px); line-height: 1.2; color: #f2debd;
+  text-shadow: 0 3px 18px #0c0d13;
+}
+.gate-title .v-quote { max-width: 32em; color: #d6cfd0; font-size: 15px; line-height: 1.85; margin-bottom: 34px; }
+.gate-title .v-cta, .camp-gate .primary-cta {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 44px;
+  border: 1px solid #e0bb90; background: #d5ad7e; color: #211a1a; border-radius: 2px;
+}
+.gate-title .v-cta { padding: 14px 25px; min-width: 207px; }
+.gate-title .v-title-meta { color: #e2d6c6; }
+.gate-title .v-title-tools { justify-content: flex-start; flex-wrap: wrap; gap: 6px; margin-top: 22px; }
+.gate-title .v-title-tools .btn { color: #dacfc4; background: #16161dbd; border-color: #b79c823d; }
+.gate-title .v-import { max-width: 100%; }
+.camp-gate { border: 1px solid #60504a; border-radius: 3px; background: #202029; }
+.camp-gate .outpost-img { object-position: 66% 72%; filter: saturate(.9) brightness(.98); }
+.camp-gate .outpost-art::after {
+  background: linear-gradient(90deg, #18171eeb, #211d27bf 30%, #25202b19 69%), linear-gradient(0deg, #17151c99, transparent 25%);
+}
+.camp-gate .outpost-copy { padding: clamp(24px, 3.5vw, 60px); }
+.camp-gate h1 { margin: 0 0 14px; color: #f3e4ce; font-size: clamp(38px, 3.7vw, 62px); line-height: 1.2; }
+.camp-gate .outpost-copy p { color: #e7dac8; font-size: 15px; }
+.camp-prize { margin-top: 4px; color: #c9b5a3; font-size: 13px; }
+.camp-gate .hero-actions > span { color: #dbd6cd; }
+.departure-strip {
+  position: relative; display: flex; align-items: center; gap: 20px;
+  padding: 12px clamp(24px, 3.5vw, 60px); border-top: 1px solid #a793733a;
+  background: #15161bdc; color: #ccbdac; font-size: 12px;
+}
+.departure-strip b { color: #e9c196; }
+.depth-track { display: flex; align-items: center; gap: 5px; }
+.depth-track i { width: 20px; height: 3px; background: #615f65; }
+.depth-track .explored { background: #cba779; }
+.depth-track .goal { background: #aec5cc; }
+.camp-party .metal-card, .hearth-arrivals .metal-card, .formation-layout .vet-slot {
+  border: 1px solid #504b49; background: linear-gradient(145deg, #2c2c33, #202025 65%);
+}
+.camp-party .metal-card, .hearth-arrivals .metal-card { display: flex; flex-direction: column; }
+.camp-party .metal-card-top { color: #cec2ae; }
+.camp-party .metal-display, .hearth-arrivals .metal-display {
+  margin: 12px 0; height: clamp(150px, 15vw, 230px); border: 1px solid #655c57;
+}
+.camp-party .metal-display::after, .hearth-arrivals .metal-display::after { display: none; }
+.camp-party .metal-card-manuscript { margin: 12px 0; padding-top: 10px; }
+.camp-party .metal-card-actions { margin-top: auto; }
+.formation-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, 1fr); gap: 18px; align-items: start; }
+.formation-layout .panel { min-width: 0; background: #1d1f25; border-color: #434348; }
+.formation-layout .vet-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.formation-layout .vet-slot { padding: 10px; }
+.formation-layout .vet-slot .legend-portrait { height: clamp(108px, 11vw, 180px); margin: 10px 0; }
+.formation-layout .vet-slot .slot-ops { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.formation-layout .slot-ops [data-act="teamMove"] { order: 1; }
+.formation-layout .slot-ops .btn { min-width: 32px; padding: 6px; }
+.formation-layout .u-detail { border: 1px solid #45464d; padding: 16px; background: #25262d; }
+.formation-layout .u-detail-head b { color: #ecd2ae; font: 24px/1.3 var(--font-title); }
+.formation-layout .u-detail-head { display: grid; gap: 5px; }
+.inscribed-list { clear: both; border-top: 1px solid #4b4949; padding-top: 8px; }
+.inscribed-list p { display: grid; gap: 4px; margin: 6px 0; color: #b9bdc4; font-size: 13px; }
+.inscribed-list b { font-weight: 500; color: #e4c59d; }
+.formation-layout .u-detail .legend-portrait { width: 30%; height: auto; aspect-ratio: 4 / 5; }
+.formation-layout .u-detail .stat-row { display: flex; gap: 5px 12px; flex-wrap: wrap; }
+.hearth-arrivals .page-heading {
+  margin-top: 0; padding: 28px; border-left: 2px solid #bd9364;
+  background: linear-gradient(90deg, #1c1922f0 12%, #25202cac 65%, #201c24cc),
+    url('../assets/art/v1/scenes/camp.png') center 80% / cover;
+}
+.hearth-arrivals .page-actions .btn { background: #1e1e26; color: #e4d7c3; border-color: #736454; }
+.hearth-arrivals .recruit-card { padding: 16px; }
+.hearth-arrivals .metal-display { height: clamp(200px, 22vw, 350px); margin-top: 0; }
+.arrival-body { color: #b3bbc1; font-size: 13px; margin: 6px 0 0; }
+.hearth-arrivals .recruit-price { margin-top: 15px; padding-top: 14px; }
+@media (max-width: 1080px) {
+  .formation-layout { grid-template-columns: 1fr; }
+  .formation-layout .u-detail .legend-portrait { width: 125px; }
+}
+@media (max-width: 600px) {
+  .gate-title { justify-content: flex-end; }
+  .gate-title .title-bg-img { object-position: 72% 50%; }
+  .gate-title .v-title-bg::after { background: linear-gradient(0deg, #13131bef 18%, #181621c9 46%, #16131b22 74%); }
+  .gate-title .v-title-frame { padding: 26px 24px max(38px, 7svh); }
+  .gate-title .v-quote { font-size: 14px; margin-bottom: 25px; }
+  .gate-title .v-title-tools .btn { min-height: 44px; }
+  .camp-gate { min-height: auto; }
+  .camp-gate .outpost-copy { padding: 82px 20px 20px; }
+  .camp-gate .outpost-img { object-position: 78% 55%; }
+  .camp-gate .outpost-art::after { background: linear-gradient(0deg, #17161ee6 10%, #181620a8 53%, #18162024); }
+  .camp-gate .hero-actions { margin-top: 18px; }
+  .departure-strip { padding: 12px 20px; gap: 14px; }
+  .depth-track i { width: 14px; }
+  .camp-party .metal-card { padding: 10px; }
+  .camp-party .metal-card-top { gap: 6px; flex-wrap: wrap; }
+  .camp-party .metal-display { height: auto; aspect-ratio: 1; margin: 9px 0; }
+  .camp-party .metal-card-actions { flex-wrap: wrap; }
+  .camp-party .metal-card-actions .btn { min-height: 44px; }
+  .formation-layout .vet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .formation-layout .slot-ops .btn { min-height: 44px; }
+  .hearth-arrivals .page-heading { padding: 18px 14px; }
+  .hearth-arrivals .metal-display { height: auto; aspect-ratio: 1.2; }
+}

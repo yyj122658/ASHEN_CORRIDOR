@@ -87,7 +87,7 @@ test('招募产出可用角色：主手 + 基础线路 + 合法状态', () => {
   assert.ok(r.ok, JSON.stringify(r.error));
   st = r.state;
   const unit = st.roster[st.roster.length - 1];
-  assert.ok(unit.weaponId, '必须有主手');
+  assert.ok(unit.manuscript, '必须自带入门蚀刻法');
   const pv = V.Circuit.preview(st, unit.id, unit.board.placements);
   assert.ok(pv.ok, JSON.stringify(pv.errors));
   assert.ok(pv.reachableOutputs.length > 0, '招募出来的板面必须能通电');

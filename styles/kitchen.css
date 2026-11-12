@@ -1,0 +1,112 @@
+/* 营地厨房与野外采集共享食材名及数量的视觉层次。 */
+.item-label { display: inline-flex; align-items: center; gap: .4em; min-width: 0; max-width: 100%; vertical-align: middle; }
+.item-label .catalogue-icon { width: 28px; height: 28px; flex: 0 0 auto; }
+.item-label > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.k-recipe-head h4 .catalogue-icon, .catalogue-entry h4 .catalogue-icon, .ex-part-info h3 .catalogue-icon { width: 44px; height: 44px; }
+.k-recipe-head h4 { min-width: 0; }
+.k-recipe-head small { flex-shrink: 0; }
+.k-needs .catalogue-icon, .ingredient-quantity .catalogue-icon, .k-harvest-note .catalogue-icon, .k-biome .catalogue-icon { width: 23px; height: 23px; }
+.ingredient-quantity { display: inline-block; }
+.recipe-use { margin: 0 0 6px; color: #d7c69e; font-size: 13px; }
+.recipe-swaps { margin: 0 0 8px; }
+.k-recipe .recipe-swaps p { margin: 4px 0; font-size: 12px; }
+.k-kitchen { min-width: 0; color: #e9e4d6; }
+.catalogue-icon { display:inline-block; width:42px; aspect-ratio:1; flex:none; vertical-align:middle; background-repeat:no-repeat; background-color:#161b1b; border-radius:4px; }
+.catalogue-tools, .catalogue-footer { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-block:12px; }
+.catalogue-tools input, .catalogue-tools select { min-height:42px; border:1px solid #465451; padding:8px 12px; background:#171f20; color:#e8e5dc; font:inherit; }
+.catalogue-tools input { flex:1 1 180px; min-width:0; }
+.catalogue-tools select { max-width:100%; }
+.catalogue-footer { justify-content:space-between; color:#bbc8c3; }
+[data-catalogue] [hidden] { display:none !important; }
+.archive-catalogue { margin:12px 0 18px; padding:12px 16px; border:1px solid #424a46; background:#1b2122; }
+.archive-catalogue summary { cursor:pointer; color:#e1c191; }
+.catalogue-entry { padding:14px; background:#252e2e; border-top:1px solid #8a775e; }
+.catalogue-entry h4 { margin:6px 0; color:#f0e2c8; }
+.catalogue-shape { float:right; width:42px; height:42px; margin-left:6px; background:#172020; }
+.catalogue-shape svg { width:100%; height:100%; }
+.catalogue-entry p { font-size:14px; margin:6px 0 10px; }
+.k-stove { isolation: isolate; position: relative; overflow: hidden; display: flex; align-items: end; justify-content: space-between;
+  gap: 14px; min-height: clamp(145px,16vw,225px); padding: clamp(18px,3vw,40px); border: 1px solid #504a3d; background: #282b23; }
+.k-stove .k-stove-art { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; object-position: 65% 60% !important; image-rendering: pixelated; }
+.k-stove::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg,#171812ea,#201d1882 60%,#16161344),linear-gradient(0deg,#17160ecc,transparent); }
+.k-stove h2, .ex-page .k-stove h2 { font: 600 clamp(25px,3.2vw,48px)/1.2 var(--font-title); letter-spacing: .07em; }
+.k-stove p { margin: 9px 0 0; line-height: 1.6; color: #e5d6bb; }
+.k-stove .btn { flex-shrink: 0; }
+.k-workbench { display: grid; grid-template-columns: minmax(190px,.8fr) minmax(0,2.6fr); gap: clamp(14px,2.4vw,32px); margin-top: 20px; align-items: start; }
+.k-pantry, .k-pantry-door, .k-biome { border-left: 2px solid #b39267; padding: 16px 18px; background: #1e2829; }
+.k-kitchen h3, .k-pantry-door h2, .k-pantry-door h3, .k-biome h3 { font-size: 19px; margin: 0; color: #e8ddc7; }
+.k-kitchen p, .k-help, .k-biome p, .k-pantry-door p { font-size: 14px; line-height: 1.65; }
+.k-pantry-door { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-block: 14px; }
+.k-pantry-door p, .k-biome p { color: #c5cdca; margin: 7px 0 0; }
+.k-kitchen .k-table-heading { margin: 16px 0 6px; font-size: 15px; }
+.k-diner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px; align-items: baseline; padding: 4px 0; border-top: 1px solid #35413e; font-size: 13px; }
+.k-recipes { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,235px),1fr)); gap: 10px; margin: 12px 0; }
+.k-recipe { display: flex; flex-direction: column; min-width: 0; padding: 15px; background: #1e292c; border: 1px solid #414a48; }
+.k-recipe.ready { border-top: 2px solid #caa472; background: #252d2b; }
+.k-recipe-head, .k-recipe-foot, .k-stock-row, .k-biome header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.k-recipe-head h4 { font: 600 20px/1.4 var(--font-title); color: #f1e4cb; margin: 0; }
+.k-recipe-head small, .k-stock-row small { color: #b5c1bd; font-size: 12px; }
+.k-recipe p { flex: 1; margin: 8px 0; color: #ccd0c5; }
+.k-needs { display: flex; flex-wrap: wrap; list-style: none; padding: 0; margin: 3px 0 15px; gap: 8px; }
+.k-needs li { border: 1px solid #58625b; color: #cfdbcd; padding: 3px 7px; font-size: 12px; }
+.k-needs .short { color: #d7b59c; border-style: dashed; }
+.k-recipe-foot { flex-wrap: wrap; font-size: 12px; color: #dec197; padding-top: 10px; border-top: 1px solid #47504b; }
+.k-kitchen summary, .k-biome summary, .k-carry summary { cursor: pointer; padding-block: 8px; color: #d9b68b; font-size: 13px; }
+.k-kitchen dl, .k-biome dl { margin-block: 4px 0; }
+.k-kitchen dt, .k-biome dt { font-size: 14px; font-weight: 600; color: #e1dbcb; }
+.k-kitchen dd, .k-biome dd { margin: 4px 0 12px; font-size: 13px; line-height: 1.65; color: #bac9c5; }
+.k-stock-row { padding: 9px 0; border-bottom: 1px solid #3a484a; }
+.k-stock-row small { display: block; margin-top: 4px; line-height: 1.55; }
+.k-stock-row .btn { flex-shrink: 0; }
+.k-biome { margin-top: 17px; }
+.k-biome header { flex-wrap: wrap; }
+.k-biome header span, .k-harvest-note { color: #b9cdc0; font-size: 12px; }
+.ex-pack .k-carry .btn { width: auto; }
+@media(max-width: 700px) {
+  .k-workbench { grid-template-columns: minmax(0,1fr); }
+  .k-stove { align-items: start; flex-direction: column; justify-content: end; }
+  .k-kitchen summary, .k-biome summary, .k-carry summary { min-height: 44px; }
+  .k-kitchen .btn, .k-stock-row .btn { min-height: 44px; }
+}
+
+.k-stove-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.pack-footprint[data-pack-kind="recipe"] .pack-surface { fill:#44352a; }
+.pack-footprint[data-pack-kind="recipe"] .pack-rim { stroke:#b28c61; }
+.pack-diners { margin-top:12px; border-top:1px solid #524c42; padding-top:12px; }
+.pack-diners h3 { display:inline; color:#ead2a7; font:500 18px var(--font-title); }
+.pack-diners p { display:inline; margin-left:8px; color:#bfb7a7; font-size:12px; }
+.pack-diners > div { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,128px),1fr)); gap:6px; margin-top:9px; }
+.pack-diner { display:flex; align-items:center; gap:7px; text-align:left; padding:6px; min-width:0; min-height:48px; color:#e1d3b8; background:#242829; border:1px solid #57554c; border-radius:3px; }
+.pack-diner .pack-diner-face { width:32px; height:38px; flex:none; }
+.pack-diner small { display:block; color:#bcb6aa; font-size:11px; }
+.pack-diner b { font-size:13px; }
+.pack-diner.ready, .pack-diner.drop-target { border-color:#a38b65; }
+.pack-diner.drop-target { background:#354335; outline:2px solid #b7ca98; }
+.pack-diner.drop-target.bad-fit { outline-color:#c78c77; background:#443631; }
+
+/* 营火桌面直接使用随身行囊，料理只显示当前能做的一格。 */
+.field-workbench { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; align-items:start; margin-top:20px; }
+.field-pack,.field-cookbook { min-width:0; }
+.field-cookbook { padding:clamp(12px,2vw,26px); border:1px solid #504a40; border-radius:5px; background:#202425; }
+.field-recipes { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,140px),1fr)); gap:10px; margin-top:16px; }
+.field-recipe { padding:0; display:block; }
+.field-recipe button { display:flex; flex-direction:column; align-items:center; width:100%; min-height:150px; padding:14px 8px; gap:9px; border:0; background:#29312c; color:#eee0c2; cursor:pointer; font:inherit; }
+.field-recipe button:hover:not(:disabled),.field-recipe button:focus-visible { background:#394333; outline:2px solid #c6b17b; outline-offset:1px; }
+.field-recipe button:disabled { opacity:.55; cursor:wait; }
+.field-recipe .catalogue-icon { width:64px; height:64px; }
+.field-recipe small { font-size:11px; color:#cabf9f; line-height:1.5; }
+.field-cook-empty { color:#b9b9a8; padding-block:18px; }
+.field-inscription { margin-top:20px; padding:16px 20px; border:1px solid #4e4c42; background:#202627; }
+.field-inscription summary { cursor:pointer; color:#d5c39e; }
+.k-cooking { display:flex; align-items:center; gap:12px; padding:14px; border:1px solid #897354; background:#332d24; color:#e3ce9f; margin-block:14px; min-height:66px; }
+.k-cooking > .catalogue-icon { width:42px; height:42px; }
+.k-pot { position:relative; width:42px; height:36px; flex:none; border-radius:5px 5px 18px 18px; border-bottom:6px solid #b58d5e; background:#464c46; }
+.k-pot b { position:absolute; width:100%; text-align:center; top:0; font-size:20px; color:#edddad; animation:camp-stir .7s var(--cook-delay,0ms) ease-in-out infinite; }
+.k-pot i { position:absolute; width:3px; height:13px; background:#bfc9ad88; border-radius:50%; top:-10px; left:8px; animation:camp-steam .7s var(--cook-delay,0ms) ease-out infinite; }
+.k-pot i:nth-child(2) { left:20px; animation-delay:calc(var(--cook-delay,0ms) - .2s); }
+.k-pot i:nth-child(3) { left:31px; animation-delay:calc(var(--cook-delay,0ms) - .4s); }
+@keyframes camp-stir { 0%,100% { transform:rotate(-10deg); } 50% { transform:rotate(10deg); } }
+@keyframes camp-steam { from { opacity:.7; transform:translateY(4px); } to { opacity:0; transform:translateY(-11px); } }
+.reduced-motion .k-pot * { animation:none; }
+@media(prefers-reduced-motion:reduce) { .k-pot * { animation:none !important; } }
+@media(max-width:700px) { .field-workbench { grid-template-columns:minmax(0,1fr); }.field-recipes { grid-template-columns:repeat(2,minmax(0,1fr)); }.field-recipe button { min-height:140px; }.field-pack .pack-layout { display:block; } }

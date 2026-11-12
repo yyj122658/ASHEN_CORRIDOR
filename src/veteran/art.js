@@ -1,6 +1,6 @@
 'use strict';
 /* 灰烬回廊美术映射。
-   - veteran-v1：工坊 / 营火 / 静养 / 板面底材 / 构件缩略图，走本模块自己的 BASE。
+   - veteran-v1：工坊 / 营火 / 静养 / 板面底材 / 纹路缩略图，走本模块自己的 BASE。
    - v1：营地场景、节点插画、职业立绘、首领肖像，走 A.Art 的固定映射。
    两套都缺失时只返回 ''，由 CSS 渐变底 + SVG 图标降级。 */
 (function (A) {
@@ -10,6 +10,11 @@
   const BASE = 'assets/art/veteran-v1/';
 
   const ASSETS = {
+    'veteran.enemy.hound': {
+      path: '../battle-v2/hound.png', w: 1254, h: 1254,
+      bounds: [91, 449, 1132, 463],
+      focus: '50% 60%', alpha: true, alt: '披覆锈铁的四足骨犬',
+    },
     'veteran.scene.workshop': {
       path: 'scenes/workshop.png', w: 1536, h: 1024,
       focus: '65% 50%', alt: '旧铜工作台与暖炉',
@@ -32,15 +37,15 @@
     },
     'veteran.relic.capacitor': {
       path: 'relics/pulse-chamber.png', w: 1254, h: 1254,
-      focus: '50% 50%', alpha: true, alt: '脉冲储能腔',
+      focus: '50% 50%', alpha: true, alt: '同心纹',
     },
     'veteran.relic.splitter': {
       path: 'relics/prism-splitter.png', w: 1254, h: 1254,
-      focus: '50% 50%', alpha: true, alt: '三叉分流构件',
+      focus: '50% 50%', alpha: true, alt: '鹿角纹',
     },
     'veteran.relic.threshold': {
       path: 'relics/threshold-seal.png', w: 1254, h: 1254,
-      focus: '50% 50%', alpha: true, alt: '阈值闸',
+      focus: '50% 50%', alpha: true, alt: '闭鳞纹',
     },
   };
 
@@ -142,8 +147,11 @@
   /** 老兵立绘：按皮肤取 v1 肖像，缺失时返回 ''，卡片保留文字布局。 */
   function portraitTag(skinId, cls) {
     const id = SKIN_PORTRAIT[skinId];
-    if (!id) return '';
-    return v1Tag(id, 'portrait-img ' + (cls || ''));
+    if (id) return v1Tag(id, 'portrait-img ' + (cls || ''));
+    const skin = V.Data.SKINS.find((s) => s.id === skinId);
+    if (!skin || skin.portraitCell == null) return '';
+    const x = skin.portraitCell % 4, y = Math.floor(skin.portraitCell / 4);
+    return `<svg class="v-art portrait-img portrait-atlas ${cls || ''}" viewBox="${x + 0.008} ${y + 0.008} .984 .984" preserveAspectRatio="xMidYMin slice" role="img" aria-label="${skin.name}"><image href="assets/art/portraits-v2/wanderers.png" x="0" y="0" width="4" height="4" onerror="this.parentNode.classList.add('art-broken')"/></svg>`;
   }
 
   /** 首领肖像：gatekeeper / memoryEater。 */
@@ -152,25 +160,17 @@
     return v1Tag('enemy.' + bossId, 'boss-img ' + (cls || ''));
   }
 
-  /* 构件模板 → 收藏品物件图 */
-  const TEMPLATE_ART = {
-    straight: 'veteran.relic.channel',
-    elbow: 'veteran.relic.channel',
-    ember: 'veteran.relic.channel',
-    capacitor: 'veteran.relic.capacitor',
-    splitter: 'veteran.relic.splitter',
-    threshold: 'veteran.relic.threshold',
-  };
+  /* 纹路模板 → 收藏品物件图 */
+  const TEMPLATE_ART = Object.fromEntries(Object.values(V.Data.TEMPLATES).map((t) => [t.id, t.relicArt]));
 
   function relicArtFor(templateId) {
     return TEMPLATE_ART[templateId] || null;
   }
 
-  /** 构件缩略图：没有图时返回空串，调用方保留文字布局。 */
+  /** 纹路缩略图：没有图时返回空串，调用方保留文字布局。 */
   function relicThumb(templateId) {
-    const id = relicArtFor(templateId);
-    if (!id) return '';
-    return `<span class="relic-thumb">${imgTag(id, 'relic-img')}</span>`;
+    const mark = V.RuneArt?.thumb(templateId, 'relic-img');
+    return mark ? `<span class="relic-thumb">${mark}</span>` : '';
   }
 
   /** 场景横幅：图缺失时整块不渲染，CSS 渐变兜底。
@@ -186,8 +186,7 @@
 
   function preloadFor(screen) {
     if (screen === 'camp' || screen === 'workshop') {
-      return preload(['veteran.scene.workshop', 'veteran.surface.board',
-        'veteran.relic.channel', 'veteran.relic.capacitor', 'veteran.relic.splitter', 'veteran.relic.threshold']);
+      return preload(['veteran.scene.workshop', 'veteran.surface.board']);
     }
     if (screen === 'campNode') return preload(['veteran.scene.field']);
     if (screen === 'history') return preload(['veteran.scene.recovery']);

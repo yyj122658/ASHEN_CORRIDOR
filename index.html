@@ -6,11 +6,18 @@
 <meta name="color-scheme" content="dark">
 <title>灰烬回廊 · Ashen Corridor</title>
 <link rel="stylesheet" href="styles/veteran.css">
+<link rel="stylesheet" href="styles/metal.css">
+<link rel="stylesheet" href="styles/atelier.css">
+<link rel="stylesheet" href="styles/outpost.css">
+<link rel="stylesheet" href="styles/expedition.css">
+<link rel="stylesheet" href="styles/kitchen.css">
 </head>
 <body class="vet">
 <div id="app">
-  <header id="hud"></header>
-  <nav id="nav"></nav>
+  <div class="masthead">
+    <header id="hud"></header>
+    <nav id="nav" aria-label="前哨导航"></nav>
+  </div>
   <main id="stage"></main>
   <div id="toast" role="status" aria-live="polite"></div>
 </div>
@@ -24,6 +31,7 @@
 <script defer src="src/veteran/plate-gen.js"></script>
 <script defer src="src/veteran/manuscript.js"></script>
 <script defer src="src/veteran/state.js"></script>
+<script defer src="src/veteran/kitchen.js"></script>
 <script defer src="src/veteran/circuit.js"></script>
 <script defer src="src/veteran/tactics.js"></script>
 <script defer src="src/veteran/positions.js"></script>
@@ -35,6 +43,7 @@
 
 <script defer src="src/ui/assets.js"></script>
 <script defer src="src/veteran/art.js"></script>
+<script defer src="src/veteran/catalogue-art.js"></script>
 <script defer src="src/veteran/rune-art.js"></script>
 <script defer src="assets/art/battle-v1/atlas-data.js"></script>
 <script defer src="src/ui/sprite-anim.js"></script>

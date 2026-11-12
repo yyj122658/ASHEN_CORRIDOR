@@ -1,13 +1,7 @@
 'use strict';
-/* 功法膜：压在生命金属上的一层纹路要求。
+/* 蚀刻法膜：压在生命金属上的一层纹路要求。
 
-   核心规则只有一条：**纹路同向才算填上**。
-   格子被构件占住但纹路方向不对，不计入覆盖率，也不导电——
-   否则「填满」会退化成多边形装箱。
-
-   由此推出两个视角，共用同一套判定：
-   - 覆盖率：膜上要求的纹路格，有多少格被同向的构件纹路覆盖（分母永远是膜，不是板面）；
-   - 贯通：这些对上的格能否从入口连到出口（相邻格互相开口才算连通）。
+   覆盖按膜内实际占格计数；贯通另查入口、出口与连续的纹路。
 
    模块不碰战斗数值，只产出 {pct, tier, routed}，由上层决定怎么用。
    方向变换与 circuit.transformTemplate 严格同序：先上下翻转，再顺时针旋转，最后归一化。
@@ -26,7 +20,7 @@
   function cellKey(c) { return key(c[0], c[1]); }
 
   /**
-   * 把功法定义整理成标准形状：cells 归一化到 0,0，veins 用 "x,y" 索引。
+   * 把蚀刻法定义整理成标准形状：cells 归一化到 0,0，veins 用 "x,y" 索引。
    * veins 里没列的格表示「只要占住就算填上」（不要求特定走向）。
    */
   function normalize(spec) {
@@ -158,7 +152,7 @@
    * 覆盖率。
    * @param oriented orient() 的结果
    * @param ox,oy 膜左上角在板面上的位置
-   * @param pieceDirs Map<"x,y", string[]> 构件在绝对坐标上提供的开口方向
+   * @param pieceDirs Map<"x,y", string[]> 纹路在绝对坐标上提供的开口方向
    * @returns {{total:number, aligned:number, pct:number, tier:object|null, missing:Array}}
    */
   function asIndex(pieces) {
@@ -183,10 +177,7 @@
       const need = oriented.veins[key(c[0], c[1])] || [];
       const have = dirs.get(k) || [];
       total++;
-      /* 两件事都要满足：这一格真的被构件占住（没构件就不是填上），
-         且要求的走向全部出现。构件多出来的开口不影响——多余的纹路只是白铺。 */
-      const occupied = idx.occupied.has(k);
-      const ok = occupied && need.every((d) => have.indexOf(d) >= 0);
+      const ok = idx.occupied.has(k);
       if (ok) { aligned++; alignedCells.push(k); }
       else missing.push({ cell: [ax, ay], need, have });
     });
@@ -199,7 +190,7 @@
 
   /**
    * 贯通：从入口沿「双方都开口」的相邻格走到了哪个出口。
-   * 只走已对上的格——没对上的格本来就不导电。
+   * 路径必须留在被覆盖的膜格内。
    */
   function route(oriented, ox, oy, pieces) {
     const idx = asIndex(pieces);
@@ -209,9 +200,10 @@
     const toAbs = (c) => key(c[0] + ox, c[1] + oy);
 
     const start = toAbs(oriented.entry);
-    if (!good.has(start)) return { ok: false, reason: 'entry', reach: [] };
+    const matchesEnd = c => (oriented.veins[key(...c)] || []).every(d => (dirs.get(toAbs(c)) || []).includes(d));
+    if (!good.has(start) || !matchesEnd(oriented.entry)) return { ok: false, reason: 'entry', reach: [] };
 
-    const exits = new Set(oriented.exits.map(toAbs));
+    const exits = new Set(oriented.exits.filter(matchesEnd).map(toAbs));
     const seen = new Set([start]);
     const queue = [start];
     let hit = null;
@@ -220,19 +212,12 @@
       if (exits.has(cur) && cur !== start) { hit = cur; break; }
       const [x, y] = unkey(cur);
       const have = dirs.get(cur) || [];
-      const myOwner = idx.owner ? idx.owner.get(cur) : null;
       Object.keys(ORTH).forEach((d) => {
         const nx = x + ORTH[d][0];
         const ny = y + ORTH[d][1];
         const nk = key(nx, ny);
         if (!good.has(nk) || seen.has(nk)) return;
-        /* 同一个构件铺到的相邻格：内部 links 本来就通，不必两端对望 */
-        const sameOwner = myOwner && idx.owner && idx.owner.get(nk) === myOwner;
-        if (!sameOwner) {
-          if (have.indexOf(d) < 0) return;
-          const back = OPPOSITE[d];
-          if ((dirs.get(nk) || []).indexOf(back) < 0) return;
-        }
+        if (!have.includes(d) || !(dirs.get(nk) || []).includes(OPPOSITE[d])) return;
         seen.add(nk);
         queue.push(nk);
       });
@@ -240,23 +225,39 @@
     return { ok: !!hit, reach: [...seen], exit: hit, coverage: cov };
   }
 
-  /** 构件索引：把 Circuit.layout 的结果转成 {dirs: Map<"x,y",dirs[]>, occupied: Set} */
+  /** 纹路索引：把 Circuit.layout 的结果转成 {dirs: Map<"x,y",dirs[]>, occupied: Set} */
   function pieceIndex(layout) {
     const dirs = new Map();
     const occupied = new Set();
-    const owner = new Map();
     ((layout && layout.built) || []).forEach((b) => {
       (b.abs || []).forEach((c) => {
         occupied.add(key(c.x, c.y));
-        owner.set(key(c.x, c.y), b.item ? b.item.id : (b.itemId || ''));
       });
       b.aps.forEach((p) => {
         const k = key(p.cell[0], p.cell[1]);
         if (!dirs.has(k)) dirs.set(k, []);
         dirs.get(k).push(p.dir);
       });
+      // 格序在旋转、镜像后保持一致。回折纹路的相邻两股之间没有横向接缝。
+      const paths = {capacitor:[0,2,3,1], hairpin:[0,1,2,3,4], cistern:[0,1,4,3,4,5]};
+      const path = paths[b.tpl?.id];
+      const cells = b.abs || [];
+      function connect(a,b) {
+        const d = Object.keys(ORTH).find(k => a.x+ORTH[k][0] === b.x && a.y+ORTH[k][1] === b.y);
+        if (!d) return;
+        for (const [cell,dir] of [[a,d],[b,OPPOSITE[d]]]) {
+          const k = key(cell.x,cell.y);
+          if (!dirs.has(k)) dirs.set(k,[]);
+          if (!dirs.get(k).includes(dir)) dirs.get(k).push(dir);
+        }
+      }
+      if (path) {
+        for (let i=1;i<path.length;i++) connect(cells[path[i-1]],cells[path[i]]);
+      } else {
+        for (let i=0;i<cells.length;i++) for (let j=i+1;j<cells.length;j++) connect(cells[i],cells[j]);
+      }
     });
-    return { dirs, occupied, owner };
+    return { dirs, occupied };
   }
 
   V.Manuscript = { normalize, orient, fits, placements, coverage, route, pieceIndex, ORTH };

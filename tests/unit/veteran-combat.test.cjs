@@ -3,6 +3,201 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { boot, startRun, setNodes, fight, stepUntilOver } = require('../helpers/veteran-run.cjs');
 
+test('实战敌群随层域变化，每个物种都有出场与采收途径', () => {
+  const { A, V, st } = boot(712);
+  const run = startRun(A, st, 712);
+  const found = new Set();
+  /* 生产：每层域的招牌必须出现在普通遭遇里，且每一层都不会空编成 */
+  for (const [floor, species] of [[1, 'hound'], [8, 'boneBell'], [15, 'hulk'], [22, 'shuffler'], [29, 'wraithChoir'], [36, 'hulkSlag'], [43, 'wraith']]) {
+    run.run.floor = floor;
+    const encounter = V.Combat.generateEncounter(run, 'normal');
+    const types = Array.from(encounter.enemyBlueprint.units, enemy => enemy.enemyType);
+    assert.ok(types.includes(species), `第 ${floor} 层应出现 ${species}`);
+    assert.equal(types.length, 3, '普通遭遇固定三员');
+    types.forEach(type => found.add(type));
+  }
+  /* 编成：层域 × 轮转 × 三种节点都要能生成，且每个物种至少被用过一次 */
+  for (const floor of [1, 8, 15, 22, 29, 36, 43]) {
+    for (const index of [0, 1, 2, 3]) {
+      for (const kind of ['normal', 'elite', 'boss']) {
+        const { bossId, minionIds } = V.Data.chapterEncounter(kind, index, floor);
+        if (bossId) found.add(bossId);
+        minionIds.forEach(type => found.add(type));
+      }
+    }
+  }
+  assert.deepEqual([...found].sort(), Object.keys(V.Data.ENEMIES).sort());
+
+  /* 采收：每个物种都要能在料理生态里查到产物，否则确认战利时会崩 */
+  for (const id of Object.keys(V.Data.ENEMIES)) {
+    assert.ok(V.Kitchen.ECOSYSTEM[id], `${id} 缺少生态条目`);
+    assert.ok(V.Kitchen.harvestOptions(id).length, `${id} 缺少采收选项`);
+  }
+});
+
+test('同一人同场自动使用两套蚀刻法，护持不清空另一套的追击计数', () => {
+  const { A, V, st } = boot(712);
+  const unit = st.roster[1];
+  const spec = V.Data.MANUSCRIPTS;
+  unit.manuscript = { ...spec.needle, x: 1, y: 0 };
+  unit.extraManuscripts = [{ ...spec.ward, x: 0, y: 1 }];
+  let s = fight(A, setNodes(A, startRun(A, st, 712), ['battle']), 'normal').st;
+  const b = s.run.battle;
+  const actor = b.allies.find((u) => u.sourceUnitId === unit.id);
+  assert.equal(actor.slot, 1);
+  assert.deepEqual(Array.from(actor.skillList, (sk) => sk.id), ['needle', 'ward']);
+  [...b.allies, ...b.enemies].filter((u) => u !== actor).forEach((u) => { u.atkTimer = -1000; });
+  b.enemies.forEach((u) => { u.hp = u.maxHp = 10000; u.dodge = 0; });
+  b.allies[0].hp = 1;
+  actor.hits = 1;
+  actor.crit = 0;
+  actor.energy = actor.energyMax;
+  for (let i = 0; i < 80; i++) s = V.Combat.step(s).state;
+  const result = s.run.battle;
+  assert.ok(result.allies[0].hp > 1);
+  assert.ok(result.logs.some((e) => e.actorId === actor.id && e.type === 'cast' && e.text.includes('回息')));
+  assert.ok(result.logs.some((e) => e.actorId === actor.id && e.type === 'hit' && e.text.includes('逐隙一击')));
+  const report = V.Combat.report(s).allies.find((u) => u.id === actor.id);
+  assert.deepEqual(Array.from(report.resonances, (r) => r.name), ['逐隙', '回息']);
+});
+
+test('首位也能施放回息，换位后仍按各门贯通与独立冷却轮换', () => {
+  const { A, V, st } = boot(712);
+  const unit = st.roster[0];
+  unit.manuscript = { ...V.Data.MANUSCRIPTS.ward, x: 0, y: 0 };
+  unit.extraManuscripts = [{ ...V.Data.MANUSCRIPTS.wick, x: 0, y: 1 }];
+  let s = fight(A, setNodes(A, startRun(A, st, 712), ['battle']), 'normal').st;
+  const battle = s.run.battle;
+  const me = battle.allies[0];
+  assert.equal(me.ms.routed, false);
+  assert.equal(me.extraMs[0].routed, true);
+  [...battle.allies, ...battle.enemies].forEach((u) => { u.atkTimer = -1000; });
+  me.skillList = me.skillList.map((sk) => ({ ...sk, id: 'same', sharedCooldown: true }));
+  me.energy = me.energyMax;
+  me.atkTimer = 100;
+  battle.allies[1].hp = 1;
+  s = V.Combat.step(s).state;
+  let actor = s.run.battle.allies[0];
+  assert.equal(actor.pendingSkill.name, '回息');
+  assert.equal(actor.energy, me.energyMax - 5);
+  assert.ok(actor.cds.same > 0 && !actor.cds['1:same']);
+  actor.slot = 1;
+  s.run.battle.allies[1].slot = 0;
+  actor.atkTimer = 100;
+  for (let i = 0; i < 8 && actor.pendingSkill?.name !== '挑火'; i++) {
+    s = V.Combat.step(s).state;
+    actor = s.run.battle.allies[0];
+  }
+  assert.equal(actor.pendingSkill?.name, '挑火');
+  assert.ok(actor.cds.same > 0 && actor.cds['1:same'] > 0);
+});
+
+test('星火副修在前后位均缩短同一比例的平攻间隔', () => {
+  const { A, V, st } = boot(712);
+  const unit = st.roster[1];
+  unit.manuscript = { ...V.Data.MANUSCRIPTS.ward, x: 1, y: 0 };
+  unit.extraManuscripts = [{ ...V.Data.MANUSCRIPTS.spark, x: 0, y: 1 }];
+  const s = fight(A, setNodes(A, startRun(A, st, 712), ['battle']), 'normal').st;
+  const b = s.run.battle;
+  const actor = b.allies[1];
+  [...b.allies, ...b.enemies].forEach((u) => { u.atkTimer = -1000; });
+  b.enemies.forEach((u) => { u.hp = u.maxHp = 10000; u.dodge = 0; });
+  actor.hits = 1;
+  actor.atkTimer = 0;
+  actor.spd = V.Data.DESIGN.baseSpeed;
+  function attacksDuring(state, slot) {
+    const me = state.run.battle.allies[1];
+    const other = state.run.battle.allies.find((u) => u.slot === slot);
+    other.slot = me.slot;
+    me.slot = slot;
+    me.atkTimer = 0;
+    const before = me.atkSinceSkill;
+    for (let i = 0; i < 30; i++) state = V.Combat.step(state).state;
+    return { state, attacks: state.run.battle.allies[1].atkSinceSkill - before };
+  }
+  const front = attacksDuring(s, 1);
+  const rear = attacksDuring(front.state, 2);
+  const baseInterval = V.Data.DESIGN.autoAttack.interval * V.Data.MANUSCRIPTS.ward.attack.intervalScale;
+  const duration = V.Data.DESIGN.stepSeconds * 30;
+  assert.equal(front.attacks, Math.floor(duration / (baseInterval * V.Data.MANUSCRIPTS.spark.attack.intervalScale)));
+  assert.equal(rear.attacks, front.attacks);
+});
+
+test('当前与旧档的主修在四个身位均能出招，原位标记不再改变基础攻击', () => {
+  const { A, V, st } = boot(715);
+  const unit = st.roster[0];
+  unit.manuscript = { ...V.Data.MANUSCRIPTS.corridor5, positions: [0] };
+  const initial = fight(A, setNodes(A, startRun(A, st, 715), ['battle']), 'normal').st;
+  const damages = [];
+  for (let slot = 0; slot < 4; slot++) {
+    const state = V.State.clone(initial), b = state.run.battle;
+    const actor = b.allies[0], other = b.allies[slot];
+    other.slot = 0;
+    actor.slot = slot;
+    actor.positionAllowed = false;
+    [...b.allies, ...b.enemies].forEach(u => { u.atkTimer = -1000; });
+    b.enemies.forEach(u => { u.dodge = 0; });
+    actor.hits = 1; actor.crit = 0; actor.atkTimer = 100; actor.energy = actor.energyMax;
+    const cast = V.Combat.step(state).state.run.battle.allies[0];
+    assert.equal(cast.pendingSkill?.id, 'pierce');
+    actor.energy = 0; actor.regen = 0; actor.attackMult = 2; actor.emberAttack = true;
+    const attacked = V.Combat.step(state).state.run.battle;
+    damages.push(attacked.allies[0].stats.damage);
+    assert.ok(attacked.enemies[0].buffs.some(b => b.k === 'burn'));
+  }
+  assert.ok(damages[0] > 0);
+  assert.equal(new Set(damages).size, 1);
+});
+
+test('起始队伍的蚀刻法触发实战换位，敌人随后攻击新前锋，读档保留席位与记录', () => {
+  const { A, V } = boot(712);
+  const state = fight(A, setNodes(A, startRun(A, V.State.create(712), 712), ['battle']), 'normal').st;
+  const b = state.run.battle, lead = b.allies[0], nextFront = b.allies[1];
+  assert.equal(lead.ms.spec.id, 'spark');
+  [...b.allies, ...b.enemies].forEach(u => { u.atkTimer = -1000; u.dodge = 0; });
+  lead.atkTimer = 10; lead.hits = 1;
+  const moved = V.Combat.step(state);
+  const changed = moved.state.run.battle;
+  assert.equal(changed.allies[0].slot, 1);
+  assert.equal(changed.allies[1].slot, 0);
+  assert.equal(changed.allies[0].refract, 1);
+  const afterimage = V.State.clone(moved.state);
+  afterimage.run.battle.allies[0].atkTimer = 10;
+  assert.equal(V.Combat.step(afterimage).state.run.battle.allies[0].refract, 0, '再次出手时，未消耗的残影到期');
+  assert.ok(changed.logs.some(e => e.type === 'move' && e.actorId === lead.id && e.targetId === nextFront.id && e.meta.to === 1));
+  const saved = V.Storage.decode(V.Storage.encode(moved.state));
+  assert.ok(saved.ok);
+  const battle = saved.state.run.battle;
+  battle.allies.forEach(u => { u.atkTimer = -1000; });
+  const enemy = battle.enemies[0];
+  enemy.atkTimer = 10; enemy.skills = [];
+  const response = V.Combat.step(saved.state).state.run.battle;
+  assert.ok(response.logs.some(e => e.type === 'hit' && e.actorId === enemy.id && e.targetId === nextFront.id));
+  assert.equal(V.Positions.slotProblem(response.allies), null);
+});
+
+test('压力50/80按档持续影响余裕恢复，低血恢复同乘，食物降压后的下一战按新压力恢复', () => {
+  const { A, V, st } = boot(716);
+  const initial = fight(A, setNodes(A, startRun(A, st, 716), ['battle']), 'normal').st;
+  for (const [stress, rate] of [[0,1],[49,1],[50,0.8],[79,0.8],[80,0.6],[100,0.6]]) {
+    const state = V.State.clone(initial);
+    const u = state.run.battle.allies[0];
+    u.hp = 1; u.regen = 2; u.lowHpRegen = 1; u.energy = 0; u.stress = stress;
+    u.atkTimer = -1000;
+    assert.equal(V.Combat.energyRegen(u), 3 * rate);
+    const advanced = V.Combat.step(state).state.run.battle.allies[0];
+    assert.equal(advanced.energy, 3 * rate * V.Data.DESIGN.stepSeconds);
+  }
+  const field = startRun(A, st, 716);
+  const p = field.run.party[0];
+  p.stress = 53;
+  field.run.meals = { kelpBroth: 1 };
+  const eaten = V.Kitchen.eat(field, 'kelpBroth', p.uid).state;
+  const encounter = fight(A, setNodes(A, eaten, ['battle']), 'normal').st.run.battle;
+  assert.equal(encounter.allies[0].stress, 45);
+  assert.equal(V.Combat.energyRegen(encounter.allies[0]), encounter.allies[0].regen);
+});
+
 test('五种主手按身位与能量规则出手', () => {
   const { A, V, st: base } = boot(101);
   const cases = [

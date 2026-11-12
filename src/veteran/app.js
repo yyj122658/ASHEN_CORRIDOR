@@ -39,6 +39,9 @@
     shopMsg: '',
     importOpen: false,
     modal: null,
+    packSelection: null,
+    packMessage: '',
+    cooking: null,
     modalSaveText: '',
     toast: '',
   };
@@ -49,6 +52,7 @@
   let acc = 0;
   let lastScreen = null;
   let saveTimer = null;
+  let cookTimer = null;
   const artPreloaded = new Set();
 
   const STEP_MS = 240;
@@ -94,13 +98,85 @@
       const appEl = document.getElementById('app') || document.body;
       appEl.appendChild(root);
     }
-    root.innerHTML = V.UI && V.UI.modalHtml ? V.UI.modalHtml(state, ui) : '';
+    const wasOpen = !!root.firstElementChild;
+    const oldPack = root.querySelector('.pack-dialog');
+    const packScroll = oldPack?.scrollTop || 0;
+    const expanded = root.querySelector('.save-tools')?.open;
+    const previous = root.contains(document.activeElement) ? document.activeElement.dataset : null;
+    root.innerHTML = V.UI.modalHtml(state, ui);
+    document.querySelector('.masthead').inert = !!ui.modal;
+    document.getElementById('stage').inert = !!ui.modal;
+    if (ui.modal) {
+      const tools = root.querySelector('.save-tools');
+      if (tools && expanded) tools.open = true;
+      const newPack = root.querySelector('.pack-dialog');
+      if (newPack && oldPack) newPack.scrollTop = packScroll;
+      const buttons = [...root.querySelectorAll('.modal-card button:not(:disabled)')];
+      const focus = previous?.act && buttons.find(b => b.dataset.act === previous.act && b.dataset.id === previous.id);
+      (focus || buttons[0])?.focus({ preventScroll: true });
+    } else if (wasOpen) {
+      document.querySelector(oldPack ? '[data-act="openPack"]' : '[data-act="openSettings"]')?.focus({ preventScroll: true });
+    }
+  }
+
+  function filterCatalogue(book, limit = 8) {
+    const query = book.querySelector('[data-catalogue-query]').value.trim().toLowerCase();
+    const filter = book.querySelector('[data-catalogue-filter]').value;
+    let matches = 0;
+    for (const item of book.querySelectorAll('[data-catalogue-item]')) {
+      const match = item.dataset.catalogueItem.toLowerCase().includes(query)
+        && (!filter || item.dataset.filter.split(' ').includes(filter));
+      if (match) matches++;
+      item.hidden = !match || matches > limit;
+    }
+    book.dataset.limit = limit;
+    book.querySelector('[data-catalogue-count]').textContent = matches ? `显示 ${Math.min(matches, limit)} / ${matches}` : '没有匹配项';
+    book.querySelector('[data-catalogue-more]').hidden = matches <= limit;
+  }
+
+  let groundScanTimer = null;
+
+  /** 扫描时间按节点及物件保存；更新控件本身，避免重复播放或抢走键盘焦点。 */
+  function updateGroundScan() {
+    clearTimeout(groundScanTimer);
+    const ground = document.querySelector('.loot-ground');
+    if (!ground || !ui.groundSurvey) return;
+    const reduce = state.settings?.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const now = performance.now();
+    let next = Infinity;
+    const notes = new Map([...ground.querySelectorAll('[data-ground-note]')].map(el => [el.dataset.groundNote, el]));
+    for (const item of ground.querySelectorAll('[data-ground-item]')) {
+      const found = ui.groundSurvey.finds.get(item.dataset.token);
+      if (reduce) found.end = 0;
+      const status = now >= found.end ? 'revealed' : now < found.start ? 'waiting' : 'scanning';
+      const ready = status === 'revealed';
+      if (!ready) next = Math.min(next, status === 'waiting' ? found.start : found.end);
+      const note = notes.get(item.dataset.token);
+      if (status === 'scanning' && item.dataset.scan !== status) item.style.setProperty('--scan-lag', (found.start - now) + 'ms');
+      item.dataset.scan = note.dataset.scan = status;
+      const label = ready ? item.dataset.label + (item.dataset.fits === 'true' ? '' : ' · 背包放不下') : status === 'scanning' ? '辨认中' : '未辨认轮廓';
+      item.setAttribute('aria-label', label);
+      item.title = label;
+      item.disabled = !ready;
+      note.querySelector('.ground-known').setAttribute('aria-hidden', String(!ready));
+      note.querySelector('.ground-unseen').textContent = ready ? '' : label;
+      for (const action of note.querySelectorAll('button')) action.disabled = !ready;
+    }
+    if (Number.isFinite(next)) groundScanTimer = setTimeout(updateGroundScan, Math.max(1, next - now + 1));
   }
 
   function render() {
+    if (ui.cooking && (!['kitchen', 'campNode'].includes(ui.screen) || ui.cooking.scope !== cookingScope())) {
+      clearTimeout(cookTimer);
+      ui.cooking = null;
+    }
+    clearScarHint();
+    clearTimeout(groundScanTimer);
+    if (ui.screen !== 'loot') ui.groundSurvey = null;
     const hudEl = document.getElementById('hud');
     const navEl = document.getElementById('nav');
     const stageEl = document.getElementById('stage');
+    document.body.dataset.screen = ui.screen;
     document.body.classList.toggle('reduced-motion', !!(state && state.settings && state.settings.reducedMotion));
 
     if (ui.screen === 'title') {
@@ -114,7 +190,22 @@
 
     if (hudEl) hudEl.innerHTML = V.UI.hud(state, ui);
     if (navEl) navEl.innerHTML = V.UI.nav(state, ui);
-    if (stageEl) stageEl.innerHTML = V.UI.screen(state, ui);
+    if (stageEl) {
+      const old = ui.screen === lastScreen && stageEl.querySelector('[data-catalogue]');
+      const inscriptionOpen = ui.screen === lastScreen && stageEl.querySelector('.field-inscription')?.open;
+      stageEl.innerHTML = V.UI.screen(state, ui);
+      if (inscriptionOpen && stageEl.querySelector('.field-inscription')) stageEl.querySelector('.field-inscription').open = true;
+      if (ui.screen === 'loot') updateGroundScan();
+      const book = stageEl.querySelector('[data-catalogue]');
+      if (book) {
+        if (old && old.dataset.catalogue === book.dataset.catalogue) {
+          book.querySelector('[data-catalogue-query]').value = old.querySelector('[data-catalogue-query]').value;
+          book.querySelector('[data-catalogue-filter]').value = old.querySelector('[data-catalogue-filter]').value;
+          if (book.tagName === 'DETAILS') book.open = old.open;
+        }
+        filterCatalogue(book, Number(old?.dataset?.limit) || 8);
+      }
+    }
     renderModal();
 
     /* 场景图按页面加载；加载完成后重画一次，让 <img> 真正进 DOM */
@@ -123,11 +214,9 @@
       V.Art.preloadFor(ui.screen).then((r) => {
         if (r.loaded.length && ui.screen === lastScreen) render();
       });
-      if ((ui.screen === 'workshop' || ui.screen === 'camp') && V.RuneArt && V.RuneArt.preload) {
-        V.RuneArt.preload();
-      }
     }
 
+    if (ui.screen === 'prebattle' && lastScreen !== 'prebattle') V.View.preloadPreparation(state);
     if (ui.screen === 'battle') {
       const entering = lastScreen !== 'battle';
       if (entering) V.View.reset();
@@ -140,6 +229,11 @@
   }
 
   /* ------------------------------ 命令分发 ------------------------------ */
+
+  /** 制作只属于当前前哨厨房或这一处营火，离开后不在后台扣料。 */
+  function cookingScope() {
+    return state.run ? JSON.stringify([state.run.id, state.run.floor, state.run.activeNodeId]) : 'home';
+  }
 
   function run(fn) {
     const r = fn();
@@ -223,6 +317,7 @@
       case 'titleStart':
         ui.hadSave = true;
         ui.screen = 'camp';
+        syncScreen();
         persist();
         render();
         return;
@@ -247,9 +342,100 @@
         toast('存档已清空');
         return;
 
+      case 'upgradePack': {
+        const result = run(() => V.Expedition.upgradePack(state));
+        if (result.ok) {
+          render();
+          const panel = document.querySelector('.camp-pack');
+          if (panel) panel.open = true;
+          toast('背包已扩至 ' + V.Expedition.bagCapacity(state) + ' 格');
+        }
+        return;
+      }
+
+      case 'kitchenPack':
+      case 'openPack':
+        if (['title','settlement'].includes(ui.screen) || ui.modal) return;
+        if (ui.screen === 'loot') { document.querySelector('.loot-pack .pack-slot')?.focus(); return; }
+        ui.modal = 'pack';
+        ui.packSelection = null;
+        ui.packMessage = '';
+        renderModal();
+        return;
+
+      case 'packSlot': {
+        if (!(ui.modal === 'pack' || !ui.modal && ['loot', 'campNode'].includes(ui.screen))) return;
+        const slot = Number(action.id);
+        const slots = V.Expedition.packSlots(state);
+        if (!Number.isInteger(slot) || slot < 0 || slot >= slots.length) return;
+        if (ui.packSelection !== null && ui.packSelection !== slot && V.UI.packEditable(state, ui)) {
+          dispatch({ type: 'packMove', from: ui.packSelection, to: slot });
+          return;
+        }
+        ui.packSelection = slots[slot] && ui.packSelection !== slot ? slot : null;
+        ui.packMessage = '';
+        if (ui.modal) renderModal(); else render();
+        return;
+      }
+
+      case 'packEat': {
+        if (!(ui.modal === 'pack' || !ui.modal && ['loot', 'campNode'].includes(ui.screen)) || !V.UI.packEditable(state,ui)) return;
+        const slots = V.Expedition.packSlots(state);
+        const token = action.token || slots[ui.packSelection];
+        if (!token?.startsWith('meal:') || !slots.includes(token)) return;
+        const id = token.slice(5).split('#')[0];
+        const result = run(() => V.Kitchen.eat(state,id,action.id,token));
+        if (!result.ok) {
+          ui.packMessage = result.error.message;
+          if (ui.modal) renderModal(); else render();
+          return;
+        }
+        ui.packSelection = V.Expedition.packSlots(state).indexOf(token);
+        if (ui.packSelection < 0) ui.packSelection = null;
+        ui.packMessage = V.State.unitById(state,action.id).name + '吃了' + V.Kitchen.RECIPES[id].name;
+        render();
+        return;
+      }
+
+      case 'packMove':
+      case 'packSort':
+      case 'packDiscardOverflow':
+      case 'packDiscard':
+      case 'packTakeFood':
+      case 'packTakePart': {
+        if (!(ui.modal === 'pack' || !ui.modal && ['loot', 'campNode'].includes(ui.screen)) || !V.UI.packEditable(state, ui)) return;
+        const api = V.Expedition;
+        let result;
+        if (t === 'packMove') {
+          result = run(() => api.movePack(state, Number(action.from), Number(action.to)));
+        } else if (t === 'packSort') {
+          result = run(() => api.sortPack(state));
+        } else if (t === 'packDiscardOverflow') {
+          if (!api.packOverflow(state).includes(action.id)) return;
+          result = run(() => api.discardPack(state, action.id));
+        } else if (t === 'packDiscard') {
+          const token = api.packSlots(state)[ui.packSelection];
+          if (!token) return;
+          result = run(() => api.discardPack(state, token, ui.packSelection));
+        } else {
+          if (state.run.stage !== 'loot') return;
+          result = run(() => t === 'packTakeFood'
+            ? api.takeIngredient(state, action.id) : api.resolveLoot(state, action.id, 'take'));
+        }
+        if (!result.ok) {
+          ui.packMessage = result.error.message;
+          if (ui.modal) renderModal(); else render();
+          return;
+        }
+        ui.packSelection = t === 'packMove' ? Number(action.to) : null;
+        ui.packMessage = '';
+        render();
+        return;
+      }
+
       case 'openSettings':
         ui.modal = 'settings';
-        ui.modalSaveText = V.Storage.exportText(state);
+        ui.modalSaveText = '';
         renderModal();
         return;
 
@@ -288,6 +474,7 @@
         state = next;
         persistSoon();
         document.body.classList.toggle('reduced-motion', !!next.settings.reducedMotion);
+        if (ui.screen === 'loot') updateGroundScan();
         renderModal();
         return;
       }
@@ -366,10 +553,54 @@
       }
 
       /* ---------- 导航 ---------- */
+      case 'storePick':
+      case 'storeSlot':
+      case 'storeMove':
+      case 'storeRotate':
+      case 'storeSort':
+      case 'storeUpgrade': {
+        if (ui.screen !== 'stash' || state.run || ui.modal) return;
+        const shelf = ui.stashShelf || 'food', E = V.Expedition;
+        if (action.type === 'storeUpgrade') {
+          if (!Object.hasOwn(E.STORE_UPGRADES,action.id)) return;
+          if (run(() => E.upgradePack(state,action.id)).ok) render();
+          return;
+        }
+        const layout = E.storeLayout(state,shelf);
+        if (action.type === 'storePick' || (action.type === 'storeSlot' && layout.slots[action.id])) {
+          ui.storePick = action.type === 'storePick' ? action.id : layout.slots[action.id];
+          render();
+          return;
+        }
+        const token = action.type === 'storeMove' ? action.token : ui.storePick;
+        if (!token && action.type !== 'storeSort') return;
+        if (run(() => E.arrangeStore(state,shelf,action.type === 'storeSort' ? null : token,Number(action.id),action.type === 'storeRotate')).ok) {
+          ui.storePick = action.type === 'storeSort' ? null : token;
+          render();
+        }
+        return;
+      }
+      case 'stashShelf':
+        if (ui.screen !== 'stash' || !['food','meal','part','etch'].includes(action.id)) return;
+        ui.stashShelf = action.id;
+        ui.storePick = null;
+        render();
+        document.querySelector('.store-tabs [aria-pressed="true"]')?.focus({preventScroll:true});
+        return;
+      case 'transferMeal': {
+        if (ui.screen !== 'stash' || state.run) return;
+        const result = run(() => V.Kitchen.transferMeal(state,action.id,action.v));
+        if (result.ok) render();
+        return;
+      }
       case 'go':
         if (state.run) return;
         ui.screen = action.v;
-        if (action.v === 'workshop') openWorkshop(state.team.filter(Boolean)[0] || state.roster[0].id);
+        if (action.v === 'workshop') openWorkshop(action.id || state.team.filter(Boolean)[0] || state.roster[0].id, action.ms);
+        if (action.v === 'recruit' && !state.shop?.length) {
+          const firstVisit = V.Roster.refreshShop(state, false);
+          if (firstVisit.ok) { state = firstVisit.state; persistSoon(); }
+        }
         if (action.v === 'history') ui.histUnit = ui.histUnit || state.roster[0].id;
         if (action.v === 'team') ui.teamUnit = ui.teamUnit || state.roster[0].id;
         render();
@@ -575,13 +806,24 @@
       }
 
       /* ---------- 工坊 ---------- */
+      case 'wsFilmView':
+        ui.wsFilmView = !ui.wsFilmView;
+        render();
+        document.querySelector('.film-switch')?.focus({preventScroll:true});
+        return;
+      case 'wsPalette':
+        ui.wsPalette = action.id === 'runes' ? 'runes' : 'etchings';
+        render();
+        return;
       case 'wsUnit':
+        if (ui.wsMode === 'inscribe') return;
         openWorkshop(action.id);
         render();
         return;
 
       case 'wsPick': {
         const id = action.id;
+        selectFieldRune(id);
         /* 再点一次同一件就取消选中——不管它是仓库里的还是已经在板面上 */
         if (ui.wsPick === id) {
           ui.wsPick = null;
@@ -605,7 +847,7 @@
         return;
 
       case 'wsRotate': {
-        if (!ui.wsPick) { toast('先选一件构件'); return; }
+        if (!ui.wsPick) { toast('先选一件纹路'); return; }
         const step = Number(action.step) === 3 ? 3 : 1;
         const placed = ui.wsDraft.find((p) => p.itemId === ui.wsPick);
         const nextRot = ((placed ? placed.rotation : ui.wsRot) + step) % 4;
@@ -615,7 +857,7 @@
           const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, ui.wsPick, nextRot, nextMir) : null;
           const nudge = shape ? findNudgeFit(ui.wsPick, shape, placed.x, placed.y) : null;
           if (nudge) { placed.x = nudge.x; placed.y = nudge.y; }
-          else toast('旋转后与板边或构件冲突，可拖移或再转一次');
+          else toast('旋转后与板边或纹路冲突，可拖移或再转一次');
           placed.rotation = nextRot;
         }
         ui.wsRot = nextRot;
@@ -625,7 +867,7 @@
       }
 
       case 'wsFlip': {
-        if (!ui.wsPick) { toast('先选一件构件'); return; }
+        if (!ui.wsPick) { toast('先选一件纹路'); return; }
         const placed = ui.wsDraft.find((p) => p.itemId === ui.wsPick);
         const nextRot = placed ? placed.rotation : ui.wsRot;
         const nextMir = !(placed ? placed.mirrorY : ui.wsMirror);
@@ -634,7 +876,7 @@
           const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, ui.wsPick, nextRot, nextMir) : null;
           const nudge = shape ? findNudgeFit(ui.wsPick, shape, placed.x, placed.y) : null;
           if (nudge) { placed.x = nudge.x; placed.y = nudge.y; }
-          else toast('翻转后与板边或构件冲突，可拖移调整');
+          else toast('翻转后与板边或纹路冲突，可拖移调整');
           placed.mirrorY = nextMir;
         }
         ui.wsMirror = nextMir;
@@ -646,7 +888,7 @@
       case 'wsClear': {
         const locked = new Set(ui.wsLocked || []);
         const next = (ui.wsDraft || []).filter((p) => locked.has(p.itemId));
-        if (next.length === (ui.wsDraft || []).length) { toast('没有可清空的构件'); return; }
+        if (next.length === (ui.wsDraft || []).length) { toast('没有可清空的纹路'); return; }
         pushHistory();
         ui.wsDraft = next;
         ui.wsPick = null;
@@ -661,6 +903,8 @@
         if (!unit) return;
         pushHistory();
         ui.wsDraft = V.State.clone(unit.board.placements);
+        ui.wsMsPoses = {};
+        selectWorkshopManuscript(ui.wsMsId, V.State.manuscriptsOf(unit).find((m) => m.id === ui.wsMsId));
         ui.wsPick = null;
         ui.wsErrors = [];
         render();
@@ -670,9 +914,12 @@
 
       case 'wsQuickPlace': {
         const id = action.id;
-        if (!id || (ui.wsDraft || []).some((p) => p.itemId === id)) return;
+        const unit = state.roster.find(u => u.id === ui.wsUnit);
+        const available = ui.wsMode === 'inscribe' ? id === ui.inscribeItem
+          : state.stash.includes(id) || unit?.board.placements.some(p => p.itemId === id);
+        if (!available || !id || (ui.wsDraft || []).some((p) => p.itemId === id)) return;
         const spot = findQuickPlaceSpot(id, ui.wsPick === id ? ui.wsRot : 0, ui.wsPick === id ? !!ui.wsMirror : false);
-        if (!spot) { toast('当前板面放不下这件构件'); return; }
+        if (!spot) { toast('没有符合形状和负荷的空位'); return; }
         pushHistory();
         ui.wsDraft.push({ itemId: id, x: spot.x, y: spot.y, rotation: spot.rotation, mirrorY: spot.mirrorY });
         ui.wsPick = id;
@@ -684,16 +931,15 @@
       }
 
       case 'wsAutoConnect': {
-        const unit = state.roster.find((u) => u.id === ui.wsUnit);
+        const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
         if (!unit) return;
         const plate = V.Circuit.plateOf(unit);
-        const body = D().body(unit.bodyPreset);
-        const cap = body ? body.loadCap : 99;
+        const cap = V.Circuit.loadCap(unit) - V.State.manuscriptsOf(unit).reduce((sum, m) => sum + (m.load || 0), 0);
         const stashCircuits = state.stash.filter((id) => state.itemsById[id] && state.itemsById[id].kind === 'circuit');
         const allIds = [...new Set([...(ui.wsDraft || []).map((p) => p.itemId), ...stashCircuits])];
-        const found = findSmartConnectLayout(state, unit, plate, allIds, cap);
+        const found = findSmartConnectLayout({ ...state, roster: [unit] }, unit, plate, allIds, cap);
         if (!found) {
-          toast('现有可用构件在当前负荷/板面下暂无法直接连通输出');
+          toast('现有可用纹路在当前负荷/板面下暂无法直接连通输出');
           return;
         }
         pushHistory();
@@ -701,14 +947,14 @@
         ui.wsPick = null;
         ui.wsErrors = [];
         render();
-        toast('已用现有构件自动接通输出');
+        toast('已用现有纹路自动接通输出');
         return;
       }
 
       case 'wsRemove': {
         const placed = ui.wsDraft.find((p) => p.itemId === action.id);
         if (!placed) return;
-        if (ui.wsLocked.includes(action.id)) { toast('原构件不能在烙印中移除'); return; }
+        if (ui.wsLocked.includes(action.id)) { toast('原纹路不能在烙印中移除'); return; }
         pushHistory();
         ui.wsDraft = ui.wsDraft.filter((p) => p.itemId !== action.id);
         ui.wsPick = null;
@@ -721,8 +967,8 @@
         if (!ui.wsPick) return;
         const [x, y] = String(action.id).split(',').map(Number);
         const existing = ui.wsDraft.find((p) => p.itemId === ui.wsPick);
-        /* 选中一件「已经在板面上」的构件时，点空白格只当作「放下它」= 取消选中。
-           要换位置请直接拖——否则误点一下板面就把构件搬走，是最容易踩的坑。 */
+        /* 选中一件「已经在板面上」的纹路时，点空白格只当作「放下它」= 取消选中。
+           要换位置请直接拖——否则误点一下板面就把纹路搬走，是最容易踩的坑。 */
         if (existing) {
           ui.wsPick = null;
           ui.wsErrors = [];
@@ -743,6 +989,7 @@
         const id = action.id;
         const cell = String(action.cell || '').split(',').map(Number);
         if (!id || cell.length !== 2 || !Number.isFinite(cell[0]) || !Number.isFinite(cell[1])) return;
+        selectFieldRune(id);
         const existing = (ui.wsDraft || []).find((p) => p.itemId === id);
         const rot = action.rot != null ? Number(action.rot) : (existing ? existing.rotation : ui.wsRot);
         const mir = action.mir != null ? !!action.mir : (existing ? !!existing.mirrorY : ui.wsMirror);
@@ -765,188 +1012,76 @@
         ui.wsRot = rot;
         ui.wsMirror = mir;
         ui.wsErrors = [];
-        /* 松手即结束：不再保持手持，否则点板面别处会把刚放下的构件搬过去 */
+        /* 松手即结束：不再保持手持，否则点板面别处会把刚放下的纹路搬过去 */
         ui.wsPick = null;
         render();
         return;
       }
 
-      /* 把仓库里的功法装到当前角色身上：先用拖好的位置，压到构件上就自动挪开 */
-      case 'wsMsEquip': {
-        const vault = state.manuscriptVault || [];
-        const idx = vault.findIndex((m) => m.id === ui.wsMsId);
-        if (idx < 0) { toast('仓库里没有这套功法'); return; }
-
-        const attempt = (useDragPos) => {
-          const next = V.State.clone(state);
-          const u2 = next.roster.find((u) => u.id === ui.wsUnit);
-          if (!u2) return null;
-          const spec = next.manuscriptVault[idx];
-          u2.manuscript = Object.assign({}, spec, {
-            x: useDragPos && Number.isFinite(ui.wsMsOx) ? ui.wsMsOx : 0,
-            y: useDragPos && Number.isFinite(ui.wsMsOy) ? ui.wsMsOy : 0,
-            rotation: (((ui.wsMsRot | 0) % 4) + 4) % 4,
-            mirrorY: !!ui.wsMsMir,
-          });
-          if (!useDragPos) {
-            u2.manuscript = null;
-            V.State.equipManuscript(next, u2, ui.wsMsId);
-            if (!u2.manuscript) return null;
-          }
-          const check = V.State.validate(next);
-          if (!check.ok) return null;
-          next.manuscriptVault.splice(idx, 1);
-          return next;
-        };
-
-        const next = attempt(true) || attempt(false);
-        if (!next) {
-          ui.wsErrors = ['这套功法在这块板面上摆不下，或者被构件挡住了'];
-          render();
-          toast('装不上：先挪开构件或换块板面');
-          return;
-        }
-        const autoMoved = !attempt(true);
-        state = next;
-        persistSoon();
-        openWorkshop(ui.wsUnit);
-        render();
-        toast(autoMoved ? '位置被占，已自动挪到空位' : '功法已装上');
-        return;
-      }
-
-      /* 卸下功法：回到仓库，位置留在 UI 里方便再调 */
+      case 'wsMsEquip':
+      case 'wsMsEquipAt':
+      case 'wsMsPromote':
       case 'wsMsUnequip': {
+        if (ui.wsMode === 'inscribe') return;
+        const id = action.id || ui.wsMsId;
         const next = V.State.clone(state);
-        const u2 = next.roster.find((u) => u.id === ui.wsUnit);
-        if (!u2 || !u2.manuscript) return;
-        const spec = {};
-        Object.keys(u2.manuscript).forEach((k) => {
-          if (k === 'x' || k === 'y' || k === 'rotation' || k === 'mirrorY') return;
-          spec[k] = u2.manuscript[k];
-        });
-        next.manuscriptVault.push(spec);
-        u2.manuscript = null;
-        state = next;
-        persistSoon();
-        render();
-        toast('功法已卸下');
-        return;
-      }
-
-      /* 把功法装到拖放指定的位置：摆不下就拒绝，不偷偷挪走 */
-      case 'wsMsEquipAt': {
-        const msId = action.id;
-        const spec = V.Data.manuscript(msId);
-        const unit = state.roster.find((u) => u.id === ui.wsUnit);
-        if (!spec || !unit) return;
-
-        const oriented = V.Manuscript.orient(
-          V.Manuscript.normalize(spec),
-          Number(action.rotation || 0) % 4, false,
-        );
+        const unit = next.roster.find((u) => u.id === ui.wsUnit);
+        Object.assign(unit, V.UI.workshopUnit(unit, ui));
         const plate = V.Circuit.plateOf(unit);
-        const ox = Number(action.ox) || 0;
-        const oy = Number(action.oy) || 0;
-        if (!V.Manuscript.fits(oriented, plate.cellsList, ox, oy)) {
-          toast('这套功法在这里摆不下：需要 ' + oriented.cells.length + ' 格都落在金属上');
-          return;
-        }
-
-        const next = V.State.clone(state);
-        const u2 = next.roster.find((u) => u.id === ui.wsUnit);
-        /* 新装的这套必须离开仓库（否则同一套功法会被复制成两份），
-           板上原来那套则回仓库 */
-        next.manuscriptVault = (next.manuscriptVault || []).filter((m) => m.id !== msId);
-        if (u2.manuscript && u2.manuscript.id !== msId) {
-          const old = {};
-          Object.keys(u2.manuscript).forEach((k) => {
-            if (k === 'x' || k === 'y' || k === 'rotation' || k === 'mirrorY') return;
-            old[k] = u2.manuscript[k];
-          });
-          next.manuscriptVault.push(old);
-        }
-        u2.manuscript = Object.assign({}, spec, {
-          x: ox, y: oy,
-          rotation: Number(action.rotation || 0) % 4,
-          mirrorY: false,
-        });
-
-        const check = V.State.validate(next);
-        if (!check.ok) {
-          /* 最常见的失败是压到了已有构件：直接把原因说出来，别让玩家猜 */
-          const first = check.errors[0] || '装不上';
-          toast(first.replace(/^\S+\s*板面：/, ''));
-          return;
-        }
-        state = next;
-        persistSoon();
-        ui.wsMsId = msId;
-        openWorkshop(ui.wsUnit);
-        render();
-        toast('已装上「' + spec.name + '」');
+        const ms = V.UI.resolveManuscript(unit, plate, ui, V.Circuit.layout(next, ui.wsDraft, plate.terminals));
+        const pose = action.type === 'wsMsEquipAt'
+          ? { x: action.ox, y: action.oy, rotation: action.rotation || 0, mirrorY: !!action.mirrorY }
+          : ms && ms.fits ? { x: ms.ox, y: ms.oy, rotation: ms.rot, mirrorY: ms.mir } : undefined;
+        const result = action.type === 'wsMsUnequip'
+          ? V.State.removeManuscript(next, unit, id)
+          : action.type === 'wsMsPromote' ? V.State.promoteManuscript(unit, id)
+          : V.State.placeManuscript(next, unit, id, pose, ui.wsDraft);
+        if (!result.ok) { ui.wsErrors = [result.reason]; render(); toast(result.reason); return; }
+        saveWorkshop(next, action.type === 'wsMsUnequip' ? unit.manuscript?.id : id,
+          action.type === 'wsMsUnequip' ? '蚀刻法已卸下，装配已保存' : action.type === 'wsMsPromote' ? '主修已保存' : '蚀刻法已装上，装配已保存');
         return;
       }
 
-      case 'wsMsMove': {
-        const unit = state.roster.find((u) => u.id === ui.wsUnit);
-        const ox = Number(action.ox);
-        const oy = Number(action.oy);
-        /* 和构件一致：摆不下的位置不接受，提示后留在原处 */
-        if (unit && unit.manuscript && V.Manuscript) {
-          const or = V.Manuscript.orient(
-            V.Manuscript.normalize(unit.manuscript),
-            Number.isFinite(ui.wsMsRot) ? ui.wsMsRot : (unit.manuscript.rotation || 0),
-            !!ui.wsMsMir,
-          );
-          const plate = V.Circuit.plateOf(unit);
-          if (!V.Manuscript.fits(or, plate.cellsList, ox, oy)) {
-            toast('功法膜放不下：要 ' + or.cells.length + ' 格都落在金属上');
-            render();
-            return;
-          }
-        }
-        ui.wsMsOx = ox;
-        ui.wsMsOy = oy;
-        ui.wsMsSpotIdx = 0;
-        render();
-        return;
-      }
-
-      case 'wsMsPick':
-        ui.wsMsId = action.id;
-        ui.wsMsRot = 0;
-        ui.wsMsMir = false;
-        ui.wsMsSpotIdx = 0;
-        ui.wsMsOx = null;
-        ui.wsMsOy = null;
-        render();
-        return;
-
+      case 'wsMsMove':
       case 'wsMsRotate':
-        ui.wsMsRot = (ui.wsMsRot + 1) % 4;
-        ui.wsMsSpotIdx = 0;
-        ui.wsMsOx = null;
-        ui.wsMsOy = null;
-        render();
-        return;
-
       case 'wsMsFlip':
-        ui.wsMsMir = !ui.wsMsMir;
-        ui.wsMsSpotIdx = 0;
-        ui.wsMsOx = null;
-        ui.wsMsOy = null;
+      case 'wsMsShift': {
+        if (ui.wsMode === 'inscribe') return;
+        const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
+        const id = action.id || ui.wsMsId;
+        const ms = V.State.manuscriptsOf(unit).find((m) => m.id === id);
+        const plate = V.Circuit.plateOf(unit);
+        const layout = V.Circuit.layout(state, ui.wsDraft, plate.terminals);
+        const candidate = { ...ui, wsMsId: id };
+        if (action.type === 'wsMsMove') {
+          Object.assign(candidate, { wsMsOx: action.ox, wsMsOy: action.oy, wsMsRot: action.rotation ?? ui.wsMsRot, wsMsMir: action.mirrorY ?? ui.wsMsMir });
+        } else {
+          if (action.type === 'wsMsRotate') candidate.wsMsRot = (ui.wsMsRot + 1) % 4;
+          if (action.type === 'wsMsFlip') candidate.wsMsMir = !ui.wsMsMir;
+          candidate.wsMsSpotIdx = action.type === 'wsMsShift'
+            ? V.UI.resolveManuscript(unit, plate, ui, layout).spotIdx + 1 : null;
+          candidate.wsMsOx = null;
+          candidate.wsMsOy = null;
+        }
+        const view = V.UI.resolveManuscript(unit, plate, candidate, layout);
+        if (!view || view.disabled) return;
+        if (!view.fits && (ms || action.type === 'wsMsMove')) { toast(view.reason); return; }
+        const pose = { x: view.ox, y: view.oy, rotation: view.rot, mirrorY: view.mir };
+        if (ms) ui.wsMsPoses[id] = pose;
+        selectWorkshopManuscript(id, pose);
+        ui.wsMsSpotIdx = view.spotIdx;
         render();
         return;
+      }
 
-      case 'wsMsShift':
-        ui.wsMsSpotIdx = (ui.wsMsSpotIdx || 0) + 1;
-        ui.wsMsOx = null;
-        ui.wsMsOy = null;
+      case 'wsMsPick': {
+        const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
+        selectWorkshopManuscript(action.id, V.State.manuscriptsOf(unit).find((m) => m.id === action.id));
         render();
         return;
+      }
 
-      /* 点一下构件（没有拖动）：等同于选中，之后可用旋转/翻转/点空格移动 */
+      /* 点一下纹路（没有拖动）：等同于选中，之后可用旋转/翻转/点空格移动 */
       case 'wsGrab':
         dispatch({ type: 'wsPick', id: action.id });
         return;
@@ -971,14 +1106,14 @@
 
       case 'wsPreset': {
         const preset = D().PRESETS[action.id];
-        if (!preset) return;
-        pushHistory();
-        const unit = state.roster.find((u) => u.id === ui.wsUnit);
+        if (!preset || ui.wsMode === 'inscribe') return;
+        const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
         const result = buildPreset(state, unit, preset);
         if (!result.ok) {
           toast(result.reason);
           return;
         }
+        pushHistory();
         ui.wsDraft = result.placements;
         ui.wsPick = null;
         render();
@@ -986,44 +1121,20 @@
       }
 
       case 'wsSave': {
-        /* 功法膜的位置也要一起落盘：它和构件一样是被摆上去的 */
-        let base = state;
-        const cur = state.roster.find((u) => u.id === ui.wsUnit);
-        if (cur && cur.manuscript && Number.isFinite(ui.wsMsOx) && Number.isFinite(ui.wsMsOy)) {
-          const next = V.State.clone(state);
-          const u2 = next.roster.find((u) => u.id === ui.wsUnit);
-          u2.manuscript.x = ui.wsMsOx;
-          u2.manuscript.y = ui.wsMsOy;
-          u2.manuscript.rotation = (((ui.wsMsRot | 0) % 4) + 4) % 4;
-          u2.manuscript.mirrorY = !!ui.wsMsMir;
-          base = next;
-        }
-        const r = V.Roster.saveBoard(base, ui.wsUnit, ui.wsDraft);
-        if (!r.ok) {
-          ui.wsErrors = r.details || [r.error.message];
-          render();
-          toast('板面不合法');
-          return;
-        }
-        const check = V.State.validate(r.state);
-        if (!check.ok) {
-          ui.wsErrors = check.errors.slice(0, 4);
-          render();
-          toast('功法没有落在板面上');
-          return;
-        }
-        state = r.state;
-        persistSoon();
-        openWorkshop(ui.wsUnit);
-        render();
-        toast('板面已保存');
+        if (ui.wsMode === 'inscribe') return;
+        const next = V.State.clone(state);
+        const unit = next.roster.find((u) => u.id === ui.wsUnit);
+        Object.assign(unit, V.UI.workshopUnit(unit, ui));
+        saveWorkshop(next, ui.wsMsId, '板面已保存');
         return;
       }
 
       case 'inscribeStart': {
         const unit = state.roster.find((u) => u.id === action.id);
-        const bagCircuits = state.run.bag.filter((id) => state.itemsById[id] && state.itemsById[id].kind === 'circuit');
-        if (!bagCircuits.length) { toast('背包里没有本局获得的回路构件'); return; }
+        if (!unit || !V.Expedition.inscribable(state, unit.id).ok) return;
+        const bagCircuits = state.run.bag.filter(id => state.itemsById[id]?.kind === 'circuit' && state.itemsById[id].acquiredRunId === state.run.id);
+        if (!bagCircuits.length) { toast('背包里没有本局获得的回路纹路'); return; }
+        openWorkshop(unit.id);
         ui.wsMode = 'inscribe';
         ui.wsUnit = unit.id;
         ui.inscribeItem = bagCircuits[0];
@@ -1072,7 +1183,7 @@
         const needIds = [...new Set([...(ui.wsDraft || []).map((p) => p.itemId), ui.inscribeItem])];
         const found = findAutoInscribeLayout(state, unit, plate, needIds);
         if (!found) {
-          toast('当前板面与既有构件无法直接连通输出，请手调或换角色烙印');
+          toast('当前板面与既有纹路无法直接连通输出，请手调或换角色烙印');
           return;
         }
         pushHistory();
@@ -1134,8 +1245,6 @@
         const r = run(() => V.Expedition.start(state, {}));
         if (r && r.ok) {
           ui.screen = 'map';
-          A.Art.preloadArt(['scene.corridor', 'scene.boss']);
-          A.SpriteAnim.preload(['blade', 'bone']);
           render();
         } else refreshOops(r);
         return;
@@ -1225,9 +1334,10 @@
         const p = V.Expedition.previewRetreat(state, mode);
         if (p.ok) {
           const msg = mode === 'emergency'
-            ? `紧急撤退？\n\n保留 ${p.keepParts.length} 件新构件，丢弃 ${p.lostParts.length} 件。\n金币 +${p.gold}，遗物 +${p.shards}，压力 +${p.stress}。\n本次不算合格撤离。`
-            : `确认败退？\n\n本局新收获全失，带入的主手与回路保留，压力 +${p.stress}。`;
-          if (!window.confirm(msg)) return;
+            ? `紧急撤退？\n\n保留 ${p.keepParts.length} 件新纹路，丢弃 ${p.lostParts.length} 件。\n金币 +${p.gold}，遗物 +${p.shards}，压力 +${p.stress}。\n本次不算合格撤离。`
+            : `确认败退？\n\n本局新收获全失，原有装备与板面纹路保留，压力 +${p.stress}。`;
+          const field = D().manuscript(state.run.fieldManuscript);
+          if (!window.confirm(msg + (field ? `\n将遗失随行拓本「${field.name}」。` : ''))) return;
         }
         const r = run(() => V.Expedition.retreat(state, mode));
         if (r && r.ok) { ui.screen = 'settlement'; render(); }
@@ -1271,6 +1381,90 @@
       }
 
       /* ---------- 掉落 ---------- */
+      case 'groundPick': {
+        const item = [...document.querySelectorAll('[data-ground-item]')].find(node => node.dataset.token === action.token);
+        if (item && !item.disabled) item.click();
+        return;
+      }
+
+      case 'takeIngredient':
+      case 'takeMeal':
+      case 'dropIngredient': {
+        const r = run(() => V.Expedition[t](state, action.id));
+        if (r.ok) {
+          render();
+          const spec = (t === 'takeMeal' ? V.Kitchen.RECIPES : V.Kitchen.INGREDIENTS)[action.id];
+          toast((t === 'dropIngredient' ? '已丢弃' : '已拾取') + spec.name + ' ×1');
+        }
+        return;
+      }
+
+      case 'cookRecipe': {
+        if (ui.cooking || ui.modal || !['kitchen', 'campNode'].includes(ui.screen) || !V.Kitchen.canCook(state, action.id)) return;
+        const reduce = state.settings?.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const cooking = { id: action.id, scope: cookingScope(), started: performance.now() };
+        ui.cooking = cooking;
+        render();
+        cookTimer = setTimeout(() => {
+          if (ui.cooking !== cooking || cooking.scope !== cookingScope()) return;
+          ui.cooking = null;
+          const result = run(() => V.Kitchen.cook(state, cooking.id));
+          render();
+          if (result.ok) toast(`${V.Kitchen.RECIPES[cooking.id].name}已装进背包 ×1`);
+        }, reduce ? 120 : 700);
+        return;
+      }
+
+      case 'packRotate': {
+        if (!V.UI.packEditable(state,ui)) return;
+        const E = V.Expedition, token = action.token, slots = E.packSlots(state);
+        const cells = slots.flatMap((key,i)=>key === token ? [i] : []);
+        if (!cells.length) return;
+        const origin = Math.floor(cells[0]/6)*6 + Math.min(...cells.map(i=>i%6));
+        const turn = action.turn ?? (E.itemTurn(state,token)+1)%4;
+        const result = run(()=>E.turnPack(state,token,action.to ?? origin,turn));
+        if (result.ok) ui.packSelection = E.packSlots(state).indexOf(token);
+        ui.packMessage = result.ok ? '' : result.error.message;
+        if (ui.modal) renderModal(); else render();
+        return;
+      }
+      case 'groundRotate': {
+        const found = ui.groundSurvey?.finds.get(action.token);
+        if (ui.modal || ui.screen !== 'loot' || !found || performance.now() < found.end) return;
+        dispatch({type:'groundPlace',token:action.token,to:found.at,fromGround:true,turn:(V.Expedition.itemTurn(state,action.token,true)+1)%4});
+        return;
+      }
+      case 'groundDrop': {
+        if (ui.modal || ui.screen !== 'loot') return;
+        const result = run(() => V.Expedition.takeLootAt(state, action.token, Number(action.to),undefined,action.turn));
+        ui.packMessage = result.ok ? '' : result.error.message;
+        ui.packSelection = null;
+        render();
+        return;
+      }
+
+      case 'packToGround':
+      case 'groundPlace': {
+        if (ui.modal || ui.screen !== 'loot') return;
+        const token = action.token || action.id;
+        const fromGround = t === 'groundPlace' && !!action.fromGround;
+        const to = t === 'packToGround' ? V.UI.firstGroundSpace(state, ui, token) : Number(action.to);
+        const placement = V.UI.previewGroundDrop(state, ui, token, to, fromGround,action.turn);
+        if (!placement.ok) { ui.packMessage = placement.reason; toast(placement.reason); render(); return; }
+        const result = run(() => {
+          const moved = fromGround ? V.State.ok(V.State.clone(state), [], { token }) : V.Expedition.putOnGround(state, token,action.turn);
+          if (moved.ok) {
+            if (action.turn != null) (moved.state.run.groundTurns ||= {})[moved.token || token] = action.turn;
+            V.UI.saveGroundPlacement(moved.state, ui, moved.token || token, placement.at);
+          }
+          return moved;
+        });
+        ui.packMessage = result.ok ? '' : result.error.message;
+        ui.packSelection = null;
+        render();
+        return;
+      }
+
       case 'lootTake': {
         const r = run(() => V.Expedition.resolveLoot(state, action.id, 'take'));
         if (r && r.ok) render();
@@ -1298,7 +1492,9 @@
       }
 
       case 'finishNode': {
-        const r = run(() => V.Expedition.finishNode(state));
+        ui.packSelection = null;
+        ui.packMessage = '';
+        const r = run(() => V.Expedition.finishNode(state, ui.screen === 'loot'));
         if (r && r.ok) render();
         else refreshOops(r);
         return;
@@ -1314,7 +1510,7 @@
 
       case 'eventDone': {
         if (state.run.pendingLoot.length) { ui.screen = 'loot'; render(); return; }
-        const r = run(() => V.Expedition.finishNode(state));
+        const r = run(() => V.Expedition.finishNode(state, ui.screen === 'loot'));
         if (r && r.ok) render();
         else refreshOops(r);
         return;
@@ -1357,9 +1553,18 @@
 
   /* ------------------------------ 工坊辅助 ------------------------------ */
 
-  function openWorkshop(unitId) {
+  function selectFieldRune(id) {
+    if (ui.wsMode !== 'inscribe' || !state.run?.bag.includes(id) || ui.inscribeItem === id) return;
+    ui.wsDraft = ui.wsDraft.filter(p => p.itemId !== ui.inscribeItem);
+    ui.inscribeItem = id;
+    ui.wsHist = [];
+    ui.wsRedo = [];
+  }
+
+  function openWorkshop(unitId, selectedId) {
     const unit = state.roster.find((u) => u.id === unitId) || state.roster[0];
     ui.wsMode = 'workshop';
+    ui.wsPalette = 'etchings';
     ui.wsUnit = unit.id;
     ui.wsDraft = V.State.clone(unit.board.placements);
     ui.wsPick = null;
@@ -1369,13 +1574,35 @@
     ui.wsRedo = [];
     ui.wsErrors = [];
     ui.wsLocked = [];
-    const ms = unit.manuscript;
-    ui.wsMsId = ms ? ms.id : ui.wsMsId;
-    ui.wsMsRot = ms ? (ms.rotation || 0) : 0;
-    ui.wsMsMir = ms ? !!ms.mirrorY : false;
-    ui.wsMsSpotIdx = 0;
-    ui.wsMsOx = ms ? (ms.x || 0) : null;
-    ui.wsMsOy = ms ? (ms.y || 0) : null;
+    ui.wsMsPoses = {};
+    const id = selectedId || unit.manuscript?.id || state.manuscriptVault[0]?.id || D().MANUSCRIPT_ORDER[0];
+    selectWorkshopManuscript(id, V.State.manuscriptsOf(unit).find((m) => m.id === id));
+  }
+
+  function selectWorkshopManuscript(id, pose) {
+    ui.wsMsId = id;
+    ui.wsMsRot = pose?.rotation || 0;
+    ui.wsMsMir = !!pose?.mirrorY;
+    ui.wsMsOx = pose?.x ?? null;
+    ui.wsMsOy = pose?.y ?? null;
+    ui.wsMsSpotIdx = null;
+    ui.wsErrors = [];
+  }
+
+  function saveWorkshop(next, selectedId, message) {
+    const r = V.Roster.saveBoard(next, ui.wsUnit, ui.wsDraft);
+    const check = r.ok ? V.State.validate(r.state) : r;
+    if (!check.ok) {
+      ui.wsErrors = check.details || check.errors || [check.error.message];
+      render();
+      toast(ui.wsErrors[0]);
+      return;
+    }
+    state = r.state;
+    persistSoon();
+    openWorkshop(ui.wsUnit, selectedId);
+    render();
+    toast(message);
   }
 
   function pushHistory() {
@@ -1392,17 +1619,6 @@
     const o = opts || {};
     const packAll = o.packAll !== false;
     const maxLoad = o.maxLoad != null ? o.maxLoad : Infinity;
-    /* 功法膜占的格不能放构件：推荐布局必须先排除它们，否则 preview 一律报「压在功法上」 */
-    const msCells = new Set();
-    if (unit.manuscript && V.Manuscript) {
-      const or = V.Manuscript.orient(
-        V.Manuscript.normalize(unit.manuscript),
-        unit.manuscript.rotation || 0, !!unit.manuscript.mirrorY,
-      );
-      const ox = unit.manuscript.x || 0;
-      const oy = unit.manuscript.y || 0;
-      or.cells.forEach((c) => msCells.add((c[0] + ox) + ',' + (c[1] + oy)));
-    }
     const terms = Object.values(plate.terminals || {});
     const inTerms = terms.filter((t) => t.role === 'in');
     const outTerms = terms.filter((t) => t.role === 'out');
@@ -1416,7 +1632,6 @@
           for (let y = 0; y < plate.size; y++) {
             for (let x = 0; x < plate.size; x++) {
               if (!tf.cells.every((c) => plate.cells.has((c.x + x) + ',' + (c.y + y)))) continue;
-              if (tf.cells.some((c) => msCells.has((c.x + x) + ',' + (c.y + y)))) continue;
               const cellKeys = tf.cells.map((c) => (c.x + x) + ',' + (c.y + y));
               const ports = tf.ports.map((p) => ({
                 role: p.role, dir: p.dir,
@@ -1508,7 +1723,7 @@
       }
     }
 
-    /* 退化路径：没有功法（或功法只给两个能量点）时凑不出一条从入口到出口的链，
+    /* 退化路径：没有蚀刻法（或蚀刻法只给两个能量点）时凑不出一条从入口到出口的链，
        但仍然应该给玩家一个「几何合法」的推荐布局，而不是直接拒绝。 */
     const fallback = (() => {
       const chosen = [];
@@ -1527,12 +1742,12 @@
     return fallback;
   }
 
-  /** 工坊智能接通：在当前板面+仓库可用构件中寻一条最省件的连通方案（受负荷上限约束）。 */
+  /** 工坊智能接通：在当前板面+仓库可用纹路中寻一条最省件的连通方案（受负荷上限约束）。 */
   function findSmartConnectLayout(st, unit, plate, itemIds, loadCap) {
     return findAutoInscribeLayout(st, unit, plate, itemIds, { packAll: false, maxLoad: loadCap });
   }
 
-  /** 原地旋转/翻转若踩出板边或与构件碰撞，附近 ±2 格内寻找最近的合法落点让位。 */
+  /** 原地旋转/翻转若踩出板边或与纹路碰撞，附近 ±2 格内寻找最近的合法落点让位。 */
   function findNudgeFit(itemId, shape, x0, y0) {
     const offsets = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]];
     for (let i = 0; i < offsets.length; i++) {
@@ -1543,65 +1758,35 @@
     return null;
   }
 
-  /** 双击仓库构件时寻找最佳落点（优先当前朝向，其次旋转/翻转）。 */
+  /** 工坊手动试铺与双击共用当前预览的拓片和草稿。 */
   function findQuickPlaceSpot(itemId, prefRot, prefMir) {
-    const unit = state.roster.find((u) => u.id === ui.wsUnit);
+    const unit = V.UI.workshopUnit(state.roster.find(u => u.id === ui.wsUnit), ui);
     if (!unit) return null;
     const plate = V.Circuit.plateOf(unit);
-    const cells = plate.cellsList || [...plate.cells].map((k) => k.split(',').map(Number));
-    const orients = [{ rot: prefRot, mir: prefMir }];
-    for (let m = 0; m < 2; m++) {
-      for (let r = 0; r < 4; r++) {
-        if (r === prefRot && !!m === !!prefMir) continue;
-        orients.push({ rot: r, mir: !!m });
-      }
-    }
-    for (let oi = 0; oi < orients.length; oi++) {
-      const { rot, mir } = orients[oi];
-      const shape = V.UI && V.UI.partShape ? V.UI.partShape(state, itemId, rot, mir) : null;
-      if (!shape) continue;
-      for (let ci = 0; ci < cells.length; ci++) {
-        const [x, y] = cells[ci];
-        if (checkDropValid({ id: itemId, shape }, { x, y }).ok) {
-          return { x, y, rotation: rot, mirrorY: mir };
-        }
-      }
-    }
-    return null;
+    const ms = V.UI.resolveManuscript(unit, plate, ui, V.Circuit.layout(state, ui.wsDraft));
+    return V.Circuit.suggestPlacement(state, unit, ui.wsDraft, itemId, ms, prefRot, prefMir);
   }
 
-  /** 预设需要现造构件实例（只在营地里用，会写进 state）。 */
+  /** 预设只使用已拥有的纹路，选中后的改动留在草稿。 */
   function buildPreset(st, unit, preset) {
-    const next = V.State.clone(st);
-    const u = next.roster.find((x) => x.id === unit.id);
-    const created = [];
-
-    /* 先把原板面全部退回仓库，再按预设重摆 */
-    u.board.placements.forEach((p) => {
-      if (!next.stash.includes(p.itemId)) next.stash.push(p.itemId);
-    });
+    const previewState = { ...st, roster: [unit] };
+    const pool = [...st.stash, ...unit.board.placements.map((p) => p.itemId)];
 
     const basePlacements = [];
     for (const slot of preset.layout) {
-      let part = next.stash.map((id) => next.itemsById[id])
+      const part = pool.map((id) => st.itemsById[id])
         .find((it) => it && it.kind === 'circuit' && it.templateId === slot.templateId
-          && !created.some((c) => c.itemId === it.id)
           && !basePlacements.some((p) => p.itemId === it.id));
-      if (!part) {
-        part = V.State.makePart(next, { kind: 'circuit', templateId: slot.templateId });
-        next.itemsById[part.id] = part;
-        next.stash.push(part.id);
-      }
+      if (!part) return { ok: false, reason: `缺少${D().template(slot.templateId).name}` };
       basePlacements.push({
         itemId: part.id, x: slot.x, y: slot.y,
         rotation: slot.rotation || 0, mirrorY: !!slot.mirrorY,
       });
-      created.push({ itemId: part.id });
     }
 
-    const plate = V.Circuit.plateOf(u);
+    const plate = V.Circuit.plateOf(unit);
     let chosen = basePlacements;
-    let pv = V.Circuit.preview(next, unit.id, chosen);
+    let pv = V.Circuit.preview(previewState, unit.id, chosen);
     if (!pv.ok && plate.generated) {
       let found = null;
       for (let d = 1; d <= 8 && !found; d++) {
@@ -1609,7 +1794,7 @@
           for (let dx = -d; dx <= d && !found; dx++) {
             if (Math.abs(dx) + Math.abs(dy) !== d) continue;
             const shifted = basePlacements.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
-            const testPv = V.Circuit.preview(next, unit.id, shifted);
+            const testPv = V.Circuit.preview(previewState, unit.id, shifted);
             if (testPv.ok) found = { shifted, testPv };
           }
         }
@@ -1621,7 +1806,6 @@
     }
     if (!pv.ok) return { ok: false, reason: pv.errors.join('；') };
 
-    state = next;
     return { ok: true, placements: chosen };
   }
 
@@ -1699,24 +1883,25 @@
   }
 
   /** 拖拽落点智能吸附：先试理想锚点，若边角贴空或撞邻件，则在半径 1 格内找最近合法贴位 */
-  function bestDragAnchor(itemId, shape, rawCell, grabDx, grabDy) {
+  function bestDragAnchor(itemId, shape, rawCell, grabDx, grabDy, kind) {
     if (!shape || !rawCell) return null;
     const plate = activePlate();
     const raw = { x: rawCell.x - grabDx, y: rawCell.y - grabDy };
+    if (kind === 'ms' || kind === 'msNew') return { anchor: raw, valid: checkDropValid({ id: itemId, shape, kind }, raw) };
     const clamped = clampAnchor(shape, raw, plate);
-    const direct = checkDropValid({ id: itemId, shape }, clamped);
+    const direct = checkDropValid({ id: itemId, shape, kind }, clamped);
     if (direct.ok) return { anchor: clamped, valid: direct };
 
     /* 某些异形空角（如分流器左上角为空）未夹取反而能合法落子，亦纳入候选 */
     const rawValid = (raw.x !== clamped.x || raw.y !== clamped.y)
-      ? checkDropValid({ id: itemId, shape }, raw)
+      ? checkDropValid({ id: itemId, shape, kind }, raw)
       : null;
     if (rawValid && rawValid.ok) return { anchor: raw, valid: rawValid };
 
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
     for (let i = 0; i < dirs.length; i++) {
       const cand = { x: raw.x + dirs[i][0], y: raw.y + dirs[i][1] };
-      const v = checkDropValid({ id: itemId, shape }, cand);
+      const v = checkDropValid({ id: itemId, shape, kind }, cand);
       if (v.ok) return { anchor: cand, valid: v };
     }
     return { anchor: clamped, valid: direct };
@@ -1738,18 +1923,15 @@
     const plate = unit ? V.Circuit.plateOf(unit) : null;
     const body = unit ? D().body(unit.bodyPreset) : null;
     const blocked = new Set(plate && !plate.generated && body && body.blocked ? body.blocked.map(([x, y]) => x + ',' + y) : []);
-    const others = (ui.wsDraft || []).filter((p) => p.itemId !== d.id);
+    const replacingFieldRune = ui.wsMode === 'inscribe' && state.run?.bag.includes(d.id);
+    const others = (ui.wsDraft || []).filter(p => p.itemId !== d.id && !(replacingFieldRune && p.itemId === ui.inscribeItem));
     const L = V.Circuit.layout(state, others, plate && plate.terminals);
     const used = new Set(L.cells.map((c) => c.x + ',' + c.y));
-    /* 从谱表拖进来的功法：别处已经铺了膜，那几格也不能占 */
-    if (String(d.id).indexOf('ms:') === 0 && unit && unit.manuscript && V.Manuscript) {
-      const cur = V.Manuscript.orient(
-        V.Manuscript.normalize(unit.manuscript),
-        unit.manuscript.rotation || 0, !!unit.manuscript.mirrorY,
-      );
-      const ox0 = unit.manuscript.x || 0;
-      const oy0 = unit.manuscript.y || 0;
-      cur.cells.forEach((c) => used.add((c[0] + ox0) + ',' + (c[1] + oy0)));
+    const isMs = d.kind === 'ms' || d.kind === 'msNew';
+    if (isMs) {
+      const free = new Set(V.State.freeManuscriptCells(V.UI.workshopUnit(unit, ui), d.id.slice(3)).map(([x, y]) => x + ',' + y));
+      used.clear();
+      plate.cells.forEach((key) => { if (!free.has(key)) used.add(key); });
     }
 
     const conflicts = new Set();
@@ -1775,14 +1957,14 @@
     const reason = hitBlocked
       ? '踩中屏蔽格'
       : hitOverlap
-        ? '与其他构件重叠'
+        ? (isMs ? '与其他蚀刻法重叠' : '与其他纹路重叠')
         : hitOutside
           ? (plate && plate.generated ? '不在板面上' : '超出板面')
           : conflicts.size ? '不在板面上' : '';
     return { ok: conflicts.size === 0, conflicts, reason };
   }
 
-  /** 吸附预览：在板面上按构件真实形状与端口朝向画出半透明虚影，并区分合法/冲突格。 */
+  /** 吸附预览：在板面上按纹路真实形状与端口朝向画出半透明虚影，并区分合法/冲突格。 */
   function showDropGhost(svg, shape, anchor, valid) {
     if (!svg) return;
     let g = svg.querySelector('.drop-ghost');
@@ -1806,17 +1988,9 @@
       const x = grid.gx + ax * grid.cell;
       const y = grid.gy + ay * grid.cell;
       return `<rect class="drop-ghost-cell ${bad ? 'bad' : 'ok'}" x="${x + 2}" y="${y + 2}"
-        width="${grid.cell - 4}" height="${grid.cell - 4}" rx="2" fill="${bad ? '#D36A65' : shape.color}"/>`;
+        width="${grid.cell - 4}" height="${grid.cell - 4}" rx="1"/>`;
     }).join('');
-    const dvec = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
-    const portsHtml = (shape.ports || []).map((pt) => {
-      const [dx, dy] = dvec[pt.dir] || [0, 0];
-      const cx = grid.gx + (pt.cell[0] + anchor.x + 0.5) * grid.cell + dx * (grid.cell * 0.42);
-      const cy = grid.gy + (pt.cell[1] + anchor.y + 0.5) * grid.cell + dy * (grid.cell * 0.42);
-      const fill = pt.role === 'in' ? '#7FBBC8' : '#F2CF7E';
-      return `<circle class="drop-ghost-port-svg" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.6" fill="${fill}"/>`;
-    }).join('');
-    const html = cellsHtml + portsHtml;
+    const html = cellsHtml + `<g transform="translate(${grid.gx + (anchor.x+shape.minX)*grid.cell} ${grid.gy + (anchor.y+shape.minY)*grid.cell})">${previewEngraving(shape, grid.cell)}</g>`;
     if (g.dataset.key !== html) {
       g.innerHTML = html;
       g.dataset.key = html;
@@ -1837,19 +2011,27 @@
 
   /** 板面一格在屏幕上占多少像素：幽灵要跟板面同尺寸才对得上 */
   function cellPixelSize(svg) {
-    const vb = svg.viewBox && svg.viewBox.baseVal;
-    const rect = svg.getBoundingClientRect();
-    if (!vb || !vb.width || !rect.width) return 0;
-    return (rect.width / vb.width) * boardGrid(svg).cell;
+    const ctm = svg && svg.getScreenCTM();
+    return ctm ? Math.hypot(ctm.a, ctm.b) * boardGrid(svg).cell : 0;
   }
 
-  /** 跟着指针走的构件虚影：按真实格子数、端口方向与配色拼出来 */
+  /** 浮动和落点两种预览始终使用当前朝向的同一道刻痕。 */
+  function previewEngraving(shape, cell) {
+    if (shape.membrane) return V.UI.membraneEngraving(shape.membrane, cell);
+    const art = V.RuneArt.image(shape.templateId, { cell, rotation: shape.rot, mirrorY: shape.mir });
+    const ports = shape.ports.map(pt => {
+      const [dx,dy] = { N: [0,-1], E: [1,0], S: [0,1], W: [-1,0] }[pt.dir];
+      return V.UI.portCut((pt.cell[0]-shape.minX+.5)*60 + dx*28, (pt.cell[1]-shape.minY+.5)*60 + dy*28, pt.dir, pt.role, 'lit drop-ghost-port-svg');
+    }).join('');
+    return art + `<g transform="scale(${cell/60})">${ports}</g>`;
+  }
+
   function buildFloatGhost(shape, cellPx, label) {
     const el = document.createElement('div');
     el.className = 'drag-ghost';
     if (!shape || !cellPx) {
       el.classList.add('drag-ghost-text');
-      el.textContent = label || '构件';
+      el.textContent = label || '纹路';
       document.body.appendChild(el);
       return el;
     }
@@ -1865,20 +2047,13 @@
       i.style.top = (c.y - shape.minY) * cellPx + 'px';
       i.style.width = cellPx + 'px';
       i.style.height = cellPx + 'px';
-      i.style.background = shape.color;
-      if (shape.edgeColor) i.style.borderColor = shape.edgeColor;
       el.appendChild(i);
     });
-    if (shape.templateId && V.RuneArt && V.RuneArt.image) {
-      const svgNS = 'http://www.w3.org/2000/svg';
-      const svg = document.createElementNS(svgNS, 'svg');
-      svg.setAttribute('class', 'drag-ghost-rune');
-      svg.setAttribute('viewBox', `0 0 ${gw} ${gh}`);
-      svg.innerHTML = V.RuneArt.image(shape.templateId, {
-        x: 0, y: 0, cell: cellPx, rotation: shape.rot || 0, mirrorY: !!shape.mir,
-      });
-      el.appendChild(svg);
-    }
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'drag-ghost-rune');
+    svg.setAttribute('viewBox', `0 0 ${gw} ${gh}`);
+    svg.innerHTML = previewEngraving(shape, cellPx);
+    el.appendChild(svg);
     shape.cells.forEach((c) => {
       const ov = document.createElement('b');
       ov.className = 'drag-ghost-cell-ov';
@@ -1890,20 +2065,9 @@
       ov.style.height = cellPx + 'px';
       el.appendChild(ov);
     });
-    const dvec = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
-    (shape.ports || []).forEach((pt) => {
-      const dot = document.createElement('b');
-      dot.className = 'drag-ghost-port ' + (pt.role === 'in' ? 'in' : 'out');
-      const [dx, dy] = dvec[pt.dir] || [0, 0];
-      const cx = (pt.cell[0] - shape.minX + 0.5 + dx * 0.44) * cellPx;
-      const cy = (pt.cell[1] - shape.minY + 0.5 + dy * 0.44) * cellPx;
-      dot.style.left = cx + 'px';
-      dot.style.top = cy + 'px';
-      el.appendChild(dot);
-    });
     const name = document.createElement('span');
     name.className = 'drag-ghost-name';
-    name.textContent = shape.name || label || '构件';
+    name.textContent = shape.name || label || '纹路';
     el.appendChild(name);
     document.body.appendChild(el);
     return el;
@@ -1914,7 +2078,7 @@
     const rawCell = cellFromPointRaw(drag.svg, clientX, clientY);
     const hitCell = cellFromPoint(drag.svg, clientX, clientY);
     const best = rawCell && drag.shape
-      ? bestDragAnchor(drag.id, drag.shape, rawCell, drag.grabDx, drag.grabDy)
+      ? bestDragAnchor(drag.id, drag.shape, rawCell, drag.grabDx, drag.grabDy, drag.kind)
       : null;
     /* 光标完全落在空洞上且周围也没有可吸贴位时，若从板内拖出则显示松手卸下 */
     const anchor = best && (best.valid.ok || hitCell) ? best.anchor : null;
@@ -1972,10 +2136,25 @@
   function rotateInDrag(step) {
     if (!drag || !drag.moved) return;
     drag.rot = (drag.rot + (step === 3 ? 3 : 1)) % 4;
-    drag.shape = V.UI && V.UI.partShape ? V.UI.partShape(state, drag.id, drag.rot, drag.mir) : drag.shape;
+    refreshDragShape();
     if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
     drag.ghost = buildFloatGhost(drag.shape, drag.cellPx, drag.label);
     updateDragVisuals(drag.lastX, drag.lastY);
+  }
+
+  function manuscriptDragShape(id, rot, mir) {
+    const membrane = V.Manuscript.orient(V.Manuscript.normalize(D().manuscript(id)), rot, mir);
+    return {
+      name: membrane.name, membrane, minX: 0, minY: 0,
+      maxX: Math.max(...membrane.cells.map(c => c[0])), maxY: Math.max(...membrane.cells.map(c => c[1])),
+      cells: membrane.cells.map(([x, y]) => ({ x, y })),
+    };
+  }
+
+  function refreshDragShape() {
+    drag.shape = drag.kind === 'ms' || drag.kind === 'msNew'
+      ? manuscriptDragShape(drag.msId, drag.rot, drag.mir)
+      : V.UI.partShape(state, drag.id, drag.rot, drag.mir);
   }
 
   function updateHoverGhost(clientX, clientY) {
@@ -1998,8 +2177,385 @@
   }
 
   let lastClick = { key: '', ts: 0 };
+  let scarHint = null;
+  let scarHintTimer = null;
+
+  /** 提示不占格子命中层，保持拖放与点击装配可用。@returns {void} */
+  function clearScarHint() {
+    clearTimeout(scarHintTimer);
+    if (scarHint) scarHint.removeAttribute('aria-describedby');
+    scarHint = null;
+    document.getElementById('scar-tooltip')?.remove();
+  }
+
+  /** 鼠标停留后展示；键盘焦点与触屏点击直接展示。@param {Element|null} node @param {number} x @param {number} y @param {boolean} immediate @returns {void} */
+  function queueScarHint(node, x, y, immediate = false) {
+    if (node === scarHint) return;
+    clearScarHint();
+    if (!node || drag || (ui.wsPick && !immediate)) return;
+    scarHint = node;
+    const show = () => {
+      if (!node.isConnected || node !== scarHint) return;
+      const tip = document.createElement('div');
+      tip.id = 'scar-tooltip';
+      tip.className = 'scar-tooltip';
+      tip.setAttribute('role', 'tooltip');
+      tip.textContent = node.dataset.scarTooltip;
+      document.body.appendChild(tip);
+      node.setAttribute('aria-describedby', tip.id);
+      tip.style.left = Math.max(10, Math.min(innerWidth - tip.offsetWidth - 10, x + 14)) + 'px';
+      tip.style.top = Math.max(10, Math.min(innerHeight - tip.offsetHeight - 10, y + 16)) + 'px';
+    };
+    if (immediate) show();
+    else scarHintTimer = setTimeout(show, 550);
+  }
+
+  /** 触屏点格查看时不同时选中下面的纹路。@param {PointerEvent} e @returns {void} */
+  function touchScarHint(e) {
+    if (e.pointerType !== 'touch') return;
+    const svg = e.target.closest && e.target.closest('svg.board');
+    const cell = svg && cellFromPointRaw(svg, e.clientX, e.clientY);
+    const node = cell && svg.querySelector(`[data-scar="${cell.x},${cell.y}"]`);
+    if (!node) return;
+    queueScarHint(node, e.clientX, e.clientY, true);
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+  }
 
   function bind() {
+    let lootDrag = null;
+    let skipLootClick = false;
+    function clearLootTargets() {
+      document.querySelectorAll('.loot-page .drop-target').forEach(el => el.classList.remove('drop-target', 'bad-fit'));
+    }
+    function clearLootDrag() {
+      if (!lootDrag) return;
+      skipLootClick = lootDrag.moved;
+      lootDrag.ghost?.remove();
+      lootDrag.source.classList.remove('loot-lifting');
+      clearLootTargets();
+      lootDrag = null;
+    }
+    /** 两边都以实际格距计算，地面的图案缺口不改变抓取锚点。 */
+    function lootGrid(grid) {
+      const ground = grid.matches('.ground-grid'), columns = ground ? Number(grid.dataset.groundColumns) : 6;
+      const attribute = ground ? 'data-ground-slot' : 'data-pack-slot';
+      const cells = grid.querySelectorAll('[' + attribute + ']');
+      const first = cells[0].getBoundingClientRect(), second = cells[1]?.getBoundingClientRect(), below = cells[columns]?.getBoundingClientRect();
+      const style = getComputedStyle(grid);
+      return { grid, ground, columns, attribute, cells, left: first.left, top: first.top,
+        cellW: first.width, cellH: first.height,
+        pitchX: second ? second.left - first.left : first.width + (parseFloat(style.columnGap) || 0),
+        pitchY: below ? below.top - first.top : first.height + (parseFloat(style.rowGap) || 0) };
+    }
+    function sizeLootGhost(d, metric) {
+      const width = Math.max(...d.cells.map(c => c[0])) * metric.pitchX + metric.cellW;
+      const height = Math.max(...d.cells.map(c => c[1])) * metric.pitchY + metric.cellH;
+      d.ghost.style.width = width + 'px';
+      d.ghost.style.height = height + 'px';
+      d.ghost.querySelectorAll(':scope > i').forEach((cell, i) => {
+        const [cx, cy] = d.cells[i];
+        Object.assign(cell.style, { left: cx * metric.pitchX + 'px', top: cy * metric.pitchY + 'px', width: metric.cellW + 'px', height: metric.cellH + 'px' });
+      });
+    }
+    function moveLootDrag(x, y) {
+      const d = lootDrag;
+      if (!d) return;
+      if (!d.moved && Math.hypot(x - d.x, y - d.y) < 5) return;
+      if (!d.moved) {
+        d.moved = true;
+        const ghost = document.createElement('div');
+        ghost.className = 'loot-drop-ghost';
+        ghost.style.setProperty('--item-turn',d.turn*90+'deg');
+        ghost.setAttribute('aria-hidden', 'true');
+        for (const cell of d.cells) ghost.appendChild(document.createElement('i'));
+        if (d.art) {
+          const face = document.createElement('span');
+          face.className = 'ground-face';
+          Object.assign(face.style, { left: '0', top: '0', width: '100%', height: '100%' });
+          face.appendChild(d.art.cloneNode(true));
+          ghost.appendChild(face);
+        }
+        document.body.appendChild(ghost);
+        d.ghost = ghost;
+        d.source.classList.add('loot-lifting');
+      }
+      d.lastX = x; d.lastY = y;
+      clearLootTargets();
+      d.destination = null;
+      d.preview = null;
+      const hit = document.elementFromPoint(x, y), grid = hit?.closest('.loot-page .ground-grid, .loot-page .pack-grid');
+      let metric = lootGrid(grid || document.querySelector('.loot-pack .pack-grid'));
+      let anchor = null;
+      const diner = hit?.closest('.loot-page .pack-diner');
+      if (!d.fromGround && !d.overflow && d.token.startsWith('meal:') && diner) {
+        d.preview = { ok: V.Kitchen.canEat(state, V.Expedition.stackSpec(d.token).id, diner.dataset.id), reason: '这位队员暂时不需要用餐' };
+        d.destination = { kind: 'diner', id: diner.dataset.id };
+        diner.classList.add('drop-target');
+        diner.classList.toggle('bad-fit', !d.preview.ok);
+      } else if (grid) {
+        const col = Math.floor((x - metric.left) / metric.pitchX), row = Math.floor((y - metric.top) / metric.pitchY);
+        const hovered = row * metric.columns + col;
+        if (col >= 0 && col < metric.columns && row >= 0 && hovered < metric.cells.length) {
+          const E = V.Expedition, slots = E.packSlots(state), entry = E.stackSpec(d.token);
+          const merge = !metric.ground && d.fromGround && entry && E.stackSpec(slots[hovered])?.base === entry.base;
+          const ax = col - d.grabX, ay = row - d.grabY;
+          const to = merge ? hovered : ax < 0 || ax >= metric.columns || ay < 0 ? -1 : ay * metric.columns + ax;
+          if (metric.ground) {
+            d.preview = V.UI.previewGroundDrop(state, ui, d.token, to, d.fromGround,d.turn);
+            d.destination = { kind: 'ground', to };
+            anchor = d.preview.at;
+          } else if (d.fromGround) {
+            d.preview = E.previewLootDrop(state, d.token, to,undefined,d.turn);
+            d.destination = { kind: 'pack', to };
+            anchor = merge ? Math.min(...d.preview.indices) : to;
+          } else if (d.turn !== E.itemTurn(state,d.token) && !d.overflow) {
+            d.preview = E.turnedPackDrop(state,d.token,to,d.turn);
+            d.destination = {kind:'rotate',to};
+            anchor = to;
+          } else if (d.overflow) {
+            d.preview = { ok: false, indices: [hovered], reason: '请先放到地面，再拖入背包空位' };
+          } else {
+            const result = E.movePack(state, d.from, hovered);
+            const dx = col - d.from % 6, dy = row - Math.floor(d.from / 6);
+            const indices = slots.flatMap((token, i) => token === d.token ? [i + dx + dy * 6] : []);
+            d.preview = { ok: result.ok, indices, reason: result.error?.message };
+            d.destination = { kind: 'move', to: hovered };
+            anchor = to;
+          }
+          for (const i of d.preview.indices?.length ? d.preview.indices : [hovered]) {
+            const mark = metric.grid.querySelector('[' + metric.attribute + '="' + i + '"]');
+            mark?.classList.add('drop-target');
+            mark?.classList.toggle('bad-fit', !d.preview.ok);
+          }
+        }
+      }
+      sizeLootGhost(d, metric);
+      d.ghost.classList.toggle('bad-fit', !!d.preview && !d.preview.ok);
+      const at = d.preview?.ok && Number.isInteger(anchor) && anchor >= 0
+        ? metric.grid.querySelector('[' + metric.attribute + '="' + anchor + '"]')?.getBoundingClientRect() : null;
+      d.ghost.style.transform = `translate(${at ? at.left : x - (d.grabX + .5) * metric.pitchX}px, ${at ? at.top : y - (d.grabY + .5) * metric.pitchY}px)`;
+    }
+    document.addEventListener('click', e => {
+      if (skipLootClick && e.target.closest?.('.loot-page')) {
+        skipLootClick = false;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }, true);
+    let shelfDrag = null;
+    document.addEventListener('dragstart', e => {
+      const cell = e.target.closest?.('[data-act="storeSlot"]');
+      if (!cell?.dataset.token) return;
+      const layout = V.Expedition.storeLayout(state,ui.stashShelf || 'food');
+      const token = cell.dataset.token, origin = layout.places[token].at, index = Number(cell.dataset.id);
+      shelfDrag = {token, dx:index%6-origin%6, dy:Math.floor(index/6)-Math.floor(origin/6)};
+      e.dataTransfer.setData('text/plain',token);
+      const image = cell.closest('.store-grid').querySelector('[data-pack-art="'+CSS.escape(token)+'"]');
+      const rect = image.getBoundingClientRect();
+      e.dataTransfer.setDragImage(image,e.clientX-rect.left,e.clientY-rect.top);
+    });
+    document.addEventListener('dragover', e => {
+      if (shelfDrag && e.target.closest?.('[data-act="storeSlot"]')) e.preventDefault();
+    });
+    document.addEventListener('drop', e => {
+      const cell = e.target.closest?.('[data-act="storeSlot"]');
+      if (!shelfDrag || !cell) return;
+      e.preventDefault();
+      const index = Number(cell.dataset.id), x = index%6-shelfDrag.dx, y = Math.floor(index/6)-shelfDrag.dy;
+      dispatch({type:'storeMove',token:shelfDrag.token,id:x<0 || y<0 ? -1 : y*6+x});
+      shelfDrag = null;
+    });
+    document.addEventListener('dragend', () => { shelfDrag = null; });
+    document.addEventListener('keydown', e => {
+      if (ui.screen === 'stash' && !ui.modal && ui.storePick && !e.repeat && e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey && !e.target.closest?.('input,textarea,select')) {
+        e.preventDefault();
+        dispatch({type:'storeRotate'});
+      }
+    });
+    document.addEventListener('dragstart', e => {
+      if (ui.screen === 'loot' && !ui.modal && e.target.closest?.('[data-ground-item], .loot-pack [data-pack-slot], [data-pack-overflow]')) e.preventDefault();
+    });
+    document.addEventListener('pointerdown', e => {
+      skipLootClick = false;
+      if (ui.screen !== 'loot' || ui.modal || e.button !== 0 || e.target.closest?.('[data-act="packToGround"]')) return;
+      const source = e.target.closest?.('[data-ground-item], .loot-pack [data-pack-slot], [data-pack-overflow]');
+      const token = source?.dataset.token;
+      if (!token || source.matches('[data-ground-item]') && source.dataset.scan !== 'revealed') return;
+      clearLootDrag();
+      const E = V.Expedition, fromGround = source.hasAttribute('data-ground-item');
+      const turn = E.itemTurn(state,token,fromGround), cells = E.packShape(state,token,turn);
+      if (!cells.length) return;
+      const overflow = source.hasAttribute('data-pack-overflow'), slots = E.packSlots(state);
+      const indices = slots.flatMap((t, i) => t === token ? [i] : []);
+      const from = source.hasAttribute('data-pack-slot') ? Number(source.dataset.packSlot) : null;
+      let grabX = 0, grabY = 0;
+      if (fromGround) {
+        const metric = lootGrid(source.closest('.ground-grid'));
+        grabX = Math.floor((e.clientX - metric.left) / metric.pitchX) - Number(source.dataset.groundX);
+        grabY = Math.floor((e.clientY - metric.top) / metric.pitchY) - Number(source.dataset.groundY);
+      } else if (!overflow) {
+        grabX = from % 6 - Math.min(...indices.map(i => i % 6));
+        grabY = Math.floor(from / 6) - Math.floor(indices[0] / 6);
+      }
+      const artRoot = fromGround ? source.querySelector('.ground-face') : overflow ? source : source.closest('.pack-grid').querySelector('[data-pack-art="' + CSS.escape(token) + '"]');
+      lootDrag = { source, token, turn, cells, fromGround, overflow, from, grabX, grabY, x: e.clientX, y: e.clientY,
+        pointer: e.pointerId, moved: false, art: artRoot?.querySelector('.rune-thumb, .catalogue-icon') };
+    });
+    document.addEventListener('pointermove', e => {
+      if (!lootDrag || lootDrag.pointer !== e.pointerId) return;
+      moveLootDrag(e.clientX, e.clientY);
+      if (lootDrag.moved) e.preventDefault();
+    }, { passive: false });
+    document.addEventListener('pointerup', e => {
+      if (!lootDrag || lootDrag.pointer !== e.pointerId) return;
+      const d = lootDrag;
+      if (d.moved) moveLootDrag(e.clientX, e.clientY);
+      clearLootDrag();
+      if (!d.moved || !d.preview) return;
+      if (!d.preview.ok) { ui.packMessage = d.preview.reason; toast(d.preview.reason); render(); return; }
+      const target = d.destination;
+      if (target.kind === 'ground') dispatch({ type: 'groundPlace', token: d.token, to: target.to, turn:d.turn, fromGround: d.fromGround });
+      else if (target.kind === 'pack') dispatch({ type: 'groundDrop', token: d.token, turn:d.turn, to: target.to });
+      else if (target.kind === 'diner') dispatch({ type: 'packEat', token: d.token, id: target.id });
+      else if (target.kind === 'rotate') dispatch({type:'packRotate',token:d.token,turn:d.turn,to:target.to});
+      else if (target.kind === 'move') dispatch({ type: 'packMove', from: d.from, to: target.to });
+    });
+    document.addEventListener('pointercancel', clearLootDrag);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { clearLootDrag(); return; }
+      if (e.key.toLowerCase() !== 'r' || e.ctrlKey || e.altKey || e.metaKey || e.repeat ||
+        e.target.closest?.('input,textarea,[contenteditable=true]')) return;
+      const d = lootDrag, E = V.Expedition;
+      if (d?.moved && d.cells.length > 1) {
+        e.preventDefault();
+        const bottom = Math.max(...d.cells.map(c=>c[1]));
+        [d.grabX,d.grabY] = [bottom-d.grabY,d.grabX];
+        d.turn = (d.turn+1)%4;
+        d.cells = E.packShape(state,d.token,d.turn);
+        const face = d.ghost.querySelector('.ground-face');
+        if (face && d.token.startsWith('part:')) face.innerHTML = V.RuneArt.thumb(state.itemsById[d.token.slice(5)].templateId,null,d.turn);
+        d.ghost.style.setProperty('--item-turn',d.turn*90+'deg');
+        moveLootDrag(d.lastX,d.lastY);
+      } else if (!d && (ui.screen === 'loot' || ui.modal === 'pack')) {
+        const token = E.packSlots(state)[ui.packSelection];
+        if (token && E.packShape(state,token).length > 1) { e.preventDefault(); dispatch({type:'packRotate',token}); }
+      }
+    });
+    window.addEventListener('blur', clearLootDrag);
+    document.addEventListener('input', e => {
+      if (e.target.id === 'modalSaveBox') ui.modalSaveText = e.target.value;
+      if (e.target.matches('[data-catalogue-query], [data-catalogue-filter]')) filterCatalogue(e.target.closest('[data-catalogue]'));
+    });
+    let packDrag = null;
+    const slotAt = e => e.target.closest?.('[data-pack-slot]');
+    function packArt(slot) {
+      return slot?.dataset.token && slot.closest('.pack-grid').querySelector('[data-pack-art="' + CSS.escape(slot.dataset.token) + '"]');
+    }
+    for (const [event, active] of [['pointerover',true],['pointerout',false],['focusin',true],['focusout',false]]) {
+      document.addEventListener(event, e => {
+        const art = packArt(slotAt(e));
+        if (art) art.classList.toggle('is-pointed', active);
+      });
+    }
+    function clearPackTarget() {
+      document.querySelectorAll('.pack-slot.drop-target').forEach(slot => slot.classList.remove('drop-target','bad-fit'));
+      document.querySelector('.pack-diner.drop-target')?.classList.remove('drop-target','bad-fit');
+      if (packDrag) packDrag.to = null;
+    }
+    document.addEventListener('dragstart', e => {
+      if (ui.screen === 'loot' && !ui.modal) return;
+      const slot = slotAt(e);
+      if (!slot?.draggable) return;
+      const from = Number(slot.dataset.packSlot);
+      const slots = V.Expedition.packSlots(state);
+      packDrag = {from, token:slots[from], to:null, valid:false, indices:slots.flatMap((token,i) => token === slots[from] ? [i] : [])};
+      const art = packArt(slot);
+      const bounds = art.getBoundingClientRect();
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', slot.getAttribute('aria-label'));
+      e.dataTransfer.setDragImage(art, e.clientX-bounds.left, e.clientY-bounds.top);
+    });
+    document.addEventListener('dragover', e => {
+      if (!packDrag) return;
+      const diner = e.target.closest?.('.pack-diner');
+      if (diner && packDrag.token.startsWith('meal:')) {
+        e.preventDefault();
+        if (diner.dataset.id !== packDrag.to) {
+          clearPackTarget();
+          packDrag.to = diner.dataset.id;
+          packDrag.valid = V.Kitchen.canEat(state, packDrag.token.slice(5).split('#')[0], diner.dataset.id);
+          diner.classList.add('drop-target');
+          diner.classList.toggle('bad-fit', !packDrag.valid);
+        }
+        e.dataTransfer.dropEffect = packDrag.valid ? 'move' : 'none';
+        return;
+      }
+      const slot = slotAt(e);
+      if (!slot) { if (packDrag.to !== null) clearPackTarget(); return; }
+      e.preventDefault();
+      const to = Number(slot.dataset.packSlot);
+      if (to !== packDrag.to) {
+        clearPackTarget();
+        const {from, indices} = packDrag;
+        packDrag.to = to;
+        packDrag.valid = V.Expedition.movePack(state,from,to).ok;
+        const cells = slot.closest('.pack-grid').querySelectorAll('[data-pack-slot]');
+        for (const i of indices) {
+          const x = i%6 + to%6 - from%6;
+          const dest = i + to - from;
+          if (x < 0 || x >= 6 || !cells[dest]) continue;
+          cells[dest].classList.add('drop-target');
+          cells[dest].classList.toggle('bad-fit', !packDrag.valid);
+        }
+      }
+      e.dataTransfer.dropEffect = packDrag.valid ? 'move' : 'none';
+    });
+    document.addEventListener('drop', e => {
+      const diner = e.target.closest?.('.pack-diner');
+      if (packDrag?.token.startsWith('meal:') && diner) {
+        e.preventDefault();
+        const token = packDrag.token;
+        clearPackTarget();
+        packDrag = null;
+        dispatch({ type:'packEat', id:diner.dataset.id, token });
+        return;
+      }
+      const slot = slotAt(e);
+      if (!packDrag || !slot) return;
+      e.preventDefault();
+      const from = packDrag.from;
+      clearPackTarget();
+      packDrag = null;
+      dispatch({ type:'packMove', from, to:Number(slot.dataset.packSlot) });
+    });
+    document.addEventListener('dragend', () => {
+      clearPackTarget();
+      packDrag = null;
+    });
+
+    document.addEventListener('click', e => {
+      const more = e.target.closest('[data-catalogue-more]');
+      if (!more) return;
+      const book = more.closest('[data-catalogue]');
+      filterCatalogue(book, Number(book.dataset.limit) + 8);
+    });
+    document.addEventListener('pointermove', (e) => {
+      const svg = e.target.closest && e.target.closest('svg.board');
+      const cell = svg && cellFromPointRaw(svg, e.clientX, e.clientY);
+      const node = cell && svg.querySelector(`[data-scar="${cell.x},${cell.y}"]`);
+      queueScarHint(node || null, e.clientX, e.clientY);
+    });
+    document.addEventListener('focusin', (e) => {
+      const node = e.target.closest && e.target.closest('[data-scar]');
+      if (!node) return;
+      const r = node.getBoundingClientRect();
+      queueScarHint(node, r.right, r.top, true);
+    });
+    document.addEventListener('focusout', clearScarHint);
+    document.addEventListener('pointerdown', clearScarHint);
+    window.addEventListener('scroll', clearScarHint, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') clearScarHint(); });
     document.addEventListener('click', (e) => {
       /* 只吞掉拖拽落在板面上产生的那一次合成点击；
          否则拖完再点「取消选中」之类的按钮会被白白吃掉一次 */
@@ -2011,7 +2567,7 @@
       const el = findAction(e.target);
       if (!el) {
         /* 点在板面的空白处（底材、毛边、格线）也算「放下」：解除手持。
-           单靠每格的命中层并不可靠——有的格会被构件图形盖住，点了没反应。 */
+           单靠每格的命中层并不可靠——有的格会被纹路图形盖住，点了没反应。 */
         const onBoard = e.target && e.target.closest && e.target.closest('svg.board');
         if (onBoard && ui.wsPick) {
           dispatch({ type: 'wsCancelPick' });
@@ -2042,10 +2598,10 @@
         lastClick = { key: '', ts: 0 };
       }
 
-      /* 功法膜的命中层只用于拖拽，没有对应的点击动作：
-         点到它就当点空白，解除手上的构件（否则这格永远"点不动"） */
+      /* 手持纹路时点膜格放置，否则单击选中这套蚀刻法。 */
       if (act === 'wsMsGrab') {
-        if (ui.wsPick) dispatch({ type: 'wsCancelPick' });
+        if (ui.wsPick) dispatch({ type: 'wsCell', id });
+        else dispatch({ type: 'wsMsPick', id: el.dataset.msId });
         return;
       }
 
@@ -2057,7 +2613,7 @@
       dispatch(action, el);
     });
 
-    /* 右键：拖曳中旋手中构件 / 板上构件快转 / 已选构件在板面上就地旋转 */
+    /* 右键：拖曳中旋手中纹路 / 板上纹路快转 / 已选纹路在板面上就地旋转 */
     document.addEventListener('contextmenu', (e) => {
       if (ui.screen !== 'workshop' && ui.screen !== 'campNode') return;
       if (drag && drag.moved) {
@@ -2081,7 +2637,7 @@
       }
     });
 
-    /* 滚轮：指针在板面上且已选或正拖拽构件时直接旋转 */
+    /* 滚轮：指针在板面上且已选或正拖拽纹路时直接旋转 */
     document.addEventListener('wheel', (e) => {
       if (ui.screen !== 'workshop' && ui.screen !== 'campNode') return;
       if (drag && drag.moved) {
@@ -2095,7 +2651,7 @@
       updateHoverGhost(e.clientX, e.clientY);
     }, { passive: false });
 
-    /* ---- 拖拽装配：从构件库拖到板面，或拖动板面上已有的构件 ---- */
+    /* ---- 拖拽装配：从纹路库拖到板面，或拖动板面上已有的纹路 ---- */
     document.addEventListener('pointerdown', (e) => {
       if (ui.screen !== 'workshop' && ui.screen !== 'campNode') return;
       if (e.button != null && e.button !== 0) return;
@@ -2105,31 +2661,30 @@
       const msChip = t.closest('[data-ms-drag="1"]');
       const group = t.closest('[data-act="wsGrab"]');
       const stash = t.closest('.part-item[data-stash="1"]');
+      if (ui.wsMode === 'inscribe' && (msGrab || msChip)) return;
       if (!msGrab && !msChip && !group && !stash) return;
       if (stash && stash.hasAttribute('disabled')) return;
       const svg = document.querySelector('svg.board');
       if (!svg) return;
 
-      /* 谱表里的功法：抓起来像构件一样拖到板面上放 */
+      /* 谱表里的蚀刻法：抓起来像纹路一样拖到板面上放 */
       if (msChip) {
         const spec = V.State && V.Data.manuscript ? V.Data.manuscript(msChip.dataset.id) : null;
         if (!spec || !V.Manuscript) return;
-        const norm = V.Manuscript.normalize(spec);
-        if (!norm || !norm.cells.length) return;
-        const xs = norm.cells.map((c) => c[0]);
-        const ys = norm.cells.map((c) => c[1]);
-        const minX = Math.min.apply(null, xs);
-        const minY = Math.min.apply(null, ys);
-        const halfX = Math.floor((Math.max.apply(null, xs) - minX) / 2);
-        const halfY = Math.floor((Math.max.apply(null, ys) - minY) / 2);
+        const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
+        const installed = V.State.manuscriptsOf(unit).find((m) => m.id === spec.id);
+        const rot = installed?.rotation ?? (ui.wsMsId === spec.id ? ui.wsMsRot : 0);
+        const mir = installed?.mirrorY ?? (ui.wsMsId === spec.id && ui.wsMsMir);
+        const shape = manuscriptDragShape(spec.id, rot, mir);
         drag = {
-          kind: 'msNew',
+          kind: installed ? 'ms' : 'msNew',
           id: 'ms:' + spec.id,
           msId: spec.id,
+          rot, mir,
           svg,
           /* 膜跟着指针居中：这两个不填，clampAnchor 会算出 NaN */
-          grabDx: halfX,
-          grabDy: halfY,
+          grabDx: Math.floor(shape.maxX / 2),
+          grabDy: Math.floor(shape.maxY / 2),
           x0: e.clientX,
           y0: e.clientY,
           lastX: e.clientX,
@@ -2138,52 +2693,32 @@
           ghost: null,
           cellPx: cellPixelSize(svg),
           label: spec.name,
-          shape: {
-            name: spec.name,
-            color: '#7E6BB8',
-            cells: norm.cells.map((c) => ({ x: c[0] - minX, y: c[1] - minY })),
-            minX, minY,
-            maxX: Math.max.apply(null, xs) - minX,
-            maxY: Math.max.apply(null, ys) - minY,
-          },
+          shape,
         };
         return;
       }
 
-      /* 功法膜：和构件同一条拖拽通道，只是落点写回 wsMsOx/Oy */
+      /* 蚀刻法膜：和纹路同一条拖拽通道，只是落点写回 wsMsOx/Oy */
       if (msGrab) {
-        const raw = (svg.dataset.msCells || '').split(';').filter(Boolean);
-        if (!raw.length) return;
-        const cells = raw.map((k) => k.split(',').map(Number));
-        const ox = Number(svg.dataset.msOx);
-        const oy = Number(svg.dataset.msOy);
+        const data = msGrab.closest('[data-ms-cells]').dataset;
+        const ox = Number(data.msOx);
+        const oy = Number(data.msOy);
         const cell = cellFromPoint(svg, e.clientX, e.clientY);
         drag = {
           kind: 'ms',
-          id: 'ms',
+          id: 'ms:' + msGrab.dataset.msId,
+          msId: msGrab.dataset.msId,
+          rot: Number(data.rot), mir: data.mir === '1',
           svg,
-          cells,
           grabDx: cell ? cell.x - (Number.isFinite(ox) ? ox : 0) : 0,
           grabDy: cell ? cell.y - (Number.isFinite(oy) ? oy : 0) : 0,
           x0: e.clientX,
           y0: e.clientY,
           moved: false,
           ghost: null,
-          shape: (function () {
-            const xs = cells.map((c) => c[0]);
-            const ys = cells.map((c) => c[1]);
-            const minX = Math.min.apply(null, xs);
-            const minY = Math.min.apply(null, ys);
-            return {
-              name: '功法膜',
-              color: '#7E6BB8',
-              cells: cells.map((c) => ({ x: c[0] - minX, y: c[1] - minY })),
-              minX, minY,
-              maxX: Math.max.apply(null, xs) - minX,
-              maxY: Math.max.apply(null, ys) - minY,
-            };
-          })(),
-          label: '功法膜',
+          cellPx: cellPixelSize(svg),
+          shape: manuscriptDragShape(msGrab.dataset.msId, Number(data.rot), data.mir === '1'),
+          label: D().manuscript(msGrab.dataset.msId).name,
         };
         return;
       }
@@ -2192,7 +2727,7 @@
       const id = src.dataset.id;
       if (!id) return;
 
-      /* 抓住构件的哪一格，落下时就对回哪一格，手感不会跳 */
+      /* 抓住纹路的哪一格，落下时就对回哪一格，手感不会跳 */
       let grabDx = 0;
       let grabDy = 0;
       if (group) {
@@ -2224,7 +2759,7 @@
         ghost: null,
         shape,
         cellPx: cellPixelSize(svg),
-        label: nameEl ? nameEl.textContent.trim() : '构件',
+        label: nameEl ? nameEl.textContent.trim() : '纹路',
       };
     });
 
@@ -2249,11 +2784,11 @@
     }, { passive: false });
 
     document.addEventListener('pointerup', (e) => {
-      if (!drag) return;
+      if (!drag) { touchScarHint(e); return; }
       const d = drag;
       const rawTarget = d.svg ? cellFromPointRaw(d.svg, e.clientX, e.clientY) : null;
       const best = rawTarget && d.shape
-        ? bestDragAnchor(d.id, d.shape, rawTarget, d.grabDx, d.grabDy)
+        ? bestDragAnchor(d.id, d.shape, rawTarget, d.grabDx, d.grabDy, d.kind)
         : null;
       const moved = d.moved;
       const anchor = d.anchor || (best && best.anchor) || null;
@@ -2261,27 +2796,29 @@
       const dropOutside = moved && d.from === 'board' && !ui.wsLocked.includes(d.id)
         && (!valid || !valid.ok) && isWayOutsideBoard(d.svg, e.clientX, e.clientY);
       endDrag();
-      if (!moved) return;
+      if (!moved) { touchScarHint(e); return; }
 
-      /* 从谱表拖进来的功法：落点即装配位置，摆不下就回弹并说明原因 */
+      if ((d.kind === 'ms' || d.kind === 'msNew') && isWayOutsideBoard(d.svg, e.clientX, e.clientY)) return;
+      /* 从谱表拖进来的蚀刻法：落点即装配位置，摆不下就回弹并说明原因 */
       if (d.kind === 'msNew') {
         const raw = rawTarget || (d.svg ? cellFromPoint(d.svg, e.clientX, e.clientY) : null);
         if (!raw) return;
-        const snapped = clampAnchor(d.shape, { x: raw.x - d.grabDx, y: raw.y - d.grabDy });
+        const snapped = anchor || clampAnchor(d.shape, { x: raw.x - d.grabDx, y: raw.y - d.grabDy });
         if (valid && !valid.ok) {
           toast('放不下：' + (valid.reason || '不在板面上'));
           return;
         }
-        dispatch({ type: 'wsMsEquipAt', id: d.msId, ox: snapped.x, oy: snapped.y });
+        dispatch({ type: 'wsMsEquipAt', id: d.msId, ox: snapped.x, oy: snapped.y, rotation: d.rot, mirrorY: d.mir });
         return;
       }
 
-      /* 功法膜：吸附到格子后写回 UI 状态，保存时再落盘 */
+      /* 蚀刻法膜：吸附到格子后写回 UI 状态，保存时再落盘 */
       if (d.kind === 'ms') {
         const raw = rawTarget || (d.svg ? cellFromPoint(d.svg, e.clientX, e.clientY) : null);
         if (!raw) return;
-        const snapped = clampAnchor(d.shape, { x: raw.x - d.grabDx, y: raw.y - d.grabDy });
-        dispatch({ type: 'wsMsMove', ox: snapped.x, oy: snapped.y });
+        const snapped = anchor || clampAnchor(d.shape, { x: raw.x - d.grabDx, y: raw.y - d.grabDy });
+        if (valid && !valid.ok) { toast('放不下：' + valid.reason); return; }
+        dispatch({ type: 'wsMsMove', id: d.msId, ox: snapped.x, oy: snapped.y, rotation: d.rot, mirrorY: d.mir });
         return;
       }
 
@@ -2305,7 +2842,7 @@
       const el = findAction(e.target);
       if (!el) {
         /* 点在板面的空白处（底材、毛边、格线）也算「放下」：解除手持。
-           单靠每格的命中层并不可靠——有的格会被构件图形盖住，点了没反应。 */
+           单靠每格的命中层并不可靠——有的格会被纹路图形盖住，点了没反应。 */
         const onBoard = e.target && e.target.closest && e.target.closest('svg.board');
         if (onBoard && ui.wsPick) {
           dispatch({ type: 'wsCancelPick' });
@@ -2318,17 +2855,30 @@
     });
 
     document.addEventListener('keydown', (e) => {
+      const typing = e.target.closest?.('input, textarea, select, [contenteditable="true"]');
+      if ((e.key || '').toLowerCase() === 'b' && !typing && !e.altKey && !e.ctrlKey && !e.metaKey
+          && !['title','settlement'].includes(ui.screen) && (!ui.modal || ui.modal === 'pack') && !drag) {
+        e.preventDefault();
+        if (!e.repeat) dispatch({ type: ui.modal ? 'closeModal' : 'openPack' });
+        return;
+      }
+      if (ui.modal) {
+        if (e.key === 'Escape') { e.preventDefault(); dispatch({ type: 'closeModal' }); }
+        if (e.key === 'Tab') {
+          const controls = [...document.querySelectorAll('.modal-card button:not(:disabled), .modal-card textarea, .modal-card summary')]
+            .filter(el => el.getClientRects().length);
+          const first = controls[0], last = controls.at(-1);
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+          if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+        }
+        return;
+      }
       const tag = document.activeElement && document.activeElement.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
       if (ui.screen === 'battle' && e.code === 'Space') {
         e.preventDefault();
         dispatch({ type: 'cycleSpeed' });
-        return;
-      }
-      if (e.code === 'Escape' && ui.modal) {
-        ui.modal = null;
-        renderModal();
         return;
       }
       if (e.code === 'Escape' && ui.screen === 'rules') {
@@ -2346,7 +2896,7 @@
           if (k === 'r') rotateInDrag(1);
           else {
             drag.mir = !drag.mir;
-            drag.shape = V.UI && V.UI.partShape ? V.UI.partShape(state, drag.id, drag.rot, drag.mir) : drag.shape;
+            refreshDragShape();
             if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
             drag.ghost = buildFloatGhost(drag.shape, drag.cellPx, drag.label);
             updateDragVisuals(drag.lastX, drag.lastY);
@@ -2395,7 +2945,7 @@
 
     if (ui.screen === 'battle') {
       const b = state.run && state.run.battle;
-      if (b && !b.over && !ui.paused) {
+      if (b && !b.over && !ui.paused && !ui.modal) {
         acc += dt * ui.speed;
         let guard = 0;
         while (acc >= STEP_MS && guard++ < 6) {
@@ -2440,6 +2990,9 @@
     ui.screen = 'title';
     render();
     bind();
+    window.addEventListener('pagehide', () => {
+      if (ui.screen === 'battle' && state.run?.battle) persist();
+    });
     rafId = requestAnimationFrame(loop);
 
     A.Art.preloadArt(['scene.camp']).then(() => {

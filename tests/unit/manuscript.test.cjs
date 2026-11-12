@@ -1,5 +1,5 @@
 'use strict';
-/* 功法膜的两条判定：覆盖（纹路同向才算填上）与贯通（对上的格能否连到出口）。
+/* 蚀刻法膜的两条判定：覆盖（有纹路占格就算填上）与贯通（对上的格能否连到出口）。
    这两条是整个系统的地基，错一点「填充」就退化成装箱。 */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -66,7 +66,7 @@ test('fits：格子超出板面就放不下', () => {
   assert.equal(M.fits(ms, PLATE, 2, 0), false, '2,0 加 3 格会越界');
 });
 
-test('覆盖率：每格都被同向纹路覆盖才是 100%', () => {
+test('覆盖率：每格都被纹路覆盖就是 100%', () => {
   const ms = M.normalize(LINE3);
   const full = M.coverage(ms, 0, 0, idx({
     '0,0': ['E'], '1,0': ['W', 'E'], '2,0': ['W'],
@@ -75,13 +75,13 @@ test('覆盖率：每格都被同向纹路覆盖才是 100%', () => {
   assert.equal(full.aligned, 3);
   assert.equal(full.tier.id, 't3');
 
-  /* 中间那格只有 E，缺 W → 没对上，覆盖 2/3 */
+  /* 中间接缝不通，三格仍有覆盖 */
   const broken = M.coverage(ms, 0, 0, idx({
     '0,0': ['E'], '1,0': ['E'], '2,0': ['W'],
   }));
-  assert.equal(broken.aligned, 2);
-  assert.equal(broken.pct, 67);
-  assert.equal(broken.tier.id, 't1');
+  assert.equal(broken.aligned, 3);
+  assert.equal(broken.pct, 100);
+  assert.equal(broken.tier.id, 't3');
 });
 
 test('覆盖率的分子分母都只认膜：板面再大也只有 3 格', () => {
@@ -96,10 +96,10 @@ test('格子被占住但没纹路，不算填上', () => {
     tiers: [{ at: 100, id: 't1' }],
   });
   const empty = M.coverage(ms, 0, 0, { dirs: new Map(), occupied: new Set() });
-  assert.equal(empty.pct, 0, '没有构件就不是填上');
+  assert.equal(empty.pct, 0, '没有纹路就不是填上');
 
   const covered = M.coverage(ms, 0, 0, { dirs: new Map(), occupied: new Set(['0,0']) });
-  assert.equal(covered.pct, 100, '被构件占住即算填上（该格不要求走向）');
+  assert.equal(covered.pct, 100, '被纹路占住即算填上（该格不要求走向）');
 });
 
 test('贯通：三格都上的时候连得通', () => {

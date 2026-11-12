@@ -2,10 +2,12 @@
 /* 纹章切片的朝向必须和电路逻辑完全一致：
    否则画出来是「旋转过的图」，端口却算在别处。
    这里不重算旋转规则，直接把 V.RuneArt.matrixFor 的输出和
-   V.Circuit.layout 的真实格子逐一对比（6 模板 × 4 旋转 × 2 翻转）。 */
+   V.Circuit.layout 的真实格子逐一对比（全部纹路 × 4 旋转 × 2 翻转）。 */
 const test = require('node:test');
 const assert = require('node:assert');
-const { loadVeteran } = require('../helpers/load-veteran.cjs');
+const fs = require('node:fs');
+const path = require('node:path');
+const { loadVeteran, ROOT } = require('../helpers/load-veteran.cjs');
 
 const A = loadVeteran();
 const RA = A.Veteran.RuneArt;
@@ -22,11 +24,11 @@ function fakeState() {
 
 const STATE = fakeState();
 const IDS = Object.keys(RA.RUNES);
-/* 已进 data.js 的模板；第二批（rivet/long/tee/cross）只有美术，TEMPLATES 待补 */
 const IN_DATA = IDS.filter((id) => Data.TEMPLATES[id]);
 
 test('已在 data.js 的纹章，格数与模板一致', () => {
-  assert.equal(IN_DATA.length, 6);
+  assert.ok(Data.TEMPLATE_ORDER.length >= 30);
+  assert.deepEqual(IN_DATA.slice().sort(), Data.TEMPLATE_ORDER.slice().sort());
   IN_DATA.forEach((tid) => {
     const tpl = Data.TEMPLATES[tid];
     assert.ok(tpl, `${tid} 不在 TEMPLATES 里`);
@@ -82,34 +84,117 @@ test('sizeFor 与实际占用包围盒一致', () => {
   });
 });
 
-test('第二批纹章（单格/长条/三通/四通）已登记且格数正确', () => {
-  const expect = { rivet: [1, 1], long: [3, 1], tee: [3, 2], cross: [3, 3] };
-  Object.keys(expect).forEach((id) => {
-    const r = RA.rune(id);
-    assert.ok(r, `${id} 应该已登记`);
-    assert.deepEqual([r.cols, r.rows], expect[id], `${id} 格数`);
-    assert.ok(r.dir.indexOf('rune-set-v2') >= 0, `${id} 应指向第二批目录`);
-  });
-});
+test('板面、旋转预览和缩略图共用凹刻笔画，不请求管件切片', () => {
+  for (const id of IDS) {
+    const shape = RA.rune(id);
+    const texture = fs.readFileSync(path.join(ROOT, 'assets/art/etch-depth', id + '.webp'));
+    assert.equal(texture.toString('ascii', 8, 12), 'WEBP');
+    const flat = RA.image(id, { x: 34, y: 26, cell: 60 });
+    const turned = RA.image(id, { rotation: 1, mirrorY: true });
+    assert.ok(flat.includes('translate(34,26) scale(60)'));
+    assert.ok(turned.includes('matrix(' + RA.matrixFor(id, 1, true).join(',') + ')'));
+    for (const svg of [flat, turned, RA.thumb(id)]) {
+      assert.ok(svg.includes(shape.engraving) && svg.includes('etched-grain'), id);
+      assert.doesNotMatch(svg, /rune-set-/);
+      assert.ok(svg.includes(`assets/art/etch-depth/${id}.webp`), id);
+    }
+    assert.ok(turned.includes(`viewBox="${shape.cols} ${shape.rows} ${shape.cols} ${shape.rows}"`));
 
-test('image() 输出带 matrix、尺寸按格距与朝向变化', () => {
-  const flat = RA.image('straight', { x: 34, y: 26, cell: 60, rotation: 0 });
-  assert.ok(flat.includes('assets/art/rune-set-v1/grid/straight.png'));
-  /* 几何在「格」单位里算，格距靠外层 scale 放大 */
-  assert.ok(flat.includes('translate(34,26) scale(60)'));
-  assert.ok(flat.includes('width="2"') && flat.includes('height="1"'), '直导管 2x1 格');
-
-  const turned = RA.image('straight', { x: 0, y: 0, cell: 60, rotation: 1 });
-  assert.ok(turned.includes('width="2"'), '原画尺寸不随旋转改变');
-  const m0 = RA.matrixFor('straight', 0, false);
-  const m1 = RA.matrixFor('straight', 1, false);
-  assert.notDeepEqual(m0, m1);
-  const p = RA.image('splitter', { x: 0, y: 0, cell: 60, rotation: 0 });
-  assert.ok(p.includes('height="3"'), '棱镜分流 2x3 格');
+  }
+  assert.equal(RA.thumb('nope'), '');
   assert.equal(RA.image('nope', {}), '');
 });
 
-test('thumb() 指向同一切片，未知模板返回空串', () => {
-  assert.ok(RA.thumb('elbow').includes('grid/elbow.png'));
-  assert.equal(RA.thumb('nope'), '');
+test('每条连接的三道刻线及亮缘连续、贴齐接缝且全程位于真实占格内', () => {
+  const sides = { W: [-1,0], E: [1,0], N: [0,-1], S: [0,1] };
+  for (const tpl of Object.values(Data.TEMPLATES)) {
+    const paths = [...RA.rune(tpl.id).engraving.matchAll(/<path d="([^"]+)"/g)].map(m => m[1]);
+    const cells = new Set(tpl.cells.map(c => c.join(',')));
+    assert.equal(paths.length, tpl.links.length * 6);
+    paths.forEach((d,index) => {
+      const link = tpl.links[Math.floor(index / 3) % tpl.links.length];
+      const ports = link.map(id => tpl.ports.find(p => p.id === id));
+      const lane = [-.085,0,.085][index % 3];
+      assert.match(d, /^M[-.\d ]+( C[-.\d ]+)+$/, tpl.id);
+      const nums = d.match(/-?[\d.]+/g).map(Number);
+      const xy = (p,end) => {
+        const [dx,dy] = sides[p.dir], shift = end ? lane : -lane;
+        return [p.cell[0]+.5+dx*.5-dy*shift, p.cell[1]+.5+dy*.5+dx*shift];
+      };
+      function near(a,b) { assert.ok(Math.abs(a-b)<.0011, tpl.id+' '+a+' != '+b); }
+      const start = xy(ports[0],false), end = xy(ports[1],true);
+      start.forEach((n,i) => near(n,nums[i]));
+      end.forEach((n,i) => near(n,nums[nums.length-2+i]));
+      // 起笔和收笔均垂直于接缝，旋转接续时不会形成折角。
+      const firstAxis = sides[ports[0].dir][0] ? 1 : 0;
+      const lastAxis = sides[ports[1].dir][0] ? 1 : 0;
+      near(nums[firstAxis],nums[2+firstAxis]);
+      near(nums.at(-2+lastAxis),nums.at(-4+lastAxis));
+      for (let i=2;i<nums.length;i+=6) {
+        for (let step=1;step<20;step++) {
+          const t=step/20, u=1-t;
+          const pt=[0,1].map(k=>Math.floor(u**3*nums[i-2+k]+3*u*u*t*nums[i+k]+3*u*t*t*nums[i+2+k]+t**3*nums[i+4+k]));
+          assert.ok(cells.has(pt.join(',')), tpl.id+' 穿过空格 '+pt);
+        }
+      }
+    });
+  }
+});
+
+test('每种新纹路可以装入实际角色板面、取得同向收益、形成对应瘢痕', () => {
+  const V = A.Veteran;
+  for (const tpl of Object.values(Data.TEMPLATES).filter((t) => t.family)) {
+    const st = V.State.create(42);
+    const u = st.roster[0];
+    const item = V.State.makePart(st, { kind: 'circuit', templateId: tpl.id });
+    st.itemsById[item.id] = item;
+    st.stash.push(item.id);
+    const placement = V.Circuit.suggestPlacement(st, u, [], item.id, null);
+    assert.ok(placement, tpl.name);
+    const saved = V.Roster.saveBoard(st, u.id, [placement]);
+    assert.ok(saved.ok, tpl.name);
+    assert.ok(V.State.validate(saved.state).ok, tpl.name);
+    const run = V.Expedition.start(saved.state).state;
+    const scar = V.Expedition.inscriptionScar(run, u.id, item.id, [placement]);
+    assert.equal(scar.templateId, tpl.id);
+    const unit = V.State.unitById(run, u.id);
+    unit.scars = [scar];
+    const active = V.Circuit.scarState(run, unit, [placement])[0];
+    assert.ok(active.active && Object.values(active.effect).some((v) => v > 0) && Object.values(active.effect).some((v) => v < 0), tpl.name);
+    const part = V.Circuit.layout(run, [placement]).built[0];
+    const port = part.aps[0];
+    unit.manuscript = { ...Data.manuscript('spark'), x: port.cell[0], y: port.cell[1],
+      cells: [[0,0]], veins: { '0,0': [port.dir] }, entry: [0,0], exits: [[0,0]], rotation: 0, mirrorY: false };
+    const match = V.Circuit.manuscriptState(run, u.id, [placement]);
+    assert.equal(match.pct, 100, tpl.name);
+    /* 增益按对上的端口比例给：这里只有一格对上，所以只拿 1/端口数 */
+    const ports = new Set(part.aps.map((p) => p.cell.join(','))).size;
+    for (const [key, amount] of Object.entries(tpl.boost)) {
+      assert.ok(Math.abs(match.effects.boost[key] - amount / ports) < 1e-9, `${tpl.name} 的 ${key} 应按端口比例折算`);
+    }
+    assert.ok(RA.image(tpl.id, { rotation: 2 }).length > 0);
+    assert.ok(RA.thumb(tpl.id).length > 0);
+  }
+});
+
+test('宝箱、商人和胜利掉落的实际物品池都能产出全部纹路', () => {
+  const V = A.Veteran;
+  const state = V.Expedition.start(V.State.create(42, { classicPlate: true })).state;
+  state.run.nodes = ['chest', 'merchant', 'battle'].map(type => ({ id: type, type, consumed: false }));
+  const battle = V.Encounter.startAttempt(V.Expedition.chooseNode(state, 'battle').state).state;
+  battle.run.battle.over = true;
+  battle.run.battle.outcome = 'win';
+  const seen = { chest: new Set(), merchant: new Set(), battle: new Set() };
+  for (let i = 1; i <= 512 && Object.values(seen).some((ids) => ids.size < Data.TEMPLATE_ORDER.length); i++) {
+    state.rngState = (i * 2654435761) >>> 0;
+    const chest = V.Expedition.chooseNode(state, 'chest').state;
+    chest.run.pendingLoot.forEach((id) => seen.chest.add(chest.itemsById[id].templateId));
+    const shop = V.Expedition.chooseNode(state, 'merchant').state;
+    shop.run.shop.forEach(({ itemId }) => seen.merchant.add(shop.itemsById[itemId].templateId));
+    battle.run.battle.rngState = state.rngState;
+    V.Combat.prepareResult(battle);
+    const win = V.Encounter.confirm(battle).state;
+    win.run.pendingLoot.forEach((id) => seen.battle.add(win.itemsById[id].templateId));
+  }
+  for (const [source, ids] of Object.entries(seen)) assert.deepEqual([...ids].sort(), [...Data.TEMPLATE_ORDER].sort(), source);
 });

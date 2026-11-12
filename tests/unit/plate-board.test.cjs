@@ -30,20 +30,20 @@ test('同一单位重复取板面结果一致（seed 稳定，可存档）', () 
   assert.equal(a, b);
 });
 
-test('开局自带一阶微功法，仓库另有可换的功法', () => {
+test('开局自带一阶微蚀刻法，仓库另有可换的蚀刻法', () => {
   const st = V.State.create(9001);
   st.roster.forEach((u) => {
-    assert.ok(u.manuscript, `${u.name} 开局应带一门微功法`);
+    assert.ok(u.manuscript, `${u.name} 开局应带一门微蚀刻法`);
     assert.equal(u.manuscript.rarity, 1);
   });
-  assert.ok(st.manuscriptVault.length >= 1, '仓库里应该有可替换的功法');
+  assert.ok(st.manuscriptVault.length >= 1, '仓库里应该有可替换的蚀刻法');
 
   const u = st.roster[0];
   const bare = Object.assign({}, u, { manuscript: null });
-  assert.deepEqual(Object.keys(V.Circuit.plateOf(bare).terminals), [], '没功法时没有能量点');
+  assert.deepEqual(Object.keys(V.Circuit.plateOf(bare).terminals), [], '没蚀刻法时没有能量点');
 
   V.State.equipManuscript(st, u, st.manuscriptVault[0].id);
-  assert.ok(u.manuscript, '换上后应持有功法');
+  assert.ok(u.manuscript, '换上后应持有蚀刻法');
 
   const plate = V.Circuit.plateOf(u);
   const t = plate.terminals;
@@ -56,7 +56,7 @@ test('开局自带一阶微功法，仓库另有可换的功法', () => {
   assert.equal(t.main.role, 'out');
 });
 
-test('没有功法就没有能量点：板面只剩槽位', () => {
+test('没有蚀刻法就没有能量点：板面只剩槽位', () => {
   const st = V.State.create(9001);
   const u = st.roster[0];
   const bare = Object.assign({}, u, { manuscript: null });
@@ -90,7 +90,7 @@ test('异形板面上放得下的位置能通过几何校验', () => {
   const u = st.roster[0];
   const plate = V.Circuit.plateOf(u);
   const cells = [...plate.cells].map((k) => k.split(',').map(Number));
-  /* 找一对相邻格放直导管 */
+  /* 找一对相邻格放顺丝纹 */
   let spot = null;
   for (const [x, y] of cells) {
     if (plate.cells.has((x + 1) + ',' + y)) { spot = [x, y]; break; }

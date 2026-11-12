@@ -2,11 +2,20 @@
   "name": "ashen-corridor",
   "version": "3.0.0",
   "private": true,
-  "description": "灰烬回廊 · 像素横版自动战斗（底盘 / 主手 / 生命金属回路，可逆整备，撤离才结算）",
+  "description": "灰烬回廊 · 生命金属构筑远征：可逆纹路、底层瘢痕、功法共鸣、撤离结算",
   "scripts": {
     "test": "node --test \"tests/unit/*.test.cjs\"",
     "dev": "node scripts/serve.cjs",
     "test:e2e": "node tests/e2e/game.spec.cjs",
+    "test:ui": "node tests/e2e/metal-ui.spec.cjs",
+    "test:battle-art": "node tests/e2e/battle-art.spec.cjs",
+    "test:flow": "node tests/e2e/finished-flow.spec.cjs",
+    "test:kitchen": "node tests/e2e/kitchen-ui.spec.cjs",
+    "test:store": "node tests/e2e/home-store.spec.cjs",
+    "test:pack": "node tests/e2e/expedition-pack.spec.cjs",
+    "test:loot-camp": "node tests/e2e/loot-camp-drag.spec.cjs",
+    "test:loot-ground": "node tests/e2e/loot-ground-overflow.spec.cjs",
+    "test:etching": "node tests/e2e/etching-ui.spec.cjs",
     "simulate": "node scripts/simulate-veteran.cjs"
   },
   "devDependencies": {
