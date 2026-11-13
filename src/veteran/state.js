@@ -236,7 +236,7 @@
         if (!blocked.has(x + ',' + y)) cells.push([x, y]);
       }
     }
-    return { cells, terminals: D().TERMINALS };
+    return { cells };
   }
 
   function makeUnit(st, spec) {

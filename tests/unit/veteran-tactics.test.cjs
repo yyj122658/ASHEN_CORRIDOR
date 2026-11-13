@@ -24,11 +24,11 @@ function ctx(over) {
   }, over || {});
 }
 
-test('默认规则：满血时走主手', () => {
+test('默认规则：满血时走普通攻击', () => {
   const r = T.evaluate(ctx(), D.defaultGambits());
   assert.equal(r.action, 'main');
   assert.deepEqual(r.targetIds, ['e1']);
-  assert.equal(r.cost, 2);
+  assert.equal(r.cost, 0, '普通攻击不吃余裕');
 });
 
 test('默认不再自动护持：护持是玩家自己挂的取舍', () => {
@@ -39,29 +39,28 @@ test('默认不再自动护持：护持是玩家自己挂的取舍', () => {
   assert.deepEqual(r.targetIds, ['e1']);
 });
 
-test('显式挂上护持就真的护持，且不花余裕', () => {
-  const c = ctx({ energy: { main: 0, support: 0 } });
+test('旧的护持规则在新版本降级为普通攻击，护盾只由蚀刻法招式给', () => {
+  const c = ctx({ energy: { main: 0 } });
   c.allies[1].hp = 10;
   const rules = [{ id: 's', enabled: true, conditions: [{ type: 'allyHpBelow', value: 50 }], target: 'lowestHpAlly', action: 'support' }];
   const r = T.evaluate(c, rules);
-  assert.equal(r.action, 'support');
-  assert.deepEqual(r.targetIds, ['a2']);
-  assert.equal(r.cost, 0, '护持不吃余裕，余裕留给招式');
+  assert.equal(r.action, 'main');
+  assert.ok(r.reasons.some((x) => x.reason.includes('蚀刻法')), JSON.stringify(r.reasons));
 });
 
-test('主手在非法身位时跳过并说明', () => {
+test('普通攻击不再受身位与武器限制', () => {
   const c = ctx({ weaponId: 'shortBlade' });
   c.self.slot = 2;
   c.allies[0].slot = 2;
   const r = T.evaluate(c, [{ id: 'g1', enabled: true, conditions: [{ type: 'always' }], target: 'frontFoe', action: 'main' }]);
-  assert.equal(r.action, 'basic');
-  assert.ok(r.reasons.some((x) => x.reason.includes('不可用')), JSON.stringify(r.reasons));
+  assert.equal(r.action, 'main');
+  assert.equal(r.cost, 0);
 });
 
-test('能量不足时不会偷偷出手', () => {
-  const c = ctx({ energy: { main: 1, support: 0 } });
+test('余裕为 0 也照样普通攻击，余裕全留给招式', () => {
+  const c = ctx({ energy: { main: 0 } });
   const r = T.evaluate(c, D.defaultGambits());
-  assert.equal(r.action, 'basic');
+  assert.equal(r.action, 'main');
   assert.equal(r.cost, 0);
 });
 

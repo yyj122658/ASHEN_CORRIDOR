@@ -73,7 +73,7 @@ test('新档库存可与起手法三门合修，换主修保留落点、库存�
   assert.equal(V.Storage.decode(V.Storage.encode(home)).ok, true);
 });
 
-test('负荷超限保留库存，旧单门存档可加装，重复装配的坏档会被拒绝', () => {
+test('负荷超载不拦装配，坏档才拒绝', () => {
   const st = V.State.create(11, { classicPlate: true });
   const u = st.roster[0];
   V.State.equipManuscript(st, u, 'spark');
@@ -82,15 +82,15 @@ test('负荷超限保留库存，旧单门存档可加装，重复装配的坏�
   assert.equal(back.ok, true);
   const legacy = back.state.roster[0];
   assert.equal(V.State.placeManuscript(back.state, legacy, 'rivet').ok, true);
-  const before = JSON.stringify(back.state);
   const oldCap = V.Circuit.loadCap(legacy);
   const body = V.Data.body(legacy.bodyPreset);
   body.loadCap = 1;
   try {
+    /* 超载现在允许装配，代价在战斗里结算（开局压力 + 回裕下降） */
     const r = V.State.placeManuscript(back.state, legacy, 'corridor5');
-    assert.equal(r.ok, false);
-    assert.match(r.reason, /负荷/);
-    assert.equal(JSON.stringify(back.state), before);
+    assert.equal(r.ok, true, '超载不该再拦装配');
+    const check = V.Circuit.preview(back.state, legacy.id, legacy.board.placements);
+    assert.ok(check.overload > 0, '装配后应能算出超载量');
   } finally { body.loadCap = oldCap; }
   legacy.extraManuscripts.push(legacy.manuscript);
   assert.equal(V.Storage.decode(V.Storage.encode(back.state)).ok, false);

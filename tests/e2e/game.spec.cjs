@@ -152,7 +152,7 @@ async function launch() {
   }));
   await click('[data-act="wsUndo"]');
 
-  /* 新增：覆盖率面板分母为膜格数、显示当前台阶、摆不下时灰掉并说明原因 */
+  /* 新增：覆盖率面板分母为膜格数、显示当前共鸣阶、摆不下时灰掉并说明原因 */
   ok('B10 覆盖率面板数值与分母正确', await ev(() => {
     const panel = document.querySelector('.ms-panel');
     const covEl = document.querySelector('[data-ms-cov]');
@@ -216,30 +216,8 @@ async function launch() {
     ok('B10c 跳过（当前所有板面都放得下这套蚀刻法）', true);
   }
 
-  /* 新增：四个终端画在板面边界上 */
-  ok('B11 终端画在板面边界上且方向朝外', await ev(() => {
-    const A = window.Ashen.Veteran;
-    const st = A.App.state;
-    const u = st.roster.find((x) => x.id === A.App.ui.wsUnit) || st.roster[0];
-    const plate = A.Circuit.plateOf(u);
-    const svg = document.querySelector('svg.board');
-    if (!svg || !plate || !plate.terminals) return false;
-    const vb = svg.viewBox.baseVal;
-    const gx = Number(svg.dataset.gx);
-    const gy = Number(svg.dataset.gy);
-    const cell = Number(svg.dataset.cell);
-    const vec = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
-    return Object.values(plate.terminals).every((t) => {
-      const el = svg.querySelector(`[data-term="${t.id}"]`);
-      if (!el || !plate.cells.has(t.cell[0] + ',' + t.cell[1])) return false;
-      const cx = gx + t.cell[0] * cell + cell / 2;
-      const cy = gy + t.cell[1] * cell + cell / 2;
-      const tx = Number(el.getAttribute('x')) + 4;
-      const ty = Number(el.getAttribute('y')) + 4;
-      const dot = (tx - cx) * vec[t.dir][0] + (ty - cy) * vec[t.dir][1];
-      return dot > cell / 2 && tx >= 0 && ty >= 0 && tx <= vb.width && ty <= vb.height;
-    });
-  }));
+  /* B11「终端画在板面边界上」随接线模型一起删除了（2026-11-13，见 docs/backlog.md B3）：
+     极/端子/脉冲整套没有读取方，板面上已经不再画终端。 */
 
   /* ---------- B8~B9 拖拽装配 ---------- */
   /* 落点不能随便取：异形板面上「第一个空格」多半摆不下 2 格纹路，

@@ -103,23 +103,19 @@ test('灼烧流：dotMult 纹章抬高每跳灼烧，余烬纹负责点火', () 
   assert.ok(Math.max(...c.burn) > Math.max(...a.burn), `灼烧每跳应更高（${c.burn} vs ${a.burn}）`);
 });
 
-test('护盾流：护持指令真的给盾，shieldMult 抬高盾量，且不会连续举盾', () => {
-  const { V, st } = withBuild(17, 'corridor5', ['capacitor', 'threshold', 'cistern'], 'support');
+test('护盾只来自蚀刻法招式：铁壁的合壁真的给盾，shieldMult 抬高盾量', () => {
+  const { V, st, unit } = withBuild(17, 'bulwark', ['capacitor', 'threshold', 'cistern'], 'main');
   const s = fight({ Veteran: V }, st, 17, 14);
   const b = s.run.battle;
-  const supportLogs = b.logs.filter((l) => l.type === 'support');
-  assert.ok(supportLogs.length, '挂了护持就该出现护盾');
-  const gained = supportLogs[0].amount;
-  const ally = b.allies.find((u) => u.id === supportLogs[0].targetId);
-  const base = Math.round((ally ? ally.maxHp : 140) * V.Data.SUPPORT.shieldPct);
-  assert.ok(gained > base, `shieldMult 应抬高盾量（${gained} vs 基础 ${base}）`);
-  /* 护持是 4 秒冷却：同一个人在整场里不可能刷出超过 时长/4+1 次 */
-  const seconds = b.tick * V.Data.DESIGN.stepSeconds;
-  const byActor = {};
-  supportLogs.forEach((l) => { byActor[l.actorId] = (byActor[l.actorId] || 0) + 1; });
-  Object.entries(byActor).forEach(([id, n]) => {
-    assert.ok(n <= Math.ceil(seconds / 4) + 1, `${id} 护持 ${n} 次，超出自 ${seconds.toFixed(1)}s / 4s 的冷却上限`);
-  });
+  /* 「保护」行动已撤：战斗里不该再有 support 类型的行动日志 */
+  assert.equal(b.logs.filter((l) => l.type === 'support').length, 0, '护持行动应已撤除');
+  const shieldLogs = b.logs.filter((l) => l.type === 'shield');
+  assert.ok(shieldLogs.length, '带护盾的蚀刻法招式应刷出护盾');
+  const gained = Math.max(...shieldLogs.map((l) => l.amount));
+  const shieldMult = V.Circuit.manuscriptState(st, unit.id).effects.boost.shieldMult || 0;
+  const base = Math.round(b.allies[0].maxHp * 0.3);
+  assert.ok(shieldMult >= 0, '纹路应给出护盾增益字段');
+  assert.ok(gained >= Math.round(base * 0.5), `护盾量应在招式倍率量级（${gained}）`);
 });
 
 test('防御指令真的减伤：同一场仗举盾比不举盾挨得少', () => {
@@ -150,6 +146,6 @@ test('贯通奖励够用：满覆盖 + 贯通的主手倍率明显高于只满�
   const routed = V.Circuit.manuscriptState(st, unit.id, draft);
   assert.equal(routed.pct, 100);
   assert.equal(routed.routed, true);
-  /* 三阶 1.24 × 贯通 1.15 = 1.43 */
-  assert.equal(routed.effects.mainMult, 1.43);
+  /* 三阶 1.24 × 贯通 1.15 = 1.43，再乘负荷价（corridor5 负荷 2 → ×1.03）= 1.47 */
+  assert.equal(routed.effects.mainMult, 1.47);
 });

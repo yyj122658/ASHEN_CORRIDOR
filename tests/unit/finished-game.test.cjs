@@ -95,9 +95,24 @@ test('起手余裕、共享冷却和临时强化兑现实际效果', () => {
   actor.pendingSkill = V.Data.MANUSCRIPTS.flurry.skills[0];
   const boosted = V.Combat.step(st).state;
   assert.ok(boosted.run.battle.allies[0].buffs.some((x) => x.k === 'atkUp'));
+  /* 强化按「次」结算：不挂秒表，只有打完次数才消失 */
+  const hits = boosted.run.battle.allies[0].buffs.find((x) => x.k === 'atkUp').hits;
+  assert.equal(typeof hits, 'number', '强化要记剩余次数，而不是秒数');
   let next = boosted;
-  for (let i = 0; i < 14; i++) next = V.Combat.step(next).state;
-  assert.equal(next.run.battle.allies[0].buffs.some((x) => x.k === 'atkUp'), false, '三秒强化按秒结束');
+  for (let i = 0; i < 60; i++) {
+    next = V.Combat.step(next).state;
+    const buff = next.run.battle.allies[0].buffs.find((x) => x.k === 'atkUp');
+    if (!buff) break;
+    assert.ok(buff.hits > 0, '剩余次数必须是正数');
+  }
+  assert.equal(next.run.battle.allies[0].buffs.some((x) => x.k === 'atkUp'), false, '打完次数后强化消失');
+
+  /* 反面：次数给足时，时间过去也不会被清掉（不再有秒表） */
+  const plenty = V.State.clone(boosted);
+  plenty.run.battle.allies[0].buffs = [{ k: 'atkUp', v: 0.5, hits: 99 }];
+  let slow = plenty;
+  for (let i = 0; i < 40; i++) slow = V.Combat.step(slow).state;
+  assert.ok(slow.run.battle.allies[0].buffs.some((x) => x.k === 'atkUp'), '按次数结算，不该被时间清掉');
 });
 
 test('治疗贡献属于施法者，战场1号位确实最靠近敌人', () => {

@@ -67,9 +67,10 @@
   }
 
   /**
-   * 一个单位实际能放纹路的板面：{cells:Set<'x,y'>, terminals, size, generated}
-   * - 底盘带 plate 配置 → 用 PlateGen 按 seed 生成异形板面，终端由板面派生；
+   * 一个单位实际能放纹路的板面：{cells:Set<'x,y'>, size, generated}
+   * - 底盘带 plate 配置 → 用 PlateGen 按 seed 生成异形板面；
    * - 否则退回旧的 4x4 网格（老存档 / 测试用）。
+   * 板面只管「哪一格能放」。接线模型（输入极 / 输出极 / 脉冲）已删除，这里不再派生端子。
    * 这是唯一决定「哪一格能放」的地方，别处不要再写死 4。
    */
   function plateOf(unit) {
@@ -79,7 +80,6 @@
       const cells = new Set(unit.plateOverride.cells.map((c) => c[0] + ',' + c[1]));
       return {
         cells,
-        terminals: unit.plateOverride.terminals || D().TERMINALS,
         cellsList: unit.plateOverride.cells,
         size: D().DESIGN.gridSize,
         generated: false,
@@ -92,34 +92,8 @@
         archetype: conf.archetype,
         target: conf.target,
       });
-      /* 能量经济住在蚀刻法里：四个具名点由装备的蚀刻法给，板面不再决定。
-         没有蚀刻法 → 没有终端 → 板面只是一块带槽位的金属。 */
-      const terminals = {};
-      V.State.manuscriptsOf(unit).forEach((ms, index) => {
-        const oriented = V.Manuscript.orient(
-          V.Manuscript.normalize(ms), ms.rotation || 0, !!ms.mirrorY,
-        );
-        const ox = ms.x || 0;
-        const oy = ms.y || 0;
-        const LABEL = { clock: '入口', damage: '回响', main: '出口', support: '护持' };
-        Object.keys((oriented && oriented.io) || {}).forEach((id) => {
-          const p = oriented.io[id];
-          const isIn = id === 'clock' || id === 'damage';
-          const key = index ? ms.id + ':' + id : id;
-          terminals[key] = {
-            id: key, channel: id, manuscriptId: ms.id,
-            cell: [p.cell[0] + ox, p.cell[1] + oy],
-            dir: p.dir,
-            role: isIn ? 'in' : 'out',
-            kind: isIn ? 'input' : 'output',
-            name: LABEL[id] || id,
-            fromManuscript: true,
-          };
-        });
-      });
       return {
         cells: new Set(gen.cells.map((c) => c[0] + ',' + c[1])),
-        terminals,
         cellsList: gen.cells,
         size: V.PlateGen.SIZE,
         generated: true,
@@ -136,12 +110,12 @@
     }
     return {
       cells, cellsList: [...cells].map((k) => k.split(',').map(Number)),
-      terminals: D().TERMINALS, size, generated: false,
+      size, generated: false,
     };
   }
 
   /**
-   * preview(st, unitId, placements) -> {ok, errors, occupied, load, graph, reachableOutputs}
+   * preview(st, unitId, placements) -> {ok, errors, occupied, load, overload, cap}
    * 同一函数供 UI 预览与真实保存使用；非法时 state 不变（本函数不写 state）。
    */
   /** 装配上限统一取板面配置，经典板保留原值。@param {object} unit @returns {number} */
@@ -169,7 +143,7 @@
   function preview(st, unitId, placements) {
     const errors = [];
     const unit = st.roster.find((u) => u.id === unitId);
-    if (!unit) return { ok: false, errors: ['找不到角色'], occupied: [], load: 0, reachableOutputs: [] };
+    if (!unit) return { ok: false, errors: ['找不到角色'], occupied: [], load: 0, overload: 0, cap: 0 };
     const body = D().body(unit.bodyPreset);
     const plate = plateOf(unit);
 
@@ -238,189 +212,24 @@
     for (const ms of etchings) load += Number(ms.load) || 0;
     /* 异形板面格数多，负荷上限单独给；经典模式沿用老值 */
     const cap = loadCap(unit);
-    if (load > cap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${cap}`);
+    /* 超载不再阻止装配：超出部分转成开局压力与回裕惩罚，玩家自己决定值不值 */
+    const overload = Math.max(0, load - cap);
 
     if (errors.length) {
-      return { ok: false, errors, occupied, load, reachableOutputs: [], graph: null };
+      return { ok: false, errors, occupied, load, overload, cap };
     }
 
-    const graph = buildGraph(st, built, plate.terminals);
-    if (!graph.ok) {
-      return { ok: false, errors: graph.errors, occupied, load, reachableOutputs: [], graph: null };
-    }
-
-    const reachableOutputs = graph.value.reachableOutputs;
-    return {
-      ok: true, errors: [], occupied, load, reachableOutputs,
-      graph: graph.value, bagError,
-    };
-  }
-
-  /* ------------------------------ 端口图 ------------------------------ */
-
-  function portKey(itemId, portId) { return itemId + ':' + portId; }
-
-  /**
-   * 构造有向图：极 → 纹路入口 → 内部 links → 出口 → 相邻纹路入口 … → 输出极。
-   * 节点使用 placementId(即 itemId)+portId，保证可序列化与稳定排序。
-   */
-  function buildGraph(st, built, terminalSet) {
-    const errors = [];
-    const nodes = new Map(); // key -> {key, kind, itemId, portId?, dir, cell, role}
-    const edges = []; // {from, to}
-
-    const terminals = terminalSet || D().TERMINALS;
-
-    Object.values(terminals).forEach((t) => {
-      nodes.set('T:' + t.id, {
-        key: 'T:' + t.id, kind: 'terminal', terminal: t.channel || t.id,
-        dir: t.dir, cell: t.cell.slice(), role: t.role,
-      });
-    });
-
-    built.forEach((b) => {
-      b.ports.forEach((pt) => {
-        nodes.set(portKey(b.itemId, pt.id), {
-          key: portKey(b.itemId, pt.id), kind: 'port', itemId: b.itemId, portId: pt.id,
-          dir: pt.dir, cell: pt.cell.slice(), role: pt.role, templateId: b.templateId,
-        });
-      });
-      /* 内部连通：in → out（有向） */
-      b.tpl.links.forEach(([from, to]) => {
-        edges.push({ from: portKey(b.itemId, from), to: portKey(b.itemId, to) });
-      });
-    });
-
-    /* 入口端口 ← 相邻纹路出口，或 ← 输入极 */
-    built.forEach((b) => {
-      b.ports.filter((p) => p.role === 'in').forEach((pt) => {
-        const key = portKey(b.itemId, pt.id);
-        const [dx, dy] = DIRS[pt.dir];
-        const srcCell = [pt.cell[0] + dx, pt.cell[1] + dy];
-        let matched = false;
-
-        Object.values(terminals).forEach((t) => {
-          if (t.role !== 'in') return;
-          if (t.cell[0] === pt.cell[0] && t.cell[1] === pt.cell[1] && t.dir === pt.dir) {
-            edges.push({ from: 'T:' + t.id, to: key });
-            matched = true;
-          }
-        });
-
-        built.forEach((other) => {
-          if (other.itemId === b.itemId) return;
-          other.ports.filter((o) => o.role === 'out').forEach((op) => {
-            if (op.cell[0] !== srcCell[0] || op.cell[1] !== srcCell[1]) return;
-            if (op.dir !== opposite(pt.dir)) return;
-            edges.push({ from: portKey(other.itemId, op.id), to: key });
-            matched = true;
-          });
-        });
-        void matched;
-      });
-
-      /* 出口端口 → 相邻纹路入口，或 → 输出极 */
-      b.ports.filter((p) => p.role === 'out').forEach((pt) => {
-        const key = portKey(b.itemId, pt.id);
-        const [dx, dy] = DIRS[pt.dir];
-        const dstCell = [pt.cell[0] + dx, pt.cell[1] + dy];
-
-        Object.values(terminals).forEach((t) => {
-          if (t.role !== 'out') return;
-          if (t.cell[0] === pt.cell[0] && t.cell[1] === pt.cell[1] && t.dir === pt.dir) {
-            edges.push({ from: key, to: 'T:' + t.id });
-          }
-        });
-
-        built.forEach((other) => {
-          if (other.itemId === b.itemId) return;
-          other.ports.filter((o) => o.role === 'in').forEach((ip) => {
-            if (ip.cell[0] !== dstCell[0] || ip.cell[1] !== dstCell[1]) return;
-            if (ip.dir !== opposite(pt.dir)) return;
-            edges.push({ from: key, to: portKey(other.itemId, ip.id) });
-          });
-        });
-      });
-    });
-
-    /* 去重（同一对端口可能被两条路径重复登记） */
-    const seenEdge = new Set();
-    const uniqEdges = [];
-    edges.forEach((e) => {
-      if (!nodes.has(e.from) || !nodes.has(e.to)) return;
-      const k = e.from + '->' + e.to;
-      if (seenEdge.has(k)) return;
-      seenEdge.add(k);
-      uniqEdges.push(e);
-    });
-
-    /* Kahn 拓扑排序 + 环检测 */
-    const indeg = new Map();
-    const outAdj = new Map();
-    nodes.forEach((n) => { indeg.set(n.key, 0); outAdj.set(n.key, []); });
-    uniqEdges.forEach((e) => {
-      indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
-      (outAdj.get(e.from) || []).push(e.to);
-      if (!outAdj.has(e.from)) outAdj.set(e.from, []);
-    });
-
-    const queue = [];
-    nodes.forEach((n) => { if ((indeg.get(n.key) || 0) === 0) queue.push(n.key); });
-    queue.sort();
-    const order = [];
-    while (queue.length) {
-      const k = queue.shift();
-      order.push(k);
-      (outAdj.get(k) || []).slice().sort().forEach((to) => {
-        indeg.set(to, (indeg.get(to) || 1) - 1);
-        if (indeg.get(to) === 0) { queue.push(to); queue.sort(); }
-      });
-    }
-
-    const withEdges = new Set();
-    uniqEdges.forEach((e) => { withEdges.add(e.from); withEdges.add(e.to); });
-    const stuck = [...withEdges].filter((k) => !order.includes(k));
-    if (stuck.length) {
-      errors.push(`回路存在有向闭环（${stuck.slice(0, 3).join('、')}），能量会无限循环`);
-    }
-
-    if (errors.length) return { ok: false, errors };
-
-    /* 可达输出：从输入极出发能走到的输出极 */
-    const reach = new Set();
-    const stack = [...order].filter((k) => k.startsWith('T:') && nodes.get(k).role === 'in');
-    while (stack.length) {
-      const k = stack.pop();
-      if (reach.has(k)) continue;
-      reach.add(k);
-      (outAdj.get(k) || []).forEach((to) => { if (!reach.has(to)) stack.push(to); });
-    }
-    const reachableOutputs = ['main', 'support'].filter(id => Object.values(terminals)
-      .some(t => (t.channel || t.id) === id && reach.has('T:' + t.id)));
-
-    return {
-      ok: true,
-      value: {
-        nodes: [...nodes.values()].map((n) => ({ ...n })),
-        edges: uniqEdges,
-        order,
-        reachableOutputs,
-        reach: [...reach].sort(),
-        loadedItems: built.map((b) => b.itemId),
-        cells: built.reduce((acc, b) => acc.concat(b.cells.map((c) => [c.x, c.y])), []),
-      },
-    };
+    return { ok: true, errors: [], occupied, load, overload, cap, bagError };
   }
 
   /**
-   * layout(st, placements)：容错版布局，供 UI 画格子/端口/连线。
+   * layout(st, placements)：容错版布局，供 UI 画格子/端口/纹路间的相邻连线。
    * 不做合法性判断（非法摆放也照画），权威校验仍走 preview。
    */
-  function layout(st, placements, terminalsIn) {
+  function layout(st, placements) {
     const cells = [];
     const ports = [];
     const edges = [];
-    const terminals = terminalsIn || D().TERMINALS;
     const built = [];
 
     (placements || []).forEach((p) => {
@@ -446,12 +255,6 @@
       b.aps.filter((p) => p.role === 'in').forEach((pt) => {
         const [dx, dy] = DIRS[pt.dir];
         const src = [pt.cell[0] + dx, pt.cell[1] + dy];
-        Object.values(terminals).forEach((t) => {
-          if (t.role !== 'in') return;
-          if (t.cell[0] === pt.cell[0] && t.cell[1] === pt.cell[1] && t.dir === pt.dir) {
-            edges.push({ from: 'T:' + t.id, to: b.item.id + ':' + pt.id, terminal: true });
-          }
-        });
         built.forEach((o) => {
           if (o.item.id === b.item.id) return;
           o.aps.filter((q) => q.role === 'out').forEach((q) => {
@@ -465,12 +268,6 @@
       b.aps.filter((p) => p.role === 'out').forEach((pt) => {
         const [dx, dy] = DIRS[pt.dir];
         const dst = [pt.cell[0] + dx, pt.cell[1] + dy];
-        Object.values(terminals).forEach((t) => {
-          if (t.role !== 'out') return;
-          if (t.cell[0] === pt.cell[0] && t.cell[1] === pt.cell[1] && t.dir === pt.dir) {
-            edges.push({ from: b.item.id + ':' + pt.id, to: 'T:' + t.id, terminal: true });
-          }
-        });
         built.forEach((o) => {
           if (o.item.id === b.item.id) return;
           o.aps.filter((q) => q.role === 'in').forEach((q) => {
@@ -498,9 +295,9 @@
         unitId,
         bodyPreset: unit.bodyPreset,
         load: p.load,
+        overload: p.overload || 0,
+        cap: p.cap,
         occupied: p.occupied,
-        reachableOutputs: p.reachableOutputs,
-        graph: p.graph,
         placements: (placements || []).map((x) => ({
           itemId: x.itemId, x: x.x, y: x.y, rotation: x.rotation || 0, mirrorY: !!x.mirrorY,
         })),
@@ -521,8 +318,11 @@
     u2.board.placements = (placements || []).map((x) => ({
       itemId: x.itemId, x: x.x, y: x.y, rotation: x.rotation || 0, mirrorY: !!x.mirrorY,
     }));
-    return { ok: true, state: next, events: [], load: p.load, reachableOutputs: p.reachableOutputs };
+    return { ok: true, state: next, events: [], load: p.load, overload: p.overload, cap: p.cap };
   }
+
+  /* 纹路贯通时蚀刻法额外乘算。工坊的「共鸣增幅」也读这个数，避免展示与结算各写一份。 */
+  const ROUTE_MULT = 1.15;
 
   /**
    * 蚀刻法状态：覆盖率台阶 + 是否贯通 → 战斗要用的效果。
@@ -545,7 +345,7 @@
     if (!V.Manuscript.fits(oriented, plate.cellsList, ox, oy)) {
       return { ok: false, reason: '蚀刻法没落在板面上', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
     }
-    const lay = layout(st, placementsIn || unit.board.placements || [], plate.terminals);
+    const lay = layout(st, placementsIn || unit.board.placements || []);
     const idx = V.Manuscript.pieceIndex(lay);
     const cov = V.Manuscript.coverage(oriented, ox, oy, idx);
     const rt = V.Manuscript.route(oriented, ox, oy, idx);
@@ -573,9 +373,13 @@
     const eff = Object.assign({ mainMult: 1, supportMult: 1, startEnergy: 0 }, (cov.tier && cov.tier.effect) || {});
     eff.boost = boost;
     if (rt.ok) {
-      eff.mainMult = Math.round(eff.mainMult * 1.15 * 100) / 100;
-      eff.supportMult = Math.round(eff.supportMult * 1.15 * 100) / 100;
+      eff.mainMult = Math.round(eff.mainMult * ROUTE_MULT * 100) / 100;
+      eff.supportMult = Math.round(eff.supportMult * ROUTE_MULT * 100) / 100;
     }
+    /* 负荷是价格：达到共鸣阶后，越重的蚀刻法吃得越狠（每点负荷 +3% 主修乘算） */
+    const loadBonus = 1 + 0.03 * Math.max(0, (Number(ms.load) || 1) - 1);
+    if (cov.tier && loadBonus > 1) eff.mainMult = Math.round(eff.mainMult * loadBonus * 100) / 100;
+    eff.loadBonus = cov.tier ? Math.round(loadBonus * 100) / 100 : 1;
     return {
       ok: true,
       spec: D().manuscript(ms.id) || ms,
@@ -624,201 +428,8 @@
     return best;
   }
 
-  /* ------------------------------ 能量路由 ------------------------------ */
-
-  function token(tags) { return { tags: (tags || []).slice() }; }
-  function pulse(n, tags) {
-    const out = [];
-    for (let i = 0; i < (n || 0); i++) out.push(token(tags));
-    return out;
-  }
-
-  function emptyRuntime() {
-    return { capacitors: {}, splitCursor: {}, outputs: { main: [], support: [] }, dissipated: 0 };
-  }
-
-  /**
-   * route(compiled, runtime, inputs, context)
-   * inputs = {clock: tokens[], damage: tokens[]}
-   * context = {hpPct: 0..1}
-   * 返回 {runtime, events}；不修改入参。
-   */
-  function route(compiled, runtime, inputs, context) {
-    const g = compiled && compiled.graph;
-    const rt = {
-      capacitors: { ...(runtime && runtime.capacitors || {}) },
-      splitCursor: { ...(runtime && runtime.splitCursor || {}) },
-      outputs: {
-        main: ((runtime && runtime.outputs && runtime.outputs.main) || []).slice(),
-        support: ((runtime && runtime.outputs && runtime.outputs.support) || []).slice(),
-      },
-      dissipated: 0,
-    };
-    const events = [];
-    if (!g) return { runtime: rt, events };
-
-    const nodeMap = new Map(g.nodes.map((n) => [n.key, n]));
-    const adj = new Map();
-    g.edges.forEach((e) => {
-      if (!adj.has(e.from)) adj.set(e.from, []);
-      adj.get(e.from).push(e.to);
-    });
-
-    const tokensAt = new Map();
-    const inject = (key, toks) => {
-      if (!toks || !toks.length) return;
-      if (!tokensAt.has(key)) tokensAt.set(key, []);
-      tokensAt.get(key).push(...toks);
-    };
-
-    Object.entries(inputs || {}).forEach(([id, toks]) => {
-      if (!toks || !toks.length) return;
-      if (!nodeMap.has('T:' + id)) return;
-      inject('T:' + id, toks);
-    });
-
-    const cap = D().DESIGN.chargeCap;
-    const outCap = D().DESIGN.outputCap;
-
-    g.order.forEach((key) => {
-      const node = nodeMap.get(key);
-      if (!node) return;
-      const toks = tokensAt.get(key) || [];
-      if (!toks.length) return;
-
-      /* 输出极：储存，溢出消散 */
-      if (node.kind === 'terminal' && node.role === 'out') {
-        const id = node.terminal;
-        const room = Math.max(0, outCap - rt.outputs[id].length);
-        const keep = toks.slice(0, room);
-        rt.outputs[id].push(...keep);
-        const lost = toks.length - keep.length;
-        if (lost) {
-          rt.dissipated += lost;
-          events.push({ type: 'energyOverflow', outputId: id, amount: lost });
-        }
-        return;
-      }
-
-      if (node.kind === 'terminal') {
-        (adj.get(key) || []).forEach((to) => inject(to, toks));
-        return;
-      }
-
-      const tpl = D().template(node.templateId);
-
-      /* 入口节点的特殊行为 */
-      if (node.role === 'in') {
-        if (tpl.capacitor) {
-          const store = (rt.capacitors[node.itemId] || []).slice();
-          store.push(...toks);
-          let emitted = [];
-          if (store.length >= cap) {
-            emitted = store.slice(0, cap);
-            store.splice(0, cap);
-            /* 发出的 4 单位带 surge */
-            emitted = emitted.map((t) => token([...t.tags.filter((x) => x !== 'surge'), 'surge']));
-            events.push({ type: 'capacitorSurge', itemId: node.itemId, amount: emitted.length });
-          }
-          while (store.length > cap) { store.pop(); rt.dissipated += 1; }
-          rt.capacitors[node.itemId] = store;
-          if (emitted.length) (adj.get(key) || []).forEach((to) => inject(to, emitted));
-          return;
-        }
-
-        if (tpl.gate) {
-          const hpPct = context && typeof context.hpPct === 'number' ? context.hpPct : 1;
-          if (hpPct >= tpl.gate.hpBelow) {
-            rt.dissipated += toks.length;
-            events.push({ type: 'gateBlocked', itemId: node.itemId, amount: toks.length });
-            return;
-          }
-        }
-
-        if (tpl.ember) {
-          toks.forEach((t) => { if (!t.tags.includes('ember')) t.tags.push('ember'); });
-        }
-
-        const outs = (adj.get(key) || []).slice().sort();
-        if (tpl.split) {
-          const ordered = splitTargets(outs, tpl, node.itemId);
-          if (!ordered.length) { rt.dissipated += toks.length; return; }
-          const buckets = ordered.map(() => []);
-          let cursor = (rt.splitCursor[node.itemId] || 0) % ordered.length;
-          for (const t of toks) {
-            buckets[cursor].push(t);
-            cursor = (cursor + 1) % ordered.length;
-          }
-          rt.splitCursor[node.itemId] = cursor;
-          ordered.forEach((target, i) => inject(target, buckets[i]));
-          return;
-        }
-
-        outs.forEach((to) => inject(to, toks));
-        return;
-      }
-
-      /* 出口端口：继续沿外部连线走 */
-      (adj.get(key) || []).forEach((to) => inject(to, toks));
-    });
-
-    return { runtime: rt, events };
-  }
-
-  /** splitter 的两个出口按端口 id（outA/outB）稳定排序，不依赖边的插入顺序。 */
-  function splitTargets(adjList, tpl, itemId) {
-    const wanted = tpl.split.map((pid) => portKey(itemId, pid));
-    const found = wanted.filter((k) => adjList.includes(k));
-    return found;
-  }
-
-  /* ------------------------------ 便捷查询 ------------------------------ */
-
-  function outputTokens(runtime, id) {
-    const arr = (runtime && runtime.outputs && runtime.outputs[id]) || [];
-    return arr;
-  }
-
-  function hasSurge(tokens) {
-    return tokens.some((t) => t.tags.includes('surge'));
-  }
-
-  function hasEmber(tokens) {
-    return tokens.some((t) => t.tags.includes('ember'));
-  }
-
-  /** 消耗指定输出上恰好 cost 个单位；不足则返回 null。 */
-  function consumeOutput(runtime, id, cost) {
-    const arr = outputTokens(runtime, id);
-    if (arr.length < cost) return null;
-    const used = arr.slice(0, cost);
-    const rest = arr.slice(cost);
-    const next = {
-      capacitors: { ...runtime.capacitors },
-      splitCursor: { ...runtime.splitCursor },
-      outputs: { main: runtime.outputs.main.slice(), support: runtime.outputs.support.slice() },
-      dissipated: runtime.dissipated || 0,
-    };
-    next.outputs[id] = rest;
-    return { runtime: next, used };
-  }
-
-  /** 调谐返还：只放回当前输出储存，不产生新脉冲。 */
-  function refund(runtime, id, tags) {
-    const next = {
-      capacitors: { ...runtime.capacitors },
-      splitCursor: { ...runtime.splitCursor },
-      outputs: { main: runtime.outputs.main.slice(), support: runtime.outputs.support.slice() },
-      dissipated: runtime.dissipated || 0,
-    };
-    if (next.outputs[id].length < D().DESIGN.outputCap) next.outputs[id].unshift(token(tags || []));
-    return next;
-  }
-
   V.Circuit = {
-    plateOf, loadCap, scarState, manuscriptState, suggestPlacement,
+    ROUTE_MULT, plateOf, loadCap, scarState, manuscriptState, suggestPlacement,
     opposite, rotateDir, flipNS, transformTemplate, preview, compile, saveLoadout, layout,
-    buildGraph, route, emptyRuntime, pulse, token, outputTokens,
-    hasSurge, hasEmber, consumeOutput, refund, portKey,
   };
 })(globalThis.Ashen ||= {});

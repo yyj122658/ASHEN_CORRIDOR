@@ -12,12 +12,29 @@ const { chromium } = require('playwright');
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(pathToFileURL(path.resolve(__dirname, '../../index.html')).href);
     await page.locator('[data-act=titleStart]').click();
-    assert.equal(await page.locator('.metal-party .legend-portrait').count(), 4);
+    /* 3.0 起新游戏只由两位传奇（铁鸦、灰烬）出发，旧断言写的是 4 位。 */
+    assert.equal(await page.locator('.metal-party .legend-portrait').count(), 2);
     assert.equal(await page.locator('.metal-party .metal-portrait').count(), 0);
     assert.ok(!/功法|构件|刻印/.test(await page.locator('body').innerText()));
     await page.locator('#nav [data-v=workshop]').click();
     assert.equal(await page.locator('.ws-left .panel-h').first().innerText(), '蚀刻法');
     assert.match(await page.locator('.ws-right .panel-h').first().innerText(), /纹路/);
+    /* A3：208px 左栏用短标签，全称只留在宽处（图鉴） */
+    const narrowText = await page.locator('.ws-left').innerText();
+    assert.match(narrowText, /普攻间隔/, '窄栏应使用短标签');
+    assert.ok(!narrowText.includes('普通攻击'), '208px 左栏不该出现全称「普通攻击」');
+    await page.locator('[data-act=wsCodex]').click();
+    const codexText = await page.locator('.codex-book').innerText();
+    assert.match(codexText, /普通攻击间隔/, '图鉴是宽处，保留全称');
+    assert.ok(!codexText.includes('普攻'), '图鉴不该出现短标签');
+    /* A4：术语页与 tooltip 同源，词条全部上屏 */
+    const termsBlock = page.locator('[data-terms]');
+    assert.equal(await termsBlock.count(), 1, '图鉴应有术语页');
+    await termsBlock.locator('summary').click();
+    const termCount = await termsBlock.locator('dt').count();
+    assert.equal(termCount, await page.evaluate(() => Ashen.Veteran.Terms.ENTRIES.length), '词条应全部渲染');
+    assert.match(await termsBlock.innerText(), /共鸣增幅/, '术语页要能看到词条解释');
+    await page.locator('[data-act=wsCodex]').click();
     assert.ok(await page.locator('.ms-chip .catalogue-icon').first().isVisible());
     const rune = page.locator('.ws-right [data-stash="1"]').first();
     assert.ok(await rune.locator('.catalogue-icon').isVisible());
@@ -27,7 +44,7 @@ const { chromium } = require('playwright');
     const expectedMembrane = (id, rotation, mirrorY) => page.evaluate(({id, rotation, mirrorY}) => {
       const V = Ashen.Veteran, m = V.Manuscript.orient(V.Manuscript.normalize(V.Data.manuscript(id)), rotation, mirrorY);
       return { veins: Object.entries(m.veins).flatMap(([cell, dirs]) => dirs.map(dir => cell + '/' + dir)).sort(),
-        ports: Object.entries(m.io).map(([id, p]) => V.Data.TERMINALS[id].role + '/' + p.dir).sort() };
+        ports: Object.entries(m.io).map(([pid, p]) => ((pid === 'clock' || pid === 'damage') ? 'in' : 'out') + '/' + p.dir).sort() };
     }, { id, rotation, mirrorY });
     const drawnMembrane = locator => locator.evaluate(el => ({
       veins: [...el.querySelectorAll('[data-vein]')].map(p => p.closest('[data-etch-cell]').dataset.etchCell + '/' + p.dataset.vein).sort(),

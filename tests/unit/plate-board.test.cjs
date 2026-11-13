@@ -40,28 +40,22 @@ test('开局自带一阶微蚀刻法，仓库另有可换的蚀刻法', () => {
 
   const u = st.roster[0];
   const bare = Object.assign({}, u, { manuscript: null });
-  assert.deepEqual(Object.keys(V.Circuit.plateOf(bare).terminals), [], '没蚀刻法时没有能量点');
+  assert.equal(V.Circuit.plateOf(bare).terminals, undefined, '接线模型已删，板面不带端子');
 
   V.State.equipManuscript(st, u, st.manuscriptVault[0].id);
   assert.ok(u.manuscript, '换上后应持有蚀刻法');
 
   const plate = V.Circuit.plateOf(u);
-  const t = plate.terminals;
-  assert.deepEqual(Object.keys(t).sort(), ['clock', 'damage', 'main', 'support']);
-  Object.keys(t).forEach((id) => {
-    assert.ok(plate.cells.has(key(t[id].cell)), `${u.name} 的 ${id} 不在板面上`);
-    assert.equal(t[id].fromManuscript, true);
-  });
-  assert.equal(t.clock.role, 'in');
-  assert.equal(t.main.role, 'out');
+  assert.ok(plate.cells.size > 0, '板面应仍有可用格');
+  assert.equal(plate.terminals, undefined, '接线模型已删，板面不带端子');
 });
 
-test('没有蚀刻法就没有能量点：板面只剩槽位', () => {
+test('板面不再派生端子：有没有蚀刻法都一样', () => {
   const st = V.State.create(9001);
   const u = st.roster[0];
   const bare = Object.assign({}, u, { manuscript: null });
   const plate = V.Circuit.plateOf(bare);
-  assert.deepEqual(Object.keys(plate.terminals), []);
+  assert.equal(plate.terminals, undefined);
 });
 
 test('板面外的位置报「不在板面上」，不再说屏蔽格', () => {
@@ -116,7 +110,7 @@ test('老存档走经典 4x4，坐标与终端保持原样', () => {
   assert.ok(u.plateOverride, '经典模式应带板面覆写');
   const plate = V.Circuit.plateOf(u);
   assert.equal(plate.generated, false);
-  assert.equal(plate.terminals.main.cell.join(','), V.Data.TERMINALS.main.cell.join(','));
+  assert.equal(plate.cells.size, 16 - (V.Data.BODIES[u.bodyPreset].blocked || []).length, '经典板面仍是 4x4 扣掉屏蔽格');
   /* 预设在经典板面上不应被平移 */
   const placements = u.board.placements;
   assert.ok(placements.length > 0, '经典形态应该自带基础线路');

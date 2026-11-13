@@ -119,7 +119,8 @@
     }
   }
 
-  function filterCatalogue(book, limit = 8) {
+  /** 图鉴筛选：条数上限可由容器声明，长图鉴页一次列全，短的仍分页。 */
+  function filterCatalogue(book, limit = Number(book.dataset.catalogueLimit) || 8) {
     const query = book.querySelector('[data-catalogue-query]').value.trim().toLowerCase();
     const filter = book.querySelector('[data-catalogue-filter]').value;
     let matches = 0;
@@ -198,12 +199,15 @@
       if (ui.screen === 'loot') updateGroundScan();
       const book = stageEl.querySelector('[data-catalogue]');
       if (book) {
-        if (old && old.dataset.catalogue === book.dataset.catalogue) {
+        const sameBook = old && old.dataset.catalogue === book.dataset.catalogue;
+        if (sameBook) {
           book.querySelector('[data-catalogue-query]').value = old.querySelector('[data-catalogue-query]').value;
           book.querySelector('[data-catalogue-filter]').value = old.querySelector('[data-catalogue-filter]').value;
           if (book.tagName === 'DETAILS') book.open = old.open;
         }
-        filterCatalogue(book, Number(old?.dataset?.limit) || 8);
+        /* 沿用上一次的条数上限，否则按容器自己声明的默认值；都没有才用 8 条分页。 */
+        const prevLimit = sameBook ? Number(old.dataset.limit) : 0;
+        filterCatalogue(book, prevLimit || Number(book.dataset.catalogueLimit) || 8);
       }
     }
     renderModal();
@@ -815,6 +819,10 @@
         ui.wsPalette = action.id === 'runes' ? 'runes' : 'etchings';
         render();
         return;
+      case 'wsCodex':
+        ui.wsCodex = !ui.wsCodex;
+        render();
+        return;
       case 'wsUnit':
         if (ui.wsMode === 'inscribe') return;
         openWorkshop(action.id);
@@ -930,27 +938,6 @@
         return;
       }
 
-      case 'wsAutoConnect': {
-        const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
-        if (!unit) return;
-        const plate = V.Circuit.plateOf(unit);
-        const cap = V.Circuit.loadCap(unit) - V.State.manuscriptsOf(unit).reduce((sum, m) => sum + (m.load || 0), 0);
-        const stashCircuits = state.stash.filter((id) => state.itemsById[id] && state.itemsById[id].kind === 'circuit');
-        const allIds = [...new Set([...(ui.wsDraft || []).map((p) => p.itemId), ...stashCircuits])];
-        const found = findSmartConnectLayout({ ...state, roster: [unit] }, unit, plate, allIds, cap);
-        if (!found) {
-          toast('现有可用纹路在当前负荷/板面下暂无法直接连通输出');
-          return;
-        }
-        pushHistory();
-        ui.wsDraft = found;
-        ui.wsPick = null;
-        ui.wsErrors = [];
-        render();
-        toast('已用现有纹路自动接通输出');
-        return;
-      }
-
       case 'wsRemove': {
         const placed = ui.wsDraft.find((p) => p.itemId === action.id);
         if (!placed) return;
@@ -1028,7 +1015,7 @@
         const unit = next.roster.find((u) => u.id === ui.wsUnit);
         Object.assign(unit, V.UI.workshopUnit(unit, ui));
         const plate = V.Circuit.plateOf(unit);
-        const ms = V.UI.resolveManuscript(unit, plate, ui, V.Circuit.layout(next, ui.wsDraft, plate.terminals));
+        const ms = V.UI.resolveManuscript(unit, plate, ui, V.Circuit.layout(next, ui.wsDraft));
         const pose = action.type === 'wsMsEquipAt'
           ? { x: action.ox, y: action.oy, rotation: action.rotation || 0, mirrorY: !!action.mirrorY }
           : ms && ms.fits ? { x: ms.ox, y: ms.oy, rotation: ms.rot, mirrorY: ms.mir } : undefined;
@@ -1051,7 +1038,7 @@
         const id = action.id || ui.wsMsId;
         const ms = V.State.manuscriptsOf(unit).find((m) => m.id === id);
         const plate = V.Circuit.plateOf(unit);
-        const layout = V.Circuit.layout(state, ui.wsDraft, plate.terminals);
+        const layout = V.Circuit.layout(state, ui.wsDraft);
         const candidate = { ...ui, wsMsId: id };
         if (action.type === 'wsMsMove') {
           Object.assign(candidate, { wsMsOx: action.ox, wsMsOy: action.oy, wsMsRot: action.rotation ?? ui.wsMsRot, wsMsMir: action.mirrorY ?? ui.wsMsMir });
@@ -1077,6 +1064,7 @@
       case 'wsMsPick': {
         const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
         selectWorkshopManuscript(action.id, V.State.manuscriptsOf(unit).find((m) => m.id === action.id));
+        ui.wsCodex = false;
         render();
         return;
       }
@@ -1565,6 +1553,7 @@
     const unit = state.roster.find((u) => u.id === unitId) || state.roster[0];
     ui.wsMode = 'workshop';
     ui.wsPalette = 'etchings';
+    ui.wsCodex = false;
     ui.wsUnit = unit.id;
     ui.wsDraft = V.State.clone(unit.board.placements);
     ui.wsPick = null;
@@ -1611,6 +1600,24 @@
     ui.wsRedo = [];
   }
 
+  /**
+   * 自动布局用的虚拟边界极：接线模型已从玩法里删除，这里只是给寻路一个起终点方向，
+   * 不参与任何结算，也不写回 state。按板面最左/最右/最上/最下格推导。
+   */
+  function plateEdgeTerms(plate) {
+    const cells = plate && plate.cellsList ? plate.cellsList : [];
+    if (!cells.length) return [];
+    const pick = (cmp) => cells.slice().sort(cmp)[0];
+    const byX = (a, b) => (a[0] - b[0]) || (a[1] - b[1]);
+    const byY = (a, b) => (a[1] - b[1]) || (a[0] - b[0]);
+    return [
+      { role: 'in', dir: 'W', cell: pick(byX) },
+      { role: 'in', dir: 'S', cell: pick((a, b) => (b[1] - a[1]) || (b[0] - a[0])) },
+      { role: 'out', dir: 'E', cell: pick((a, b) => (b[0] - a[0]) || (b[1] - a[1])) },
+      { role: 'out', dir: 'N', cell: pick(byY) },
+    ];
+  }
+
   const DIR_DELTA = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
   const DIR_OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
 
@@ -1619,7 +1626,7 @@
     const o = opts || {};
     const packAll = o.packAll !== false;
     const maxLoad = o.maxLoad != null ? o.maxLoad : Infinity;
-    const terms = Object.values(plate.terminals || {});
+    const terms = plateEdgeTerms(plate);
     const inTerms = terms.filter((t) => t.role === 'in');
     const outTerms = terms.filter((t) => t.role === 'out');
     const candsByItem = itemIds.map((id) => {
@@ -1723,7 +1730,7 @@
       }
     }
 
-    /* 退化路径：没有蚀刻法（或蚀刻法只给两个能量点）时凑不出一条从入口到出口的链，
+    /* 退化路径：没有蚀刻法（或蚀刻法只给两个余裕点）时凑不出一条从入口到出口的链，
        但仍然应该给玩家一个「几何合法」的推荐布局，而不是直接拒绝。 */
     const fallback = (() => {
       const chosen = [];
@@ -1925,7 +1932,7 @@
     const blocked = new Set(plate && !plate.generated && body && body.blocked ? body.blocked.map(([x, y]) => x + ',' + y) : []);
     const replacingFieldRune = ui.wsMode === 'inscribe' && state.run?.bag.includes(d.id);
     const others = (ui.wsDraft || []).filter(p => p.itemId !== d.id && !(replacingFieldRune && p.itemId === ui.inscribeItem));
-    const L = V.Circuit.layout(state, others, plate && plate.terminals);
+    const L = V.Circuit.layout(state, others);
     const used = new Set(L.cells.map((c) => c.x + ',' + c.y));
     const isMs = d.kind === 'ms' || d.kind === 'msNew';
     if (isMs) {

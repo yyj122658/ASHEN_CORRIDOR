@@ -40,7 +40,8 @@ const { chromium } = require('playwright');
         return b.allies.map(u => [u.skinId,Ashen.SpriteAnim.charIdFor(u)]);
       });
       assert.ok(ids.every(([skin, char]) => skin === char));
-      assert.equal(new Set(ids.map(pair => pair[0])).size,4);
+      /* 3.0 起新游戏只由两位传奇（铁鸦、灰烬）出发，不再从四人队开始 */
+      assert.equal(new Set(ids.map(pair => pair[0])).size,2);
     }
     await checkRoster();
     await page.reload();
@@ -92,25 +93,31 @@ const { chromium } = require('playwright');
           }
         }
       }
-      for (let i = 0; i < 28; i += 4) {
-        let st = V.State.create(42);
-        st.roster.forEach((u,j) => { u.skinId = skins[(i+j) % skins.length].id; });
-        st = V.Expedition.start(st,{seed:42}).state;
-        const [floor, kind, previousRuns] = [
-          [1,'battle',0], [15,'battle',0], [29,'battle',0], [36,'elite',0], [14,'boss',0], [49,'boss',1], [21,'boss',0],
-        ][i/4];
-        st.run.floor = floor;
-        st.stats.runs = previousRuns;
-        st.run.nodes[0].type = kind;
-        st = V.Encounter.open(st,st.run.nodes[0].id).state;
-        st = V.Encounter.startAttempt(st).state;
-        for (const u of st.run.battle.allies) {
-          checkActor(u);
-          ids.add(sa.charIdFor(u));
-        }
-        for (const u of st.run.battle.enemies) {
-          checkActor(u);
-          enemies.add(sa.charIdFor(u));
+      /* 3.0 起开局只有两位传奇，一次装不满 21 张皮肤：
+         按「场景 × 批次」轮着分配，批次够多才能把所有皮肤都过一遍。 */
+      const scenarios = [
+        [1, 'battle', 0], [15, 'battle', 0], [29, 'battle', 0], [36, 'elite', 0],
+        [14, 'boss', 0], [49, 'boss', 1], [21, 'boss', 0],
+      ];
+      let skinCursor = 0;
+      for (const [floor, kind, previousRuns] of scenarios) {
+        for (let batch = 0; batch < 4; batch += 1) {
+          let st = V.State.create(42);
+          st.roster.forEach((u) => { u.skinId = skins[skinCursor++ % skins.length].id; });
+          st = V.Expedition.start(st,{seed:42}).state;
+          st.run.floor = floor;
+          st.stats.runs = previousRuns;
+          st.run.nodes[0].type = kind;
+          st = V.Encounter.open(st,st.run.nodes[0].id).state;
+          st = V.Encounter.startAttempt(st).state;
+          for (const u of st.run.battle.allies) {
+            checkActor(u);
+            ids.add(sa.charIdFor(u));
+          }
+          for (const u of st.run.battle.enemies) {
+            checkActor(u);
+            enemies.add(sa.charIdFor(u));
+          }
         }
       }
       if (result.loaded !== (skins.length+Object.keys(V.Data.ENEMIES).length)*4) throw new Error('图集不全');

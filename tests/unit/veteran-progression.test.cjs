@@ -90,7 +90,7 @@ test('招募产出可用角色：主手 + 基础线路 + 合法状态', () => {
   assert.ok(unit.manuscript, '必须自带入门蚀刻法');
   const pv = V.Circuit.preview(st, unit.id, unit.board.placements);
   assert.ok(pv.ok, JSON.stringify(pv.errors));
-  assert.ok(pv.reachableOutputs.length > 0, '招募出来的板面必须能通电');
+  assert.equal(pv.overload, 0, '招募出来的板面不该一上手就超载');
   const v = V.State.validate(st);
   assert.ok(v.ok, v.errors.slice(0, 3).join('；'));
 });

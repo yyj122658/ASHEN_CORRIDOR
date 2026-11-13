@@ -251,7 +251,7 @@
     const bw = 20;
     const bx = x - bw / 2;
 
-    /* 只画当前时间轴真正使用的生命与余裕，移除退役能量点。 */
+    /* 只画当前时间轴真正使用的生命与余裕，移除退役余裕点。 */
     ctx.fillStyle = 'rgba(12,20,15,0.88)';
     ctx.fillRect(bx - 1, y - 44, bw + 2, 3);
     const ratio = Math.max(0, Math.min(1, u.hp / u.maxHp));

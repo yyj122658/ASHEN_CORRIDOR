@@ -18,9 +18,9 @@
     baseSpeed: 10,
     /* 蚀刻法稀有度直接抬角色面板：这是除乘算之外唯一的成长维度 */
     rarityStat: { atk: 0.06, hp: 0.07, def: 0.04 },
-    /* 敌人仍走旧的行动逻辑，伤害按平A 的新量级统一缩放，避免一边倒 */
+    /* 敌人仍走旧的行动逻辑，伤害按普通攻击的新量级统一缩放，避免一边倒 */
     enemyDamageScale: 0.13,
-    /* 我方平A 归一化后，敌人血池要相应拉长，否则一场只有 10 秒 */
+    /* 我方普通攻击归一化后，敌人血池要相应拉长，否则一场只有 10 秒 */
     enemyHpScale: 2.6,
     baseHit: 0.94,
     baseCrit: 0.10,
@@ -37,7 +37,7 @@
     surgeStress: 3,
     supportShieldPct: 0.12,
     supportShieldCapPct: 0.30,
-    guardReduce: 0.20,
+    guardReduce: 0.80,
     maxFloor: 49,
     blessingFloors: [2, 4, 6, 14, 21, 28, 35, 42],
     logicSlots: 2,
@@ -68,7 +68,7 @@
       hp: 120, atk: 28, def: 8, spd: 14,
       loadCap: 6, blocked: [[0, 0], [2, 3]],
       plate: { archetype: 'bar', target: 22, loadCap: 13 },
-      desc: '出手快、皮薄。能量周转快，容错低。',
+      desc: '出手快、皮薄。余裕周转快，容错低。',
     },
     conduit: {
       id: 'conduit', name: '导流腔体',
@@ -86,16 +86,16 @@
       id: 'shortBlade', name: '短刃', cells: DESIGN.weaponCells,
       main: {
         energy: 2, mult: 1.6, target: 'frontFoe', allowedSlots: [0],
-        desc: '2 能量，160% 单体。只有站在 1 号位才能出手，其余位置退回 100% 基础攻击。',
+        desc: '2 余裕，160% 单体。只有站在 1 号位才能出手，其余位置退回 100% 普通攻击。',
       },
-      trait: { id: 'refund', name: '回手', desc: '每场战斗第一次主手输出返还 1 点能量。' },
+      trait: { id: 'refund', name: '回手', desc: '每场战斗第一次普通攻击返还 1 点余裕。' },
       desc: '贴脸才狠。适合前排换位构筑。',
     },
     towerShield: {
       id: 'towerShield', name: '塔盾', cells: DESIGN.weaponCells,
       main: {
         energy: 2, mult: 1.0, target: 'frontFoe', skipTarget: true, slot0Reduce: 0.2,
-        desc: '2 能量，100% 盾击并跳过目标一次行动。站在 1 号位时自身减伤 20%，持续到下次行动。',
+        desc: '2 余裕，100% 盾击并跳过目标一次行动。站在 1 号位时自身减伤 20%，持续到下次行动。',
       },
       trait: { id: 'brace', name: '承伤', desc: '每场战斗第一次替身保护可挡一次贯穿。' },
       desc: '不打伤害，打节奏。',
@@ -106,9 +106,9 @@
         energy: 2, mult: 1.2, target: 'frontFoe',
         slotTargets: { 0: 'frontFoe', 1: 'pierceFront2' },
         allowedSlots: [0, 1],
-        desc: '2 能量。1 号位 120% 正面单体；2 号位 120% 贯穿敌方前两位；3、4 号位不可用。',
+        desc: '2 余裕。1 号位 120% 正面单体；2 号位 120% 贯穿敌方前两位；3、4 号位不可用。',
       },
-      trait: { id: 'refund', name: '回手', desc: '每场战斗第一次主手输出返还 1 点能量。' },
+      trait: { id: 'refund', name: '回手', desc: '每场战斗第一次普通攻击返还 1 点余裕。' },
       desc: '站第二排也够得着。',
     },
     heavyCannon: {
@@ -116,33 +116,28 @@
       main: {
         energy: 4, energyAtSlot3: 2, mult: 1.8, target: 'frontFoe',
         slot0SelfDamage: 0.1,
-        desc: '4 能量，180% 单体；站在 4 号位只要 2 能量。1 号位开火自身损失当前最大生命 10%，不产生受击能量。',
+        desc: '4 余裕，180% 单体；站在 4 号位只要 2 余裕。1 号位开火自身损失当前生命上限 10%，不产生受击余裕。',
       },
-      trait: { id: 'refund', name: '回手', desc: '每场战斗第一次主手输出返还 1 点能量。' },
+      trait: { id: 'refund', name: '回手', desc: '每场战斗第一次普通攻击返还 1 点余裕。' },
       desc: '后排便宜，前排自伤。',
     },
     ritualStaff: {
       id: 'ritualStaff', name: '仪式杖', cells: DESIGN.weaponCells,
       main: {
         energy: 2, healMult: 1.7, fallbackMult: 1.2, target: 'lowestHpAlly',
-        desc: '2 能量，治疗生命比例最低的友军 = 170% 攻击；全员满血时改为 120% 法术单体。',
+        desc: '2 余裕，治疗生命比例最低的友军 = 170% 攻击；全员满血时改为 120% 法术单体。',
       },
-      trait: { id: 'overflow', name: '溢流', desc: '每场战斗首次溢出治疗转为护盾，上限目标最大生命 10%。' },
+      trait: { id: 'overflow', name: '溢流', desc: '每场战斗首次溢出治疗转为护盾，上限目标生命上限 10%。' },
       desc: '把人从死亡线拉回来。',
     },
   };
 
   const WEAPON_ORDER = ['shortBlade', 'towerShield', 'longSpear', 'heavyCannon', 'ritualStaff'];
 
-  /* 共用 support 输出 */
-  const SUPPORT = {
-    /* 余裕现在只喂招式，所以护持不再与招式抢能量：改为 4 秒冷却，用自己的行动换盾 */
-    energy: 0, cooldown: 4, shieldPct: DESIGN.supportShieldPct, shieldCapPct: DESIGN.supportShieldCapPct,
-    desc: '不耗余裕，4 秒一次，给一名同伴护盾 = 其最大生命 12%，总盾不超过 30%。',
-  };
+  /* 「保护」行动已撤：护盾只由蚀刻法招式给，行动里不再有独立的护持。 */
   const GUARD = {
     energy: 0, reduce: DESIGN.guardReduce,
-    desc: '不耗能量，下一次受击减伤 20%，到下次自身行动失效。',
+    desc: `不耗余裕，下一次受击减伤 ${Math.round(DESIGN.guardReduce * 100)}%，到下次自身行动失效。`,
   };
 
   /* ------------------------------ 回路纹路 ------------------------------ */
@@ -218,7 +213,7 @@
       links: [['in', 'out']],
       ember: true,
       boost: { attackMult: 0.10, ember: 1, dotMult: 0.10 },
-      desc: '暗红细纹横过两格，末端留着余温。2 负荷。同向覆盖压满时，平攻伤害 +10%、命中附灼烧，灼烧伤害 +10%。',
+      desc: '暗红细纹横过两格，末端留着余温。2 负荷。同向覆盖压满时，普通攻击伤害 +10%、命中附灼烧，灼烧伤害 +10%。',
     },
   };
 
@@ -261,7 +256,7 @@
   addRune('splitter', 'clevis', '燕尾纹', '叉耳', '同一纹节生出上下两支，脉动交替流过。', 2, [[0, 0], [1, 0]], [0, 0, 'W'], [[1, 0, 'N'], [1, 0, 'S']],
     { regen: 0.09, max: 1 }, '余裕恢复 +0.09/s、上限 +1');
   addRune('splitter', 'spillway', '旁枝纹', '侧溢槽', '主纹向前延伸，侧枝向下，交替传递脉动。', 2, [[0, 0], [1, 0], [2, 0], [2, 1]], [0, 0, 'W'], [[2, 0, 'E'], [2, 1, 'S']],
-    { attackMult: 0.08, regen: 0.06 }, '平攻伤害 +8%、余裕恢复 +0.06/s');
+    { attackMult: 0.08, regen: 0.06 }, '普通攻击伤害 +8%、余裕恢复 +0.06/s');
   addRune('splitter', 'wishbone', '双蕨纹', '双齿梳', '两片蕨芽从同一根脉向上伸展，轮流搏动。', 2, [[0, 0], [2, 0], [0, 1], [1, 1], [2, 1]], [1, 1, 'S'], [[0, 0, 'N'], [2, 0, 'N']],
     { skillCostCut: 1, skillMult: 0.05 }, '招式消耗 -1、伤害 +5%');
   addRune('capacitor', 'bellowsCell', '叠浪纹', '风囊蓄室', '三格横纹层层叠起，蓄下经过的脉动。', 2, [[0, 0], [1, 0], [2, 0]], [0, 0, 'W'], [[2, 0, 'E']],
@@ -277,25 +272,17 @@
   addRune('threshold', 'sluice', '折叶纹', '折叶闸', '叶脉沿折痕转向，低生命时舒展。', 2, [[0, 0], [1, 0], [1, 1]], [0, 0, 'W'], [[1, 1, 'S']],
     { lowHpRegen: 0.65, max: 1, shieldMult: 0.20 }, '生命低于50%时余裕恢复 +0.65/s、余裕上限 +1、护盾 +20%');
   addRune('threshold', 'reed', '芦叶纹', '簧片闸', '狭长叶纹挑起一端，低生命时显出亮色。', 1, [[0, 0], [1, 0], [2, 0]], [0, 0, 'W'], [[2, 0, 'N']],
-    { lowHpRegen: 0.44, attackMult: 0.03 }, '生命低于50%时余裕恢复 +0.44/s、平攻伤害 +3%');
+    { lowHpRegen: 0.44, attackMult: 0.03 }, '生命低于50%时余裕恢复 +0.44/s、普通攻击伤害 +3%');
   addRune('ember', 'flint', '火星纹', '燧钉', '一格短纹转折处伏着一粒火星。', 2, [[0, 0]], [0, 0, 'W'], [[0, 0, 'S']],
-    { attackMult: 0.04, ember: 1, dotMult: 0.08 }, '平攻伤害 +4%、命中附灼烧、灼烧伤害 +8%');
+    { attackMult: 0.04, ember: 1, dotMult: 0.08 }, '普通攻击伤害 +4%、命中附灼烧、灼烧伤害 +8%');
   addRune('ember', 'fuse', '游焰纹', '导火绳', '一线火色沿三格纹理游走。', 2, [[0, 0], [1, 0], [2, 0]], [0, 0, 'W'], [[2, 0, 'E']],
-    { attackMult: 0.14, ember: 1, dotMult: 0.15 }, '平攻伤害 +14%、命中附灼烧、灼烧伤害 +15%');
+    { attackMult: 0.14, ember: 1, dotMult: 0.15 }, '普通攻击伤害 +14%、命中附灼烧、灼烧伤害 +15%');
   addRune('ember', 'brazier', '日轮纹', '三足火座', '日轮的四道光芒铺在五格金属上。', 3, [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]], [1, 2, 'S'], [[1, 0, 'N']],
-    { attackMult: 0.18, skillMult: 0.08, ember: 1, dotMult: 0.12 }, '平攻伤害 +18%、招式伤害 +8%、命中附灼烧、灼烧伤害 +12%');
+    { attackMult: 0.18, skillMult: 0.08, ember: 1, dotMult: 0.12 }, '普通攻击伤害 +18%、招式伤害 +8%、命中附灼烧、灼烧伤害 +12%');
   addRune('ember', 'wickbend', '焰尾纹', '余焰回勾', '火纹侧伸，末端如焰尾向上挑起。', 2, [[0, 0], [0, 1], [1, 1], [2, 1]], [0, 0, 'W'], [[2, 1, 'N']],
-    { attackMult: 0.07, regen: 0.1, ember: 1, dotMult: 0.10 }, '平攻伤害 +7%、余裕恢复 +0.10/s、命中附灼烧、灼烧伤害 +10%');
+    { attackMult: 0.07, regen: 0.1, ember: 1, dotMult: 0.10 }, '普通攻击伤害 +7%、余裕恢复 +0.10/s、命中附灼烧、灼烧伤害 +10%');
 
   const TEMPLATE_ORDER = Object.keys(TEMPLATES);
-
-  /* 输入极与输出极：位于网格外侧，按格与朝向匹配 */
-  const TERMINALS = {
-    clock: { id: 'clock', cell: [0, 1], dir: 'W', role: 'in', kind: 'input', name: '时钟' },
-    damage: { id: 'damage', cell: [0, 3], dir: 'W', role: 'in', kind: 'input', name: '受击' },
-    main: { id: 'main', cell: [3, 2], dir: 'E', role: 'out', kind: 'output', name: '主手' },
-    support: { id: 'support', cell: [3, 0], dir: 'E', role: 'out', kind: 'output', name: '保护' },
-  };
 
   /* ------------------------------ 底盘预设线路 ------------------------------ */
   /* 基础线：straight(0,1) + elbow(2,1) → clock→main，5 格 / load 2 */
@@ -307,7 +294,7 @@
         { templateId: 'straight', x: 0, y: 1, rotation: 0, mirrorY: false },
         { templateId: 'elbow', x: 2, y: 1, rotation: 0, mirrorY: false },
       ],
-      desc: '让顺丝纹接上曲折纹，将脉动引向主手。',
+      desc: '顺丝纹接上曲折纹，铺出一条通路。',
     },
     charge: {
       id: 'charge', name: '蓄脉',
@@ -318,7 +305,7 @@
         { templateId: 'capacitor', x: 0, y: 1, rotation: 0, mirrorY: false },
         { templateId: 'elbow', x: 2, y: 1, rotation: 0, mirrorY: false },
       ],
-      desc: '同心纹蓄满 4 份脉动后一次释放，再由曲折纹引向主手。',
+      desc: '以同心纹压住核心，曲折纹从旁引出。',
     },
   };
 
@@ -348,13 +335,12 @@
     { id: 'self', name: '自己' },
   ];
   const ACTIONS = [
-    { id: 'main', name: '主手' },
-    { id: 'support', name: '保护' },
+    { id: 'main', name: '普通攻击' },
     { id: 'guard', name: '防御' },
   ];
 
-  /* 默认只留一条攻击规则。护持与防御是要玩家自己选的取舍：
-     自动把它们挂在「队友残血」上，会让全队一直举盾不还手。 */
+  /* 默认只留一条攻击规则。防御是要玩家自己选的取舍：
+     自动挂在「队友残血」上，会让全队一直举盾不还手。 */
   function defaultGambits() {
     return [
       {
@@ -369,11 +355,11 @@
   const MODS = {
     shadowAdvance: {
       id: 'shadowAdvance', name: '影进',
-      desc: '站在第三或第四位时，平攻造成伤害便插到最前。每回合至多一次。',
+      desc: '站在第三或第四位时，普通攻击造成伤害便插到最前。每回合至多一次。',
     },
     refractRetreat: {
       id: 'refractRetreat', name: '折光后撤',
-      desc: '在第一位平攻造成伤害后与第二位互换，并留下可挡一次直击的残影，持续到本人下次出手。每回合至多一次。',
+      desc: '在第一位普通攻击造成伤害后与第二位互换，并留下可挡一次直击的残影，持续到本人下次出手。每回合至多一次。',
     },
     ironCover: {
       id: 'ironCover', name: '铁壁援护',
@@ -424,7 +410,7 @@
       hp: 260, atk: 28, def: 6, spd: 12, hits: 0.96,
       skills: [
         { id: 'drain', name: '汲取', energy: 2, mult: 1.0, target: 'frontFoe', lifesteal: 0.5 },
-        { id: 'curse', name: '诅咒', energy: 3, mult: 0.6, target: 'allFoe', dot: { k: 'burn', v: 4, d: 2 }, cd: 3 },
+        { id: 'curse', name: '诅咒', energy: 3, mult: 0.6, target: 'allFoe', dot: { k: 'corrode', v: 4, hits: 2 }, cd: 3 },
       ],
       desc: '打它会回血。',
     },
@@ -444,7 +430,7 @@
       filter: 'sepia(0.55) hue-rotate(-12deg) brightness(0.9)',
       hp: 200, atk: 25, def: 3, spd: 17, hits: 0.95,
       skills: [
-        { id: 'hamstring', name: '断筋', mult: 1.0, target: 'lowestHpFoe', dot: { k: 'bleed', v: 3, d: 2 } },
+        { id: 'hamstring', name: '断筋', mult: 1.0, target: 'lowestHpFoe', dot: { k: 'bleed', v: 3, hits: 2 } },
         { id: 'leap', name: '扑背', mult: 1.15, target: 'backFoe' },
       ],
       desc: '绕过前排，专咬后排。',
@@ -455,9 +441,9 @@
       hp: 415, atk: 28, def: 15, spd: 5, hits: 0.90,
       skills: [
         { id: 'crush', name: '压碎', mult: 1.3, pierce: 0.35, target: 'frontFoe' },
-        { id: 'vent', name: '泄渣', mult: 0.5, target: 'allFoe', dot: { k: 'burn', v: 4, d: 2 }, cd: 3 },
+        { id: 'vent', name: '泄渣', mult: 0.5, target: 'allFoe', dot: { k: 'burn', v: 4, hits: 2 }, cd: 3 },
       ],
-      onDeathBurst: { name: '崩壳', mult: 0.8, dot: { k: 'burn', v: 3, d: 2 } },
+      onDeathBurst: { name: '崩壳', mult: 0.8, dot: { k: 'burn', v: 3, hits: 2 } },
       desc: '壳里全是热渣。别用一次爆发把它一起打死。',
     },
     wraithChoir: {
@@ -485,7 +471,7 @@
       filter: 'sepia(0.75) saturate(1.7) hue-rotate(-16deg)', elite: true,
       hp: 520, atk: 30, def: 12, spd: 8, hits: 0.91,
       skills: [
-        { id: 'blast', name: '鼓风', mult: 0.8, target: 'allFoe', telegraph: true, cd: 3, dot: { k: 'burn', v: 5, d: 2 } },
+        { id: 'blast', name: '鼓风', mult: 0.8, target: 'allFoe', telegraph: true, cd: 3, dot: { k: 'burn', v: 5, hits: 2 } },
         { id: 'slagSpray', name: '泼渣', mult: 1.2, pierce: 0.4, target: 'frontFoe' },
       ],
       desc: '它先鼓风，再点火。中间那几秒是用来换位的。',
@@ -518,7 +504,7 @@
       id: 'furnaceHeart', name: '炉心俑', enemyType: 'furnaceHeart', boss: true, sprite: 'hulk',
       hp: 300, atk: 27, def: 18, spd: 7, hits: 0.94,
       skills: [
-        { id: 'furnacePulse', name: '炉脉', mult: 0.55, target: 'allFoe', dot: { k: 'burn', v: 5, d: 2 }, cd: 2 },
+        { id: 'furnacePulse', name: '炉脉', mult: 0.55, target: 'allFoe', dot: { k: 'burn', v: 5, hits: 2 }, cd: 2 },
         { id: 'reforge', name: '重铸', mult: 0, healSelf: 0.08, selfShield: 0.16, cd: 4 },
       ],
       phaseAt: 0.55,
@@ -629,14 +615,14 @@
   };
 
   /* ------------------------------ 蚀刻法谱 ------------------------------ */
-  /* 蚀刻法是压在生命金属上的拓片：自己占格、自带纹路要求与出入口。
-     有蚀刻法才谈得上能量路由；没有蚀刻法，板面只是一块带槽位的金属。
+  /* 蚀刻法是压在金属板面上的拓片：自己占格、自带纹路要求与出入口。
+     有蚀刻法才谈得上余裕路由；没有蚀刻法，板面只是一块带槽位的金属。
      cells/veins/entry/exits 与 src/veteran/manuscript.js 的判定口径一致。 */
   const MANUSCRIPTS = {
     /* 一阶：微蚀刻法，占地 2 格、负荷 1，任何板面都塞得下。只有攻势，没有守势 */
     spark: {
       id: 'spark', name: '星火', rarity: 1, load: 1,
-      desc: '平攻间隔缩短15%，合修也生效。',
+      desc: '普通攻击间隔缩短15%，合修也生效。',
       cells: [[0, 0], [1, 0]],
       veins: { '0,0': ['W'], '1,0': ['E'] },
       io: { clock: { cell: [0, 0], dir: 'W' }, main: { cell: [1, 0], dir: 'E' } },
@@ -698,7 +684,7 @@
       skills: [{
         id: 'emberBurst', name: '余烬回响', cost: 10, castTime: 0.7, cooldown: 6,
         cond: { routed: true }, target: 'frontFoe',
-        effect: { mult: 2.0, dot: { turns: 3, dmgMult: 0.25 }, shield: 0.22 },
+        effect: { mult: 2.0, dot: { hits: 3, dmgMult: 0.25 }, shield: 0.22 },
       }],
       tiers: [
         { at: 40, id: 't1', name: '一阶 · 初鸣', effect: { mainMult: 1.10 } },
@@ -707,7 +693,7 @@
       ],
     },
 
-    /* 四阶：改写能量来源 */
+    /* 四阶：改写余裕来源 */
     wide14: {
       id: 'wide14', name: '重铸阔卷', rarity: 4, load: 4,
       desc: '受击积攒余裕，重击附带余波与护盾。',
@@ -737,10 +723,10 @@
       ],
     },
 
-    /* 五阶：技能改写平A */
+    /* 五阶：技能改写普通攻击 */
     flurry: {
       id: 'flurry', name: '连刺', rarity: 5, load: 3,
-      desc: '招式后强化平攻，持续3秒。',
+      desc: '招式后强化普通攻击，持续数次。',
       cells: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'],
@@ -758,7 +744,7 @@
       skills: [{
         id: 'flurry', name: '连刺', cost: 9, castTime: 0.5, cooldown: 5,
         cond: { attackCount: 4 }, target: 'frontFoe',
-        effect: { mult: 1.2, buffAttack: { mult: 1.6, seconds: 3 } },
+        effect: { mult: 1.2, buffAttack: { mult: 1.6, hits: 6 } },
       }],
       tiers: [
         { at: 40, id: 't1', name: '一阶 · 起势', effect: { mainMult: 1.10 } },
@@ -766,10 +752,10 @@
       ],
     },
 
-    /* 六阶：双技能 + 独特能量 */
+    /* 六阶：双技能 + 独特余裕 */
     twinflow: {
       id: 'twinflow', name: '双流', rarity: 6, load: 4,
-      desc: '八格双线拓片。两个招式共享冷却，能量上限更高、回得更快。',
+      desc: '八格双线拓片。两个招式共享冷却，余裕上限更高、回得更快。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
@@ -800,7 +786,7 @@
     /* 七阶：改写规则 */
     inverse: {
       id: 'inverse', name: '逆脉', rarity: 7, load: 5,
-      desc: '八格逆流拓片。平攻额外获得贯通增幅，招式贯穿三位并提供护盾。',
+      desc: '八格逆流拓片。普通攻击额外获得贯通增幅，招式贯穿三位并提供护盾。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
@@ -831,7 +817,7 @@
   /* 入门练法共享两格拓片，差异来自打法，不附赠职业面板。 */
   MANUSCRIPTS.needle = {
     ...MANUSCRIPTS.spark, id: 'needle', name: '逐隙',
-    desc: '每四次平攻追击虚弱敌人。',
+    desc: '每四次普通攻击追击虚弱敌人。',
     attack: { intervalScale: 1.1, mult: 0.9 }, 
     skills: [{ id: 'needle', name: '逐隙一击', cost: 5, castTime: 0.45, cooldown: 4,
       cond: { attackCount: 4 }, target: 'lowestHpFoe', effect: { mult: 1.65 } }],
@@ -871,9 +857,9 @@
       skills: [{ id: 'ripple', name: '回涟', cost: 3, castTime: 0.35, cooldown: 3, cond: { alliesHurt: 1 }, target: 'ally', effect: { heal: 0.8 } }] },
     { id: 'cinder', name: '引燃', base: 'corridor5', unlockDepth: 3, rarity: 2,
       desc: '缓慢叠起灼烧，拖长战斗换取收益。', 
-      skills: [{ id: 'cinder', name: '火种', cost: 5, castTime: 0.5, cooldown: 4, cond: {}, target: 'frontFoe', effect: { mult: 1.1, dot: { dmgMult: 0.45, turns: 3 } } }] },
+      skills: [{ id: 'cinder', name: '火种', cost: 5, castTime: 0.5, cooldown: 4, cond: {}, target: 'frontFoe', effect: { mult: 1.1, dot: { dmgMult: 0.45, hits: 3 } } }] },
     { id: 'pursuit', name: '追亡', base: 'corridor5', unlockDepth: 4, rarity: 2,
-      desc: '三次平攻后重击最虚弱的敌人。', 
+      desc: '三次普通攻击后重击最虚弱的敌人。', 
       skills: [{ id: 'pursuit', name: '收锋', cost: 7, castTime: 0.7, cooldown: 4, cond: { attackCount: 3 }, target: 'lowestHpFoe', effect: { mult: 3.1 } }] },
     { id: 'bulwark', name: '铁壁', base: 'corridor5', unlockDepth: 3, rarity: 2,
       desc: '攻击同时护住自身，以输出换取生存。', attack: { intervalScale: 1.2, mult: 0.85 },
@@ -888,14 +874,14 @@
       desc: '重疗同伴并护住自身，适合后阵久战。', attack: { intervalScale: 1.35, mult: 0.7 }, energy: { regen: 1.4, max: 24 },
       skills: [{ id: 'tide', name: '返潮', cost: 8, castTime: 0.8, cooldown: 6, cond: { alliesHurt: 1 }, target: 'ally', effect: { heal: 2.1, shield: 0.15 } }] },
     { id: 'pulse', name: '鸣脉', base: 'corridor5', unlockDepth: 4, rarity: 2,
-      desc: '平攻积攒余裕，以高频招式持续施压。', energy: { regen: 0.7, max: 20, onAttack: 1.5 },
+      desc: '普通攻击积攒余裕，以高频招式持续施压。', energy: { regen: 0.7, max: 20, onAttack: 1.5 },
       skills: [{ id: 'pulse', name: '脉冲', cost: 5, castTime: 0.25, cooldown: 2.5, cond: {}, target: 'frontFoe', effect: { mult: 1.5 } }] },
     { id: 'sunder', name: '震裂', base: 'inverse', unlockDepth: 6, rarity: 4,
       desc: '重击前锋，余波扫过其余敌人。', energy: { regen: 1.2, max: 28 },
       skills: [{ id: 'sunder', name: '断层', cost: 10, castTime: 1.1, cooldown: 6, cond: {}, target: 'frontFoe', effect: { mult: 2.3, splash: 0.55 } }] },
     { id: 'bloodrush', name: '孤注', base: 'flurry', unlockDepth: 5, rarity: 3,
-      desc: '攒满余裕后强化平攻，打一轮集中爆发。', attack: { intervalScale: 0.8, mult: 0.9 },
-      skills: [{ id: 'bloodrush', name: '倾注', cost: 10, castTime: 0.5, cooldown: 7, cond: { energyAbove: 12 }, target: 'frontFoe', effect: { mult: 1.2, buffAttack: { mult: 2, seconds: 4 } } }] },
+      desc: '攒满余裕后强化普通攻击，打一轮集中爆发。', attack: { intervalScale: 0.8, mult: 0.9 },
+      skills: [{ id: 'bloodrush', name: '倾注', cost: 10, castTime: 0.5, cooldown: 7, cond: { energyAbove: 12 }, target: 'frontFoe', effect: { mult: 1.2, buffAttack: { mult: 2, hits: 8 } } }] },
     { id: 'sentinel', name: '守灯', base: 'twinflow', unlockDepth: 6, rarity: 4,
       desc: '同伴受伤时治疗，否则双击；两式共用冷却。', 
       skills: [
@@ -903,32 +889,32 @@
         { id: 'sentinelStrike', name: '挑灯', cost: 6, castTime: 0.6, cooldown: 5, sharedCooldown: true, cond: {}, target: 'lowestHpFoe', effect: { mult: 1, hits: 2 } },
       ] },
     { id: 'echo', name: '回响', base: 'inverse', unlockDepth: 7, rarity: 5,
-      desc: '三线共振后强化平攻，兼顾群攻与持续输出。', 
-      skills: [{ id: 'echo', name: '重响', cost: 12, castTime: 1, cooldown: 7, cond: {}, target: 'frontFoe', effect: { mult: 1.6, pierce: 3, buffAttack: { mult: 1.5, seconds: 3 } } }] },
+      desc: '三线共振后强化普通攻击，兼顾群攻与持续输出。', 
+      skills: [{ id: 'echo', name: '重响', cost: 12, castTime: 1, cooldown: 7, cond: {}, target: 'frontFoe', effect: { mult: 1.6, pierce: 3, buffAttack: { mult: 1.5, hits: 6 } } }] },
     { id: 'rivet', name: '扣钉', base: 'spark', unlockDepth: 3, rarity: 1,
-      desc: '三次平攻后打入铆钉，自身获得薄盾。',
+      desc: '三次普通攻击后打入铆钉，自身获得薄盾。',
       skills: [{ id: 'rivet', name: '锁甲', cost: 3, castTime: 0.3, cooldown: 4, cond: { attackCount: 3 }, target: 'frontFoe', effect: { mult: 0.75, shield: 0.12 } }] },
     { id: 'wick', name: '灰芯', base: 'spark', unlockDepth: 3, rarity: 1,
       desc: '贯通后点燃生命比例最低的敌人。', 
-      skills: [{ id: 'wick', name: '挑火', cost: 3, castTime: 0.35, cooldown: 4, cond: { routed: true }, target: 'lowestHpFoe', effect: { mult: 0.7, dot: { dmgMult: 0.35, turns: 3 } } }] },
+      skills: [{ id: 'wick', name: '挑火', cost: 3, castTime: 0.35, cooldown: 4, cond: { routed: true }, target: 'lowestHpFoe', effect: { mult: 0.7, dot: { dmgMult: 0.35, hits: 3 } } }] },
     { id: 'suture', name: '焊缝', base: 'ward', unlockDepth: 4, rarity: 2,
-      desc: '治疗重伤同伴，同时短暂强化自身平攻。',
+      desc: '治疗重伤同伴，同时短暂强化自身普通攻击。',
       cells: [[0, 0], [1, 0], [1, 1]], veins: { '0,0': ['W'], '1,1': ['E'] },
       io: { clock: { cell: [0, 0], dir: 'W' }, main: { cell: [1, 1], dir: 'E' } }, exits: [[1, 1]],
-      skills: [{ id: 'suture', name: '热焊', cost: 5, castTime: 0.65, cooldown: 5, cond: { alliesHurt: 1 }, target: 'ally', effect: { heal: 1, buffAttack: { mult: 1.4, seconds: 3 } } }] },
+      skills: [{ id: 'suture', name: '热焊', cost: 5, castTime: 0.65, cooldown: 5, cond: { alliesHurt: 1 }, target: 'ally', effect: { heal: 1, buffAttack: { mult: 1.4, hits: 6 } } }] },
     { id: 'shrapnel', name: '碎鳞', base: 'suture', unlockDepth: 4, rarity: 2,
       desc: '前敌半血后碎鳞崩开，余波打击其余敌人。', 
       skills: [{ id: 'shrapnel', name: '崩鳞', cost: 6, castTime: 0.4, cooldown: 4, cond: { foeHpBelow: 0.5 }, target: 'frontFoe', effect: { mult: 1.35, splash: 0.7 } }] },
     { id: 'bellows', name: '风箱', base: 'spark', unlockDepth: 5, rarity: 3, load: 2,
-      desc: '受击补充余裕，蓄足后双击并强化平攻。', energy: { regen: 0.8, max: 18, onHit: 1 },
+      desc: '受击补充余裕，蓄足后双击并强化普通攻击。', energy: { regen: 0.8, max: 18, onHit: 1 },
       cells: [[0, 0], [1, 0], [0, 1], [1, 1]], veins: { '0,0': ['W'], '1,0': ['E'] },
-      skills: [{ id: 'bellows', name: '鼓炉', cost: 7, castTime: 0.5, cooldown: 5, cond: { energyAbove: 10 }, target: 'frontFoe', effect: { mult: 0.8, hits: 2, buffAttack: { mult: 1.4, seconds: 3 } } }] },
+      skills: [{ id: 'bellows', name: '鼓炉', cost: 7, castTime: 0.5, cooldown: 5, cond: { energyAbove: 10 }, target: 'frontFoe', effect: { mult: 0.8, hits: 2, buffAttack: { mult: 1.4, hits: 6 } } }] },
     { id: 'quench', name: '淬壳', base: 'bellows', unlockDepth: 5, rarity: 3,
       desc: '自身受伤时耗用储备余裕，自疗并补盾。',
       skills: [{ id: 'quench', name: '冷淬', cost: 8, castTime: 0.6, cooldown: 6, cond: { energyAbove: 12 }, target: 'self', effect: { heal: 1.6, shield: 0.16 } }] },
     { id: 'awl', name: '锈锥', base: 'suture', unlockDepth: 6, rarity: 3, load: 2,
-      desc: '四次平攻后穿过前两敌，并在前敌留下灼伤。', 
-      skills: [{ id: 'awl', name: '灼穿', cost: 7, castTime: 0.55, cooldown: 5, cond: { attackCount: 4 }, target: 'frontFoe', effect: { mult: 1.2, pierce: 2, dot: { dmgMult: 0.3, turns: 3 } } }] },
+      desc: '四次普通攻击后穿过前两敌，并在前敌留下灼伤。', 
+      skills: [{ id: 'awl', name: '灼穿', cost: 7, castTime: 0.55, cooldown: 5, cond: { attackCount: 4 }, target: 'frontFoe', effect: { mult: 1.2, pierce: 2, dot: { dmgMult: 0.3, hits: 3 } } }] },
     { id: 'crucible', name: '回炉', base: 'bellows', unlockDepth: 7, rarity: 4, load: 3,
       desc: '两名同伴重伤时优先急救，平时蓄力追击弱敌。', 
       skills: [
@@ -939,23 +925,23 @@
       desc: '同伴稍有损伤便补缀，少量多次回血。', 
       skills: [{ id: 'tinThread', name: '牵丝', cost: 2, castTime: 0.35, cooldown: 3, cond: {}, target: 'ally', effect: { heal: 0.55 } }] },
     { id: 'fileTooth', name: '锉齿', base: 'spark', rarity: 2, unlockDepth: 3, fieldSource: 'chest', fieldDepth: 2,
-      desc: '两次平攻后双锉最虚弱的敌人。', 
+      desc: '两次普通攻击后双锉最虚弱的敌人。', 
       skills: [{ id: 'fileTooth', name: '对锉', cost: 4, castTime: 0.3, cooldown: 3.5, cond: { attackCount: 2 }, target: 'lowestHpFoe', effect: { mult: 0.85, hits: 2 } }] },
     { id: 'leadSeal', name: '铅封', base: 'suture', rarity: 2, unlockDepth: 3, fieldSource: 'chest', fieldDepth: 3,
       desc: '同伴重伤时打击前敌，为自身封上一层厚盾。', 
       skills: [{ id: 'leadSeal', name: '封舱', cost: 4, castTime: 0.4, cooldown: 4, cond: { alliesHurt: 1 }, target: 'frontFoe', effect: { mult: 0.9, shield: 0.24 } }] },
     { id: 'tinderMesh', name: '火筛', base: 'bellows', rarity: 3, unlockDepth: 4, fieldSource: 'chest', fieldDepth: 4,
       desc: '余裕充足时抖出火屑，点燃前敌并溅伤其余敌人。', 
-      skills: [{ id: 'tinderMesh', name: '落屑', cost: 7, castTime: 0.7, cooldown: 5, cond: { energyAbove: 10 }, target: 'frontFoe', effect: { mult: 1.2, splash: 0.45, dot: { turns: 3, dmgMult: 0.35 } } }] },
+      skills: [{ id: 'tinderMesh', name: '落屑', cost: 7, castTime: 0.7, cooldown: 5, cond: { energyAbove: 10 }, target: 'frontFoe', effect: { mult: 1.2, splash: 0.45, dot: { hits: 3, dmgMult: 0.35 } } }] },
     { id: 'anneal', name: '退火', base: 'suture', rarity: 3, unlockDepth: 5, fieldSource: 'chest', fieldDepth: 5,
-      desc: '两次平攻后可自疗，并将余热送回武器。', 
-      skills: [{ id: 'anneal', name: '归热', cost: 6, castTime: 0.5, cooldown: 5, cond: { attackCount: 2 }, target: 'self', effect: { heal: 1.2, buffAttack: { mult: 1.55, seconds: 3 } } }] },
+      desc: '两次普通攻击后可自疗，并将余热送回武器。', 
+      skills: [{ id: 'anneal', name: '归热', cost: 6, castTime: 0.5, cooldown: 5, cond: { attackCount: 2 }, target: 'self', effect: { heal: 1.2, buffAttack: { mult: 1.55, hits: 6 } } }] },
     { id: 'silverTap', name: '银触', base: 'suture', rarity: 4, load: 2, unlockDepth: 6, fieldSource: 'chest', fieldDepth: 6,
       desc: '贯通后给伤者快速输血，并给施术者加盾。', 
       skills: [{ id: 'silverTap', name: '接脉', cost: 6, castTime: 0.45, cooldown: 4, cond: { routed: true }, target: 'ally', effect: { heal: 1.6, shield: 0.15 } }] },
     { id: 'slagHook', name: '渣钩', base: 'suture', rarity: 2, unlockDepth: 3, fieldSource: 'elite', fieldDepth: 3,
       desc: '钩住最弱的敌人，连续两击并留下灼伤。', 
-      skills: [{ id: 'slagHook', name: '拖烬', cost: 6, castTime: 0.65, cooldown: 5, cond: {}, target: 'lowestHpFoe', effect: { mult: 0.8, hits: 2, dot: { turns: 2, dmgMult: 0.4 } } }] },
+      skills: [{ id: 'slagHook', name: '拖烬', cost: 6, castTime: 0.65, cooldown: 5, cond: {}, target: 'lowestHpFoe', effect: { mult: 0.8, hits: 2, dot: { hits: 2, dmgMult: 0.4 } } }] },
     { id: 'ironJaw', name: '铁颚', base: 'bellows', rarity: 3, unlockDepth: 4, fieldSource: 'elite', fieldDepth: 3,
       desc: '前敌跌破半血后连咬三次，每轮咬合为自身加盾。', 
       skills: [{ id: 'ironJaw', name: '咬合', cost: 7, castTime: 0.55, cooldown: 5, cond: { foeHpBelow: 0.5 }, target: 'frontFoe', effect: { mult: 0.75, hits: 3, shield: 0.16 } }] },
@@ -969,11 +955,11 @@
       desc: '蓄足余裕后一锤贯穿前两敌，碎屑飞向后排。', 
       skills: [{ id: 'splitAnvil', name: '开砧', cost: 9, castTime: 0.8, cooldown: 6, cond: { energyAbove: 13 }, target: 'frontFoe', effect: { mult: 1.8, pierce: 2, splash: 0.65 } }] },
     { id: 'furnaceEye', name: '炉眼', base: 'inverse', rarity: 5, load: 4, unlockDepth: 7, fieldSource: 'elite', fieldDepth: 6,
-      desc: '前敌虚弱时锁定全场最弱者，引燃目标并强化平攻。', 
-      skills: [{ id: 'furnaceEye', name: '照灰', cost: 8, castTime: 0.55, cooldown: 6, cond: { foeHpBelow: 0.6 }, target: 'lowestHpFoe', effect: { mult: 1.65, dot: { turns: 3, dmgMult: 0.4 }, buffAttack: { mult: 1.55, seconds: 4 } } }] },
+      desc: '前敌虚弱时锁定全场最弱者，引燃目标并强化普通攻击。', 
+      skills: [{ id: 'furnaceEye', name: '照灰', cost: 8, castTime: 0.55, cooldown: 6, cond: { foeHpBelow: 0.6 }, target: 'lowestHpFoe', effect: { mult: 1.65, dot: { hits: 3, dmgMult: 0.4 }, buffAttack: { mult: 1.55, hits: 8 } } }] },
     /* 撤离谱：水道至黑炉的工程器具。 */
     { id: 'chalkLine', name: '墨斗', base: 'spark', rarity: 1, load: 2, unlockDepth: 3,
-      ...CHANNELS.rail, desc: '平攻两次后打直线，给前两名敌人各留一道浅痕。',
+      ...CHANNELS.rail, desc: '普通攻击两次后打直线，给前两名敌人各留一道浅痕。',
       skills: [{ id: 'chalkLine', name: '弹线', cost: 4, castTime: 0.35, cooldown: 4,
         cond: { attackCount: 2 }, target: 'frontFoe', effect: { mult: 1.05, pierce: 2 } }] },
     { id: 'sump', name: '集露', base: 'ward', rarity: 1, load: 2, unlockDepth: 3,
@@ -981,17 +967,17 @@
       skills: [{ id: 'sump', name: '承露', cost: 4, castTime: 0.45, cooldown: 5,
         cond: { energyAbove: 8 }, target: 'ally', effect: { heal: 0.95, shield: 0.1 } }] },
     { id: 'oarlock', name: '桨栓', base: 'spark', rarity: 1, load: 2, unlockDepth: 3,
-      ...CHANNELS.hook, desc: '贯通后点打最弱一敌，回桨的余劲强化接下来的平攻。',
+      ...CHANNELS.hook, desc: '贯通后点打最弱一敌，回桨的余劲强化接下来的普通攻击。',
       skills: [{ id: 'oarlock', name: '回桨', cost: 4, castTime: 0.3, cooldown: 4,
-        cond: { routed: true }, target: 'lowestHpFoe', effect: { mult: 1.15, buffAttack: { mult: 1.3, seconds: 2 } } }] },
+        cond: { routed: true }, target: 'lowestHpFoe', effect: { mult: 1.15, buffAttack: { mult: 1.3, hits: 4 } } }] },
     { id: 'brineWrap', name: '盐裹', base: 'suture', rarity: 1, load: 1, unlockDepth: 3,
       desc: '同伴重伤时连击前敌，用盐壳稳住自己的身位。',
       skills: [{ id: 'brineWrap', name: '结壳', cost: 4, castTime: 0.45, cooldown: 4.5,
         cond: { alliesHurt: 1 }, target: 'frontFoe', effect: { mult: 0.65, hits: 2, shield: 0.14 } }] },
     { id: 'pikeHead', name: '芦矢', base: 'spark', rarity: 2, load: 2, unlockDepth: 4,
-      ...CHANNELS.toe, desc: '三次平攻蓄成一箭，箭尖灼烧最虚弱的敌人。',
+      ...CHANNELS.toe, desc: '三次普通攻击蓄成一箭，箭尖灼烧最虚弱的敌人。',
       skills: [{ id: 'pikeHead', name: '苇烙', cost: 5, castTime: 0.45, cooldown: 5,
-        cond: { attackCount: 3 }, target: 'lowestHpFoe', effect: { mult: 1.6, dot: { turns: 2, dmgMult: 0.3 } } }] },
+        cond: { attackCount: 3 }, target: 'lowestHpFoe', effect: { mult: 1.6, dot: { hits: 2, dmgMult: 0.3 } } }] },
     { id: 'capstan', name: '绞盘', base: 'bellows', rarity: 2, load: 2, unlockDepth: 4,
       ...CHANNELS.trough, desc: '蓄足十点余裕连绞前锋三次，末段的碎屑扑向旁敌。',
       skills: [{ id: 'capstan', name: '绞缆', cost: 6, castTime: 0.7, cooldown: 6,
@@ -1001,15 +987,15 @@
       skills: [{ id: 'dryDock', name: '入坞', cost: 5, castTime: 0.65, cooldown: 4,
         cond: { alliesHurt: 2 }, target: 'ally', effect: { heal: 2.15 } }] },
     { id: 'rushMat', name: '蒲席', base: 'ward', rarity: 2, load: 1, unlockDepth: 4,
-      desc: '两次平攻后借机自疗，同时垫一层吸收伤害的软甲。',
+      desc: '两次普通攻击后借机自疗，同时垫一层吸收伤害的软甲。',
       skills: [{ id: 'rushMat', name: '覆席', cost: 4, castTime: 0.4, cooldown: 5,
         cond: { attackCount: 2 }, target: 'self', effect: { heal: 0.85, shield: 0.19 } }] },
     { id: 'furnaceTong', name: '钳口', base: 'bellows', rarity: 2, load: 2, unlockDepth: 4,
       ...CHANNELS.hook, desc: '敌方前锋生命低于六成时，钳住最弱者并取得余热强化。',
       skills: [{ id: 'furnaceTong', name: '扣喉', cost: 6, castTime: 0.55, cooldown: 5,
-        cond: { foeHpBelow: 0.6 }, target: 'lowestHpFoe', effect: { mult: 1.25, hits: 2, buffAttack: { mult: 1.3, seconds: 2.5 } } }] },
+        cond: { foeHpBelow: 0.6 }, target: 'lowestHpFoe', effect: { mult: 1.25, hits: 2, buffAttack: { mult: 1.3, hits: 5 } } }] },
     { id: 'millStone', name: '辊花', base: 'bellows', rarity: 3, load: 2, unlockDepth: 5,
-      ...CHANNELS.stairs, desc: '贯通且平攻两次后，滚花轮咬住前两敌，各打两击。',
+      ...CHANNELS.stairs, desc: '贯通且普通攻击两次后，滚花轮咬住前两敌，各打两击。',
       skills: [{ id: 'millStone', name: '滚齿', cost: 6, castTime: 0.55, cooldown: 5,
         cond: { routed: true, attackCount: 2 }, target: 'frontFoe', effect: { mult: 0.8, hits: 2, pierce: 2 } }] },
     { id: 'soundingLine', name: '测深', base: 'ward', rarity: 3, load: 2, unlockDepth: 5,
@@ -1019,38 +1005,38 @@
     { id: 'copperWick', name: '垂烛', base: 'suture', rarity: 3, load: 2, unlockDepth: 5,
       ...CHANNELS.comb, desc: '贯通后施放长燃的微火，余焰掠过其余敌人。',
       skills: [{ id: 'copperWick', name: '滴蜡', cost: 5, castTime: 0.6, cooldown: 6,
-        cond: { routed: true }, target: 'frontFoe', effect: { mult: 0.9, splash: 0.45, dot: { turns: 4, dmgMult: 0.32 } } }] },
+        cond: { routed: true }, target: 'frontFoe', effect: { mult: 0.9, splash: 0.45, dot: { hits: 4, dmgMult: 0.32 } } }] },
     { id: 'glassBell', name: '琉钟', base: 'ward', rarity: 3, load: 2, unlockDepth: 5,
       ...CHANNELS.cup, desc: '前敌跌破半血时改以快疗托住伤者，便于并装追击招。',
       skills: [{ id: 'glassBell', name: '收音', cost: 4, castTime: 0.3, cooldown: 3.5,
         cond: { foeHpBelow: 0.5 }, target: 'ally', effect: { heal: 1.55 } }] },
     { id: 'quarrySaw', name: '锯岩', base: 'bellows', rarity: 4, load: 3, unlockDepth: 6,
-      ...CHANNELS.stairs, desc: '蓄足十二点余裕后横切前两敌，借锯齿的震动强化平攻。',
+      ...CHANNELS.stairs, desc: '蓄足十二点余裕后横切前两敌，借锯齿的震动强化普通攻击。',
       skills: [{ id: 'quarrySaw', name: '双锯', cost: 8, castTime: 0.65, cooldown: 6,
-        cond: { energyAbove: 12 }, target: 'frontFoe', effect: { mult: 1.55, pierce: 2, buffAttack: { mult: 1.45, seconds: 3 } } }] },
+        cond: { energyAbove: 12 }, target: 'frontFoe', effect: { mult: 1.55, pierce: 2, buffAttack: { mult: 1.45, hits: 6 } } }] },
     { id: 'coalSeam', name: '煤层', base: 'spark', rarity: 4, load: 3, unlockDepth: 6,
-      ...CHANNELS.trough, desc: '四次平攻后震裂敌阵，黑火留在前锋身上并为自己聚盾。',
+      ...CHANNELS.trough, desc: '四次普通攻击后震裂敌阵，黑火留在前锋身上并为自己聚盾。',
       skills: [{ id: 'coalSeam', name: '塌层', cost: 7, castTime: 0.75, cooldown: 6,
-        cond: { attackCount: 4 }, target: 'frontFoe', effect: { mult: 1.35, splash: 0.6, dot: { turns: 2, dmgMult: 0.38 }, shield: 0.12 } }] },
+        cond: { attackCount: 4 }, target: 'frontFoe', effect: { mult: 1.35, splash: 0.6, dot: { hits: 2, dmgMult: 0.38 }, shield: 0.12 } }] },
     { id: 'lodestone', name: '磁极', base: 'twinflow', rarity: 5, load: 3, unlockDepth: 7,
       ...CHANNELS.crown, desc: '一路贯通且余裕达到十四点时穿透前三敌，自身获得磁壳。',
       skills: [{ id: 'lodestone', name: '连极', cost: 9, castTime: 0.8, cooldown: 7,
         cond: { routed: true, energyAbove: 14 }, target: 'frontFoe', effect: { mult: 1.85, pierce: 3, shield: 0.2 } }] },
     { id: 'turbine', name: '叶轮', base: 'twinflow', rarity: 5, load: 3, unlockDepth: 7,
-      ...CHANNELS.spur, desc: '前敌不足六成生命且平攻两次后，叶轮追击最弱者四次。',
+      ...CHANNELS.spur, desc: '前敌不足六成生命且普通攻击两次后，叶轮追击最弱者四次。',
       skills: [{ id: 'turbine', name: '追旋', cost: 8, castTime: 0.55, cooldown: 6,
         cond: { foeHpBelow: 0.6, attackCount: 2 }, target: 'lowestHpFoe', effect: { mult: 0.74, hits: 4, splash: 0.48 } }] },
     /* 宝箱谱：弃置的随身器具，偏低耗、轻装与条件补招。 */
     { id: 'boneFlute', name: '骨笛', base: 'ward', rarity: 1, load: 1, unlockDepth: 3, fieldSource: 'chest', fieldDepth: 1,
-      desc: '余裕达到六点时吹响短音，治疗伤者并强化自身平攻。',
+      desc: '余裕达到六点时吹响短音，治疗伤者并强化自身普通攻击。',
       skills: [{ id: 'boneFlute', name: '短调', cost: 3, castTime: 0.45, cooldown: 4,
-        cond: { energyAbove: 6 }, target: 'ally', effect: { heal: 0.62, buffAttack: { mult: 1.25, seconds: 2 } } }] },
+        cond: { energyAbove: 6 }, target: 'ally', effect: { heal: 0.62, buffAttack: { mult: 1.25, hits: 4 } } }] },
     { id: 'awlPoint', name: '针眼', base: 'spark', rarity: 1, load: 1, unlockDepth: 3, fieldSource: 'chest', fieldDepth: 1,
-      desc: '平攻一次后便能对最弱者补一刺，花费低，适合副修。',
+      desc: '普通攻击一次后便能对最弱者补一刺，花费低，适合副修。',
       skills: [{ id: 'awlPoint', name: '穿眼', cost: 2, castTime: 0.25, cooldown: 3,
         cond: { attackCount: 1 }, target: 'lowestHpFoe', effect: { mult: 0.85 } }] },
     { id: 'shutter', name: '百叶', base: 'suture', rarity: 1, load: 2, unlockDepth: 3, fieldSource: 'chest', fieldDepth: 2,
-      ...CHANNELS.toe, desc: '将三次平攻的余势打向前锋，碎片向旁敌散开。',
+      ...CHANNELS.toe, desc: '将三次普通攻击的余势打向前锋，碎片向旁敌散开。',
       skills: [{ id: 'shutter', name: '翻叶', cost: 4, castTime: 0.4, cooldown: 4,
         cond: { attackCount: 3 }, target: 'frontFoe', effect: { mult: 1.2, splash: 0.55 } }] },
     { id: 'marrowPin', name: '髓针', base: 'suture', rarity: 1, load: 1, unlockDepth: 3, fieldSource: 'chest', fieldDepth: 2,
@@ -1062,17 +1048,17 @@
       skills: [{ id: 'tinChime', name: '警铃', cost: 4, castTime: 0.35, cooldown: 4,
         cond: { alliesHurt: 1 }, target: 'lowestHpFoe', effect: { mult: 1.15, shield: 0.18 } }] },
     { id: 'beltBuckle', name: '革扣', base: 'spark', rarity: 1, load: 2, unlockDepth: 3, fieldSource: 'chest', fieldDepth: 3,
-      ...CHANNELS.cup, desc: '两次平攻后连击前锋并暂时强化平攻，可与计数招式并用。',
+      ...CHANNELS.cup, desc: '两次普通攻击后连击前锋并暂时强化普通攻击，可与计数招式并用。',
       skills: [{ id: 'beltBuckle', name: '束带', cost: 4, castTime: 0.4, cooldown: 5,
-        cond: { attackCount: 2 }, target: 'frontFoe', effect: { mult: 0.75, hits: 2, buffAttack: { mult: 1.35, seconds: 2 } } }] },
+        cond: { attackCount: 2 }, target: 'frontFoe', effect: { mult: 0.75, hits: 2, buffAttack: { mult: 1.35, hits: 4 } } }] },
     { id: 'coilSpring', name: '簧片', base: 'bellows', rarity: 2, load: 2, unlockDepth: 4, fieldSource: 'chest', fieldDepth: 4,
       ...CHANNELS.hook, desc: '蓄足十点余裕后弹向最弱者，溅伤全场并附两回合灼烧。',
       skills: [{ id: 'coilSpring', name: '弹屑', cost: 5, castTime: 0.35, cooldown: 5,
-        cond: { energyAbove: 10 }, target: 'lowestHpFoe', effect: { mult: 1.15, splash: 0.4, dot: { turns: 2, dmgMult: 0.26 } } }] },
+        cond: { energyAbove: 10 }, target: 'lowestHpFoe', effect: { mult: 1.15, splash: 0.4, dot: { hits: 2, dmgMult: 0.26 } } }] },
     { id: 'fieldLamp', name: '巡烛', base: 'suture', rarity: 2, load: 2, unlockDepth: 4, fieldSource: 'chest', fieldDepth: 4,
       ...CHANNELS.comb, desc: '贯通时连打前锋两次，将火留在前锋身上。',
       skills: [{ id: 'fieldLamp', name: '巡照', cost: 5, castTime: 0.4, cooldown: 4.5,
-        cond: { routed: true }, target: 'frontFoe', effect: { mult: 0.8, hits: 2, dot: { turns: 3, dmgMult: 0.28 } } }] },
+        cond: { routed: true }, target: 'frontFoe', effect: { mult: 0.8, hits: 2, dot: { hits: 3, dmgMult: 0.28 } } }] },
     { id: 'waxTablet', name: '蜡版', base: 'ward', rarity: 3, load: 2, unlockDepth: 5, fieldSource: 'chest', fieldDepth: 5,
       ...CHANNELS.trough, desc: '蓄足十一点余裕且有人重伤时，厚敷伤者并护住自己。',
       skills: [{ id: 'waxTablet', name: '敷版', cost: 6, castTime: 0.55, cooldown: 5,
@@ -1082,9 +1068,9 @@
       skills: [{ id: 'splitNeedle', name: '扣耳', cost: 7, castTime: 0.55, cooldown: 5.5,
         cond: { routed: true, foeHpBelow: 0.6 }, target: 'frontFoe', effect: { mult: 1.05, hits: 2, pierce: 2 } }] },
     { id: 'surveyLens', name: '透镜', base: 'twinflow', rarity: 5, load: 3, unlockDepth: 7, fieldSource: 'chest', fieldDepth: 7,
-      ...CHANNELS.stairs, desc: '平攻三次并积到十二点余裕后，聚光长燃最弱敌并强化平攻。',
+      ...CHANNELS.stairs, desc: '普通攻击三次并积到十二点余裕后，聚光长燃最弱敌并强化普通攻击。',
       skills: [{ id: 'surveyLens', name: '聚白', cost: 7, castTime: 0.6, cooldown: 6,
-        cond: { attackCount: 3, energyAbove: 12 }, target: 'lowestHpFoe', effect: { mult: 1.6, dot: { turns: 4, dmgMult: 0.38 }, buffAttack: { mult: 1.4, seconds: 3 } } }] },
+        cond: { attackCount: 3, energyAbove: 12 }, target: 'lowestHpFoe', effect: { mult: 1.6, dot: { hits: 4, dmgMult: 0.38 }, buffAttack: { mult: 1.4, hits: 6 } } }] },
     /* 精英谱：从怪物构造取形，强调条件反击与持续附效。 */
     { id: 'houndClamp', name: '犬闸', base: 'spark', rarity: 1, load: 1, unlockDepth: 3, fieldSource: 'elite', fieldDepth: 3,
       desc: '前敌跌破六成生命时咬住该敌，为自己叠起硬盾。',
@@ -1095,13 +1081,13 @@
       skills: [{ id: 'shellScale', name: '揭鳞', cost: 5, castTime: 0.55, cooldown: 5,
         cond: { routed: true }, target: 'frontFoe', effect: { mult: 1, splash: 0.5, shield: 0.17 } }] },
     { id: 'jointHammer', name: '节锤', base: 'bellows', rarity: 1, load: 2, unlockDepth: 3, fieldSource: 'elite', fieldDepth: 3,
-      ...CHANNELS.trough, desc: '三次平攻后钉击前两敌，以锤风短时强化自己。',
+      ...CHANNELS.trough, desc: '三次普通攻击后钉击前两敌，以锤风短时强化自己。',
       skills: [{ id: 'jointHammer', name: '打榫', cost: 5, castTime: 0.6, cooldown: 5,
-        cond: { attackCount: 3 }, target: 'frontFoe', effect: { mult: 1.15, pierce: 2, buffAttack: { mult: 1.35, seconds: 2.5 } } }] },
+        cond: { attackCount: 3 }, target: 'frontFoe', effect: { mult: 1.15, pierce: 2, buffAttack: { mult: 1.35, hits: 5 } } }] },
     { id: 'veilStitch', name: '雾绗', base: 'suture', rarity: 2, load: 2, unlockDepth: 4, fieldSource: 'elite', fieldDepth: 4,
-      ...CHANNELS.cup, desc: '蓄足十点余裕后以冷雾自疗，同时罩盾并强化平攻。',
+      ...CHANNELS.cup, desc: '蓄足十点余裕后以冷雾自疗，同时罩盾并强化普通攻击。',
       skills: [{ id: 'veilStitch', name: '缝雾', cost: 6, castTime: 0.65, cooldown: 6,
-        cond: { energyAbove: 10 }, target: 'self', effect: { heal: 1.05, shield: 0.14, buffAttack: { mult: 1.4, seconds: 2.5 } } }] },
+        cond: { energyAbove: 10 }, target: 'self', effect: { heal: 1.05, shield: 0.14, buffAttack: { mult: 1.4, hits: 5 } } }] },
     { id: 'saltCradle', name: '盐龛', base: 'ward', rarity: 2, load: 2, unlockDepth: 4, fieldSource: 'elite', fieldDepth: 4,
       ...CHANNELS.comb, desc: '贯通且有人重伤时施以强力单疗，适合并装常规低耗招。',
       skills: [{ id: 'saltCradle', name: '沐盐', cost: 5, castTime: 0.5, cooldown: 4.5,
@@ -1115,21 +1101,21 @@
       skills: [{ id: 'jawSpring', name: '合颌', cost: 7, castTime: 0.6, cooldown: 5.5,
         cond: { energyAbove: 12, foeHpBelow: 0.6 }, target: 'frontFoe', effect: { mult: 1.85, splash: 0.6, shield: 0.2 } }] },
     { id: 'slagLance', name: '渣枪', base: 'suture', rarity: 3, load: 2, unlockDepth: 5, fieldSource: 'elite', fieldDepth: 5,
-      ...CHANNELS.spur, desc: '四次平攻后穿刺前三敌，前锋额外承受持续灼伤。',
+      ...CHANNELS.spur, desc: '四次普通攻击后穿刺前三敌，前锋额外承受持续灼伤。',
       skills: [{ id: 'slagLance', name: '穿炉', cost: 7, castTime: 0.7, cooldown: 6,
-        cond: { attackCount: 4 }, target: 'frontFoe', effect: { mult: 1.25, pierce: 3, dot: { turns: 3, dmgMult: 0.35 } } }] },
+        cond: { attackCount: 4 }, target: 'frontFoe', effect: { mult: 1.25, pierce: 3, dot: { hits: 3, dmgMult: 0.35 } } }] },
     { id: 'kilnMantle', name: '炉衣', base: 'twinflow', rarity: 3, load: 2, unlockDepth: 5, fieldSource: 'elite', fieldDepth: 5,
-      ...CHANNELS.crown, desc: '两人重伤时以炽甲反击最弱敌，护身并强化接下来的平攻。',
+      ...CHANNELS.crown, desc: '两人重伤时以炽甲反击最弱敌，护身并强化接下来的普通攻击。',
       skills: [{ id: 'kilnMantle', name: '披炉', cost: 7, castTime: 0.45, cooldown: 6,
-        cond: { alliesHurt: 2 }, target: 'lowestHpFoe', effect: { mult: 1.5, shield: 0.27, buffAttack: { mult: 1.5, seconds: 3 } } }] },
+        cond: { alliesHurt: 2 }, target: 'lowestHpFoe', effect: { mult: 1.5, shield: 0.27, buffAttack: { mult: 1.5, hits: 6 } } }] },
     { id: 'mawValve', name: '渊阀', base: 'twinflow', rarity: 4, load: 3, unlockDepth: 6, fieldSource: 'elite', fieldDepth: 6,
-      ...CHANNELS.trough, desc: '贯通且平攻三次后重击前锋，余波扫过旁敌并留下长燃。',
+      ...CHANNELS.trough, desc: '贯通且普通攻击三次后重击前锋，余波扫过旁敌并留下长燃。',
       skills: [{ id: 'mawValve', name: '泄压', cost: 8, castTime: 0.85, cooldown: 6.5,
-        cond: { routed: true, attackCount: 3 }, target: 'frontFoe', effect: { mult: 1.9, splash: 0.65, dot: { turns: 4, dmgMult: 0.35 } } }] },
+        cond: { routed: true, attackCount: 3 }, target: 'frontFoe', effect: { mult: 1.9, splash: 0.65, dot: { hits: 4, dmgMult: 0.35 } } }] },
     { id: 'blackBloom', name: '铁昙', base: 'twinflow', rarity: 4, load: 3, unlockDepth: 6, fieldSource: 'elite', fieldDepth: 6,
-      ...CHANNELS.spur, desc: '两人重伤且余裕充足时给最弱同伴续命，施术者同时得盾、强化平攻。',
+      ...CHANNELS.spur, desc: '两人重伤且余裕充足时给最弱同伴续命，施术者同时得盾、强化普通攻击。',
       skills: [{ id: 'blackBloom', name: '夜放', cost: 8, castTime: 0.6, cooldown: 7,
-        cond: { alliesHurt: 2, energyAbove: 13 }, target: 'ally', effect: { heal: 2.3, shield: 0.16, buffAttack: { mult: 1.45, seconds: 3 } } }] },
+        cond: { alliesHurt: 2, energyAbove: 13 }, target: 'ally', effect: { heal: 2.3, shield: 0.16, buffAttack: { mult: 1.45, hits: 6 } } }] },
   ];
   ETCHING_VARIANTS.forEach(({ base, ...spec }) => { MANUSCRIPTS[spec.id] = { ...MANUSCRIPTS[base], ...spec }; });
   // 阵形动作只属于这三门；同一拓片几何的变体各有自己的招式。
@@ -1159,12 +1145,12 @@
 
   /* ------------------------------ 祝福 ------------------------------ */
   const BLESSINGS = {
-    edge: { id: 'edge', name: '锐利', desc: '主手伤害 +15%。', effect: { mainDmg: 0.15 } },
+    edge: { id: 'edge', name: '锐利', desc: '普通攻击伤害 +15%。', effect: { mainDmg: 0.15 } },
     guard: { id: 'guard', name: '厚重', desc: '全队受到的伤害 -10%。', effect: { dmgTaken: -0.10 } },
-    flow: { id: 'flow', name: '导通', desc: '每场战斗开始时主手输出直接获得 2 能量。', effect: { startEnergy: 2 } },
+    flow: { id: 'flow', name: '导通', desc: '每场战斗开始时直接获得 2 余裕。', effect: { startEnergy: 2 } },
     scavenger: { id: 'scavenger', name: '拾荒', desc: '金币收获 +20%。', effect: { gold: 0.2 } },
     mend: { id: 'mend', name: '缝补', desc: '每层结束时全队恢复 12% 生命。', effect: { floorHeal: 0.12 } },
-    pact: { id: 'pact', name: '禁忌契约', desc: '主手伤害 +25%，压力获取 +25%。', effect: { mainDmg: 0.25, stress: 0.25 } },
+    pact: { id: 'pact', name: '禁忌契约', desc: '普通攻击伤害 +25%，压力获取 +25%。', effect: { mainDmg: 0.25, stress: 0.25 } },
   };
   const BLESSING_ORDER = ['edge', 'guard', 'flow', 'scavenger', 'mend', 'pact'];
 
@@ -1458,8 +1444,8 @@
 
   V.Data = {
     SCAR_EFFECTS,
-    DESIGN, CHAPTERS, rewardNodes, rewardTier, chapterAt, chapterLabel, chapterEncounter, BODIES, WEAPONS, WEAPON_ORDER, SUPPORT, GUARD,
-    TEMPLATES, TEMPLATE_ORDER, TERMINALS, PRESETS, EMBER_FIXTURE, STRAIGHT_PARK,
+    DESIGN, CHAPTERS, rewardNodes, rewardTier, chapterAt, chapterLabel, chapterEncounter, BODIES, WEAPONS, WEAPON_ORDER, GUARD,
+    TEMPLATES, TEMPLATE_ORDER, PRESETS, EMBER_FIXTURE, STRAIGHT_PARK,
     CONDITIONS, THRESHOLDS, TARGETS, ACTIONS, defaultGambits,
     MODS, ENEMIES, ENEMY_ORDER, ELITE_ORDER, BOSS_ORDER, BIOMES, biome, encounterTemplate,
     MANUSCRIPTS, MANUSCRIPT_ORDER, manuscript, manuscriptReward,

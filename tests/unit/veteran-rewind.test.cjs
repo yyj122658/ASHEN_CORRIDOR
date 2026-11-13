@@ -60,7 +60,7 @@ test('rewind 完整恢复 HP / 压力 / 能量 / 背包 / nextId / RNG', () => {
   s.nextId += 7;
   s.run.rngState = 12345;
   s.run.battle.tick = 999;
-  s.run.battle.allies[0].runtime.outputs.main = [{ tags: ['ember'] }];
+  s.run.battle.allies[0].energy = 17;
 
   const rw = V.Encounter.rewind(s);
   assert.ok(rw.ok, JSON.stringify(rw.error));

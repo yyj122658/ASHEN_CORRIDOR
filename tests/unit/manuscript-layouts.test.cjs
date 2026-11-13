@@ -52,7 +52,7 @@ test('每门蚀刻法都能在真实板面及负荷限制内满覆盖、贯通',
   }
 });
 
-test('同心纹下排压住扣钉：满覆盖有台阶增益，朝外的两个端口仍未接通', () => {
+test('同心纹下排压住扣钉：满覆盖有共鸣阶增益，朝外的两个端口仍未接到输出极', () => {
   const V = loadVeteran().Veteran, st = V.State.create(42);
   const item = V.State.makePart(st,{templateId:'capacitor'});
   st.itemsById[item.id] = item;

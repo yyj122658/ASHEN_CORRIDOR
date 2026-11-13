@@ -19,14 +19,15 @@ function mk(st, layout) {
 
 function fresh() { return V.State.create(4242, { classicPlate: true }); }
 
-test('基础线路在三个底盘上都接通主手，5 格 / load 2', () => {
+test('基础线路在三个底盘上都合法，5 格 / load 2', () => {
   const st = fresh();
   st.roster.forEach((u) => {
     const r = V.Circuit.preview(st, u.id, u.board.placements);
     assert.ok(r.ok, `${u.bodyPreset}: ${JSON.stringify(r.errors)}`);
     assert.equal(r.occupied.length, 5, `${u.bodyPreset} 占格`);
     assert.equal(r.load, 2, `${u.bodyPreset} 负荷`);
-    assert.ok(r.reachableOutputs.includes('main'), `${u.bodyPreset} 应接通主手`);
+    /* 接线模型已删除：装配只校验几何、重叠与负荷 */
+    assert.equal(r.reachableOutputs, undefined, 'preview 不再产出接线结果');
   });
 });
 
@@ -41,11 +42,10 @@ test('蓄能预设三底盘合法（文档写 6 格/load3；模板表 capacitor 
     assert.ok(r.ok, `${u.bodyPreset}: ${JSON.stringify(r.errors)}`);
     assert.equal(r.occupied.length, 7, 'capacitor(4 格)+elbow(3 格)');
     assert.equal(r.load, 3, 'capacitor(load2)+elbow(load1)');
-    assert.ok(r.reachableOutputs.includes('main'));
   });
 });
 
-test('mirrored elbow(0,2)+straight(2,2) 让 damage 直通主手（三底盘）', () => {
+test('mirrored elbow(0,2)+straight(2,2) 在三底盘上都放得下', () => {
   const st = fresh();
   st.roster.forEach((u) => {
     const onlyNew = mk(st, [
@@ -54,11 +54,10 @@ test('mirrored elbow(0,2)+straight(2,2) 让 damage 直通主手（三底盘）',
     ]);
     const r = V.Circuit.preview(st, u.id, onlyNew);
     assert.ok(r.ok, `${u.bodyPreset}: ${JSON.stringify(r.errors)}`);
-    assert.ok(r.reachableOutputs.includes('main'), `${u.bodyPreset} damage 应能到主手`);
   });
 });
 
-test('splitter(0,0) 同时接通 support 与 main，(0,0) 仍是空格', () => {
+test('splitter(0,0) 的左上角仍是空格', () => {
   const st = fresh();
   st.roster.forEach((u) => {
     const onlyNew = mk(st, [
@@ -68,8 +67,6 @@ test('splitter(0,0) 同时接通 support 与 main，(0,0) 仍是空格', () => {
     ]);
     const r = V.Circuit.preview(st, u.id, onlyNew);
     assert.ok(r.ok, `${u.bodyPreset}: ${JSON.stringify(r.errors)}`);
-    assert.ok(r.reachableOutputs.includes('support'), `${u.bodyPreset} 应接通保护`);
-    assert.ok(r.reachableOutputs.includes('main'), `${u.bodyPreset} 应接通主手`);
     assert.ok(!r.occupied.some(([x, y]) => x === 0 && y === 0), 'splitter 的 (0,0) 不该被算作占格');
   });
 });
@@ -107,7 +104,7 @@ test('相邻但没有匹配端口时不导通', () => {
   ]);
   const r = V.Circuit.preview(st, u.id, placements);
   assert.ok(r.ok, JSON.stringify(r.errors));
-  assert.deepEqual(r.reachableOutputs, [], '不该有输出被接通');
+  assert.equal(r.reachableOutputs, undefined, '接线模型已删除，凌空端口不影响合法性');
 });
 
 test('越界 / 屏蔽格 / 重叠 / 超负荷都给出具体原因', () => {
@@ -141,8 +138,9 @@ test('越界 / 屏蔽格 / 重叠 / 超负荷都给出具体原因', () => {
       { templateId: 'capacitor', x: 2, y: 1 },
     ]);
     const rLoad = V.Circuit.preview(st, sturdy.id, heavy);
-    assert.ok(!rLoad.ok);
-    assert.ok(rLoad.errors.some((m) => m.includes('负荷')), JSON.stringify(rLoad.errors));
+    /* 负荷超限不再拦装配：要能算出超载量，交给战斗结算 */
+    assert.equal(rLoad.ok, true, JSON.stringify(rLoad.errors));
+    assert.ok(rLoad.overload > 0, `超载量应大于 0（load ${rLoad.load} / cap ${rLoad.cap}）`);
   } finally {
     D.BODIES.sturdy.loadCap = cap;
   }
@@ -174,25 +172,3 @@ test('saveLoadout 允许保存不连通的半成品板面', () => {
   assert.equal(ok.state.roster[0].board.placements.length, 2);
 });
 
-test('有向闭环被拒绝并说明原因', () => {
-  const st = fresh();
-  D.TEMPLATES.__loop = {
-    id: '__loop', name: '闭环件', load: 1,
-    cells: [[0, 0]],
-    ports: [
-      { id: 'in', cell: [0, 0], dir: 'W', role: 'in' },
-      { id: 'out', cell: [0, 0], dir: 'E', role: 'out' },
-    ],
-    links: [['in', 'out'], ['out', 'in']],
-  };
-  try {
-    const u = st.roster[0];
-    const item = V.State.makePart(st, { kind: 'circuit', templateId: '__loop' });
-    st.itemsById[item.id] = item;
-    const r = V.Circuit.preview(st, u.id, [{ itemId: item.id, x: 0, y: 1, rotation: 0, mirrorY: false }]);
-    assert.ok(!r.ok, '应拒绝闭环');
-    assert.ok(r.errors.some((m) => m.includes('闭环')), JSON.stringify(r.errors));
-  } finally {
-    delete D.TEMPLATES.__loop;
-  }
-});

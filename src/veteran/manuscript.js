@@ -37,7 +37,7 @@
       veins[key(x - minX, y - minY)] = (spec.veins[k] || []).slice();
     });
 
-    /* 四个具名能量点跟着格子一起平移 */
+    /* 四个具名余裕点跟着格子一起平移 */
     const io = {};
     Object.keys(spec.io || {}).forEach((id) => {
       const p = spec.io[id];

@@ -1,6 +1,6 @@
 'use strict';
 /* 有限行为指令：条件 + 目标 + 动作，按顺序取第一条合法项，绝不 eval。
-   只做“能不能出手、打谁、花多少能量”的解释，不写伤害。 */
+   只做“能不能出手、打谁、花多少余裕”的解释，不写伤害。 */
 (function (A) {
   'use strict';
   const V = (A.Veteran ||= {});
@@ -88,7 +88,7 @@
     }
   }
 
-  /** 主手在当前位置的能量消耗（重炮在 4 号位更便宜）。 */
+  /** 主手在当前位置的余裕消耗（重炮在 4 号位更便宜）。 */
   function mainCost(weaponId, slot) {
     if (!weaponId) return 0;
     const w = D().weapon(weaponId);
@@ -104,7 +104,7 @@
     return m.allowedSlots.includes(slot);
   }
 
-  const ACTION_LABEL = { main: '主手', support: '保护', guard: '防御', basic: '基础攻击' };
+  const ACTION_LABEL = { main: '普通攻击', guard: '防御', basic: '普通攻击' };
 
   /**
    * evaluate(context, rules) -> {action, targetIds, outputId, cost, reasons, ruleId}
@@ -130,40 +130,24 @@
       }
 
       if (r.action === 'guard') {
-        reasons.push({ ruleId: r.id, ok: true, reason: '防御不耗能量' });
+        reasons.push({ ruleId: r.id, ok: true, reason: '防御不耗余裕' });
         return { action: 'guard', targetIds: [ctx.self.id], outputId: null, cost: 0, reasons, ruleId: r.id };
       }
 
       if (r.action === 'support') {
-        const need = D().SUPPORT.energy;
-        const have = (ctx.energy && ctx.energy.support) || 0;
-        if (have < need) {
-          reasons.push({ ruleId: r.id, ok: false, reason: `保护需要 ${need} 能量，当前 ${have}` });
-          continue;
-        }
-        reasons.push({ ruleId: r.id, ok: true, reason: '保护可用' });
-        return { action: 'support', targetIds: [targetId], outputId: 'support', cost: need, reasons, ruleId: r.id };
+        /* 保护行动已撤：护盾只由蚀刻法招式给，旧存档里的这条规则按普通攻击处理 */
+        reasons.push({ ruleId: r.id, ok: true, reason: '保护已并入蚀刻法招式，改为普通攻击' });
+        return { action: 'main', targetIds: [targetId], outputId: 'main', cost: 0, reasons, ruleId: r.id };
       }
 
-      /* main */
-      const slot = ctx.self.slot;
-      if (!mainAllowed(ctx.weaponId, slot)) {
-        reasons.push({ ruleId: r.id, ok: false, reason: `主手在 ${slot + 1} 号位不可用` });
-        continue;
-      }
-      const need = mainCost(ctx.weaponId, slot);
-      const have = (ctx.energy && ctx.energy.main) || 0;
-      if (have < need) {
-        reasons.push({ ruleId: r.id, ok: false, reason: `主手需要 ${need} 能量，当前 ${have}` });
-        continue;
-      }
-      reasons.push({ ruleId: r.id, ok: true, reason: '主手可用' });
-      return { action: 'main', targetIds: [targetId], outputId: 'main', cost: need, reasons, ruleId: r.id };
+      /* main：普通攻击不耗余裕，也不受理旧的位次限制 */
+      reasons.push({ ruleId: r.id, ok: true, reason: '普通攻击可用' });
+      return { action: 'main', targetIds: [targetId], outputId: 'main', cost: 0, reasons, ruleId: r.id };
     }
 
-    /* 全部不可用：基础攻击兜底 */
+    /* 全部不可用：普通攻击兜底 */
     const fallbackTarget = resolveTarget('frontFoe', ctx);
-    reasons.push({ ruleId: null, ok: true, reason: '所有规则不可用，退回基础攻击' });
+    reasons.push({ ruleId: null, ok: true, reason: '所有规则不可用，退回普通攻击' });
     return {
       action: 'basic', targetIds: fallbackTarget ? [fallbackTarget] : [],
       outputId: null, cost: 0, reasons, ruleId: null,

@@ -1,5 +1,5 @@
 'use strict';
-/* 蚀刻法效果的落地：覆盖率台阶给乘算、贯通给额外乘算，
+/* 蚀刻法效果的落地：覆盖率共鸣阶给乘算、贯通给额外乘算，
    以及「一根顺丝纹横跨两格必须导通」这条内部连接规则。 */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -55,15 +55,15 @@ test('一根顺丝纹横跨两格：内部导通，贯通成立', () => {
   assert.equal(s.tierId, 't3');
 });
 
-test('覆盖率台阶给乘算，贯通再叠 15%', () => {
+test('覆盖率共鸣阶给乘算，贯通再叠 15%', () => {
   const { st, u } = setup();
   const s = V.Circuit.manuscriptState(st, u.id);
-  /* 三阶 1.30 × 贯通 1.15 = 1.50（贯通是这条链路里最贵的一步，回报要够） */
-  assert.equal(s.effects.mainMult, 1.5);
+  /* 三阶 1.30 × 贯通 1.15 = 1.50，再乘负荷价（负荷 2 → ×1.03）= 1.55 */
+  assert.equal(s.effects.mainMult, 1.55);
   assert.equal(s.effects.startEnergy, 1);
 });
 
-test('没装纹路 → 覆盖率 0、没有台阶，效果全是默认值', () => {
+test('没装纹路 → 覆盖率 0、没有共鸣阶，效果全是默认值', () => {
   const { st, u } = setup({ place: false });
   const s = V.Circuit.manuscriptState(st, u.id);
   assert.equal(s.pct, 0);
@@ -80,13 +80,13 @@ test('没装蚀刻法 → 没有任何加成（异形板面下也没有能量点
   assert.equal(s.effects.mainMult, 1);
   assert.equal(s.effects.startEnergy, 0);
 
-  /* 经典板面为老存档保留固定终端；异形板面则完全没有能量点 */
+  /* 接线模型已删：无论经典还是异形板面，都不再派生端子 */
   const fresh = V.State.create(2468);
   const bare = Object.assign({}, fresh.roster[0], { manuscript: null });
-  assert.deepEqual(Object.keys(V.Circuit.plateOf(bare).terminals), []);
+  assert.equal(V.Circuit.plateOf(bare).terminals, undefined);
 });
 
-test('台阶按阈值切换：只覆盖一半走一阶', () => {
+test('共鸣阶按阈值切换：只覆盖一半走一阶', () => {
   const { st, u } = setup({
     ms: msSpec({
       cells: [[0, 0], [1, 0], [2, 0]],
@@ -102,16 +102,19 @@ test('台阶按阈值切换：只覆盖一半走一阶', () => {
   assert.equal(s.tierId, 't1');
 });
 
-test('蚀刻法吃负荷：装了蚀刻法负荷上限吃紧', () => {
+test('蚀刻法吃负荷：超载不再拒绝装配，改为折算成开局压力与回裕惩罚', () => {
   const { st, u, part } = setup();
   const tpl = V.Data.template('straight');
   const withMs = V.Circuit.preview(st, u.id, u.board.placements);
   assert.equal(withMs.load, tpl.load + 2, '纹路负荷 + 蚀刻法负荷');
+  assert.equal(withMs.overload, 0);
 
   u.manuscript.load = 99;
   const over = V.Circuit.preview(st, u.id, u.board.placements);
-  assert.equal(over.ok, false);
-  assert.ok(over.errors.some((e) => e.includes('负荷')), JSON.stringify(over.errors));
+  const cap = V.Circuit.loadCap(u);
+  assert.equal(over.ok, true, '超载不再拦装配');
+  assert.equal(over.overload, over.load - cap);
+  assert.ok(over.overload > 0, '超出的部分要能算出来');
 });
 
 test('纹路不能压在蚀刻法上', () => {

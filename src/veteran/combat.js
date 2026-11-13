@@ -31,8 +31,15 @@
   function byId(units, id) { return units.find((u) => u.id === id) || null; }
   function frontOf(units) { return alive(units).sort((a, b) => a.slot - b.slot)[0] || null; }
 
+  /* 压力是双向的：越紧绷，回裕越慢，但打出去的伤害越高。
+     50 起换一档，80 起换第二档；玩家可以选择把压力顶上去换爆发。 */
   function pressureRegenMultiplier(stress) {
-    return stress >= 80 ? 0.6 : stress >= 50 ? 0.8 : 1;
+    return stress >= 80 ? 0.65 : stress >= 50 ? 0.85 : 1;
+  }
+
+  /** 压力带来的最终伤害乘算：50 起 +10%，80 起 +25%。 */
+  function pressureDamageMultiplier(stress) {
+    return stress >= 80 ? 1.25 : stress >= 50 ? 1.10 : 1;
   }
 
   function energyRegen(u) {
@@ -45,10 +52,12 @@
     const mod = (b && b.bless && b.bless.stress) || 0;
     const gain = amount > 0 && mod ? Math.round(amount * (1 + mod)) : amount;
     const before = pressureRegenMultiplier(u.stress);
+    const dmgBefore = pressureDamageMultiplier(u.stress);
     u.stress = Math.min(100, (u.stress || 0) + gain);
     const after = pressureRegenMultiplier(u.stress);
+    const dmgAfter = pressureDamageMultiplier(u.stress);
     if (after < before) log(b, { type: 'stress', targetId: u.id,
-      text: `${u.name}压力升至${u.stress}，自然回裕降至${Math.round(after * 100)}%` });
+      text: `${u.name}压力升至${u.stress}，自然回裕降至${Math.round(after * 100)}%，伤害提升 ${Math.round((dmgAfter - 1) * 100)}%` });
   }
 
   /** 眩光：把命中率按层数扣掉，命中判定统一走这里。 */
@@ -145,14 +154,26 @@
     const stats = V.Roster.stats(st, unit);
     const placements = (st.run.fieldLayouts && st.run.fieldLayouts[unit.id]) || unit.board.placements;
     const cc = V.Circuit.compile(st, unit.id, placements);
-    /* 蚀刻法状态：覆盖率台阶 + 贯通。没有蚀刻法时是空效果，不影响老存档 */
+    /* 超载：每超 1 点负荷，开局压力 +8、自然回裕 -0.08/s */
+    const overload = (cc.ok && cc.value.overload) || 0;
+    /* 蚀刻法状态：覆盖率决定的共鸣阶 + 贯通。没有蚀刻法时是空效果，不影响老存档 */
     const equipped = ST().manuscriptsOf(unit);
     const ms = V.Circuit.manuscriptState(st, unit.id, placements);
     const extraMs = equipped.slice(1)
       .map((spec) => V.Circuit.manuscriptState(st, unit.id, placements, spec.id))
       .filter((state) => state.ok);
+    /* 合修的纹路增益减半计入余裕账：装第二门要立刻看得到数字变化 */
+    const extraBoost = extraMs.reduce((acc, state) => {
+      const bo = (state.effects && state.effects.boost) || {};
+      acc.max += bo.max || 0;
+      acc.regen += bo.regen || 0;
+      acc.skillCostCut += bo.skillCostCut || 0;
+      return acc;
+    }, { max: 0, regen: 0, skillCostCut: 0 });
+    const SUB_SHARE = 0.5;
     const skillList = (ms.spec?.skills || []).concat(extraMs.flatMap((state, index) =>
-      state.spec.skills.map((sk) => ({ ...sk, group: index + 1 }))));
+      /* 合修的招式冷却比主修短 1 秒：主修先手，合修跟上 */
+      state.spec.skills.map((sk) => ({ ...sk, group: index + 1, cooldown: Math.max(1, (sk.cooldown || 4) - 1) }))));
 
     const maxHp = stats.maxHp;
     const hp = partyEntry.hp == null ? maxHp : clamp(partyEntry.hp, 1, maxHp);
@@ -162,15 +183,19 @@
       sourceUnitId: unit.id,
       ms,
       extraMs,
-      /* 时间轴与能量：参数全部来自蚀刻法，没有蚀刻法就用基准值 */
+      /* 时间轴与余裕：参数全部来自蚀刻法，没有蚀刻法就用基准值 */
       atkTimer: 0,
+      dotTimer: 0,
       energy: (ms && ms.effects && ms.effects.startEnergy) || 0,
       energyMax: ((ms && ms.spec && ms.spec.energy && ms.spec.energy.max) || D().DESIGN.energyBase.max)
-        + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.max) || 0),
+        + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.max) || 0)
+        + Math.round(extraBoost.max * SUB_SHARE),
       regen: ((ms && ms.spec && ms.spec.energy && ms.spec.energy.regen) || D().DESIGN.energyBase.regen)
-        + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.regen) || 0),
+        + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.regen) || 0)
+        + extraBoost.regen * SUB_SHARE - overload * 0.08,
       lowHpRegen: (ms && ms.effects && ms.effects.boost && ms.effects.boost.lowHpRegen) || 0,
-      skillCostCut: (ms && ms.effects && ms.effects.boost && ms.effects.boost.skillCostCut) || 0,
+      skillCostCut: ((ms && ms.effects && ms.effects.boost && ms.effects.boost.skillCostCut) || 0)
+        + Math.round(extraBoost.skillCostCut * SUB_SHARE),
       skillMult: (1 + ((ms && ms.effects && ms.effects.boost && ms.effects.boost.skillMult) || 0)) * ((ms && ms.effects.mainMult) || 1),
       /* 三条流派轴：治疗只吃护持倍率，灼烧吃独立倍率，护盾吃独立倍率 */
       healMult: (ms && ms.effects && ms.effects.boost && ms.effects.boost.healMult) || 0,
@@ -211,14 +236,12 @@
       gauge: 0,
       casting: null,
       castTimer: 0,
-      skipActions: 0,
       shield: 0,
       buffs: [],
-      stress: partyEntry.stress || 0,
+      stress: Math.min(100, (partyEntry.stress || 0) + overload * 8),
       affliction: unit.affliction || null,
       circuit: cc.ok ? cc.value : null,
       circuitErrors: cc.ok ? [] : cc.errors,
-      runtime: V.Circuit.emptyRuntime(),
       pendingDamagePulse: 0,
       movementUsedRound: -1,
       coverUsedRound: -1,
@@ -251,7 +274,8 @@
       dodge: 0.03,
       alive: true,
       gauge: 0,
-      skipActions: 0,
+      atkTimer: 0,
+      dotTimer: 0,
       shield: 0,
       buffs: [],
       stress: 0,
@@ -289,13 +313,13 @@
     });
     const enemies = enemyBlueprint.units.map(buildEnemy);
 
-    /* 开局直充：祝福给全场 2 点，蚀刻法台阶再按人加成 */
+    /* 开局余裕：祝福「导通」直充 2 点；蚀刻法的起手余裕已在 buildAlly 里算好 */
     const blessEnergy = (next.run.blessings || []).some((id) => id === 'flow') ? 2 : 0;
-    allies.forEach((a) => {
-      const msEnergy = (a.ms && a.ms.effects && a.ms.effects.startEnergy) || 0;
-      const total = blessEnergy + msEnergy;
-      if (total > 0) a.runtime.outputs.main = V.Circuit.pulse(total);
-    });
+    if (blessEnergy) {
+      allies.forEach((a) => {
+        a.energy = Math.min(a.energyMax == null ? 20 : a.energyMax, (a.energy || 0) + blessEnergy);
+      });
+    }
 
     /* 祝福数值在这里一次性折成三个系数，战斗内不再回查数据表 */
     const bless = { mainDmg: 0, dmgTaken: 0, stress: 0 };
@@ -354,7 +378,7 @@
    * 返回 {dealt, absorbed, died}
    */
   function applyDamage(b, src, tgt, amount, opts) {
-    /* 敌人伤害按新时间轴缩放：不然我方平A 归一化后必然一边倒 */
+    /* 敌人伤害按新时间轴缩放：不然我方普通攻击归一化后必然一边倒 */
     if (src && src.side === 'enemy') {
       amount *= (D().DESIGN.enemyDamageScale == null ? 1 : D().DESIGN.enemyDamageScale);
     }
@@ -365,6 +389,8 @@
       if (src && src.side === 'ally') amount *= 1 + bless.mainDmg;
       if (tgt.side === 'ally' && !o.isDot) amount *= 1 + bless.dmgTaken;
     }
+    /* 压力换伤害：我方出手越紧绷打得越狠，DOT 不重复吃这一层 */
+    if (src && src.side === 'ally' && !o.isDot) amount *= pressureDamageMultiplier(src.stress);
     let dmg = Math.max(1, Math.round(amount));
 
     if (!o.pierce) {
@@ -482,16 +508,43 @@
     return Math.max(1, u.spd - slow);
   }
 
+  /* 持续伤害按「目标自己出手的次数」结算，不再按回合。
+     中毒 / 灼烧 / 流血在出手前跳，腐蚀在出手后跳；每跳之前先判死，死了就不再往下结算。 */
+  const DOT_KINDS = { poison: 'pre', burn: 'pre', bleed: 'pre', corrode: 'post' };
+  const DOT_LABEL = { poison: '中毒', burn: '灼烧', bleed: '流血', corrode: '腐蚀' };
+
+  function isDot(x) { return !!DOT_KINDS[x && x.k]; }
+  function dotPhase(x) { return (x && x.on) || DOT_KINDS[x && x.k] || 'pre'; }
+
+  /** 一个单位「自己一动」的间隔：基础 0.5s，受速度与【弧火】缩时影响。 */
+  function pulseInterval(u) {
+    const spark = u.extraMs?.find((s) => s.spec.id === 'spark');
+    return (u.attackInterval ?? D().DESIGN.autoAttack.interval) * (spark?.spec.attack.intervalScale ?? 1);
+  }
+
+  /** 结算指定时机的持续伤害：返回目标是否还活着（死了就不用继续出手）。 */
+  function resolveDots(b, actor, phase) {
+    const list = (actor.buffs || []).filter((x) => isDot(x) && dotPhase(x) === phase);
+    for (const dot of list) {
+      if (actor.alive === false || actor.hp <= 0) break;
+      applyDamage(b, null, actor, dot.v, { isDot: true, pierce: true });
+      dot.hits = Math.max(0, (dot.hits || 1) - 1);
+      log(b, {
+        type: 'dot', actorId: actor.id, targetId: actor.id, amount: dot.v, kind: dot.k,
+        text: `${actor.name} 的${DOT_LABEL[dot.k] || '持续伤害'}发作 ${dot.v}${dot.hits > 0 ? `（还剩 ${dot.hits} 次）` : ''}`,
+      });
+    }
+    actor.buffs = (actor.buffs || []).filter((x) => !isDot(x) || (x.hits || 0) > 0);
+    return actor.alive !== false && actor.hp > 0;
+  }
+
   function tickBuffs(b) {
     const all = [...b.allies, ...b.enemies];
     all.forEach((u) => {
       if (u.alive === false) return;
-      /* DOT */
-      (u.buffs || []).filter((x) => x.k === 'burn' || x.k === 'bleed').forEach((x) => {
-        applyDamage(b, null, u, x.v, { isDot: true, pierce: true });
-      });
-      if (u.hp <= 0) return;
       u.buffs = (u.buffs || []).filter((x) => {
+        /* 按次数的强化与持续伤害都不随回合流逝，各自由出手/受击推动 */
+        if (x.k === 'atkUp' || isDot(x)) return true;
         if (x.seconds != null) return x.seconds > 0;
         x.d = (x.d || 1) - 1;
         return x.d > 0;
@@ -499,7 +552,7 @@
     });
   }
 
-  /* ------------------------------ 能量 ------------------------------ */
+  /* ------------------------------ 余裕 ------------------------------ */
 
   /* ------------------------------ 目标 ------------------------------ */
 
@@ -516,13 +569,8 @@
     if (b.stats) b.stats.actions = (b.stats.actions || 0) + 1;
     u.stats.actions += 1;
     if (u.refract) u.refract = 0;
-    /* 自身行动开始：清 guard、扣 skip */
+    /* 自身行动开始：清 guard */
     u.buffs = (u.buffs || []).filter((x) => x.k !== 'guard');
-    if (u.skipActions > 0) {
-      u.skipActions -= 1;
-      log(b, { type: 'skip', actorId: u.id, text: `${u.name} 被压住，跳过一次行动` });
-      return false;
-    }
     return true;
   }
 
@@ -545,17 +593,13 @@
       text: `${actor.name} ${o.label || '攻击'} ${tgt.name}${crit ? '（暴击）' : ''} -${res.dealt}`,
     });
     if (o.ember && res.dealt > 0) {
-      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * 0.18 * (1 + (actor.dotMult || 0)))), d: 2 });
+      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * 0.18 * (1 + (actor.dotMult || 0)))), hits: 2 });
       log(b, { type: 'ember', actorId: actor.id, targetId: tgt.id, text: `${tgt.name} 被余烬点燃` });
-    }
-    if (o.stun && tgt.alive !== false) {
-      tgt.skipActions = (tgt.skipActions || 0) + o.stun;
-      log(b, { type: 'skip', actorId: actor.id, targetId: tgt.id, text: `${tgt.name} 的行动被压住` });
     }
     return { dealtDamage: res.dealt > 0, hits: 1 };
   }
 
-  /** 消耗输出能量，返回 {tokens, surge} 或 null。 */
+  /** 消耗输出余裕，返回 {tokens, surge} 或 null。 */
   /** 主手动作。返回 {dealtDamage, action} */
   /* ------------------------------ 时间轴 ------------------------------ */
 
@@ -571,8 +615,7 @@
           id: u.id, slot: u.slot, hp: u.hp, maxHp: u.maxHp,
           alive: u.alive !== false, charging: !!u.charging,
         })),
-        /* 「保护」与主手共用同一条余裕：这是它真正的机会成本 */
-        energy: { main: Math.floor(actor.energy || 0), support: Math.floor(actor.energy || 0) },
+        energy: { main: Math.floor(actor.energy || 0) },
       };
       const d = V.Tactics.evaluate(ctx, actor.gambits);
       if (d) {
@@ -585,11 +628,6 @@
     if (b.tactic === 'safe') return { targetId: alive(b.enemies).find((u) => u.charging)?.id || frontOf(b.enemies)?.id || null, action: 'main' };
 
     if (action === 'guard') return { targetId: actor.id, action };
-    if (action === 'support') {
-      const mate = targetId && alive(b.allies).find((u) => u.id === targetId);
-      const lowest = alive(b.allies).slice().sort((a, c) => hpPct(a) - hpPct(c))[0];
-      return { targetId: (mate || lowest || actor).id, action };
-    }
     const foe = byId(b.enemies, targetId) ? targetId : frontOf(b.enemies)?.id || null;
     return { targetId: foe, action: 'main' };
   }
@@ -706,35 +744,45 @@
       log(b, { type: 'shield', actorId: actor.id, targetId: actor.id, amount: gained, text: `${actor.name} 获得 ${gained} 护盾` });
     }
     if (eff.dot && tgt.alive !== false) {
-      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * (eff.dot.dmgMult || 0.2) * (1 + dotMult))), d: eff.dot.turns || 2 });
+      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * (eff.dot.dmgMult || 0.2) * (1 + dotMult))), hits: eff.dot.hits || 2 });
     }
     if (eff.buffAttack && actor.alive !== false) {
       actor.buffs = actor.buffs.filter((x) => x.k !== 'atkUp');
-      actor.buffs.push({ k: 'atkUp', v: (eff.buffAttack.mult || 1.5) - 1, seconds: eff.buffAttack.seconds || 3 });
+      /* 打几次就消耗几次：不再挂秒表，玩家能数得清还剩几下 */
+      actor.buffs.push({ k: 'atkUp', v: (eff.buffAttack.mult || 1.5) - 1, hits: eff.buffAttack.hits || 4 });
     }
   }
 
-  /** 平A：不耗能量、按间隔自动打出 */
+  /** 强化按「次」消耗：只被普通攻击扣，招式与防御不占次数。 */
+  function consumeAtkUp(actor) {
+    const buff = (actor.buffs || []).find((x) => x.k === 'atkUp');
+    if (!buff) return;
+    buff.hits = (buff.hits || 0) - 1;
+    if (buff.hits <= 0) actor.buffs = actor.buffs.filter((x) => x !== buff);
+  }
+
+  /** 普通攻击：不耗余裕、按间隔自动打出 */
   function doAutoAttack(b, actor, targetIdIn) {
     const bonus = (actor.routedAtkBonus && actor.ms && actor.ms.routed) ? actor.routedAtkBonus : 0;
     const targetId = targetIdIn || gambitTarget(b, actor);
     const res = doBasicAttack(b, actor, targetId, {
       mult: (actor.attackMult || D().DESIGN.autoAttack.mult) * (1 + bonus),
       ember: actor.emberAttack,
-      label: '平攻',
+      label: '普通攻击',
     });
     actor.atkSinceSkill = (actor.atkSinceSkill || 0) + 1;
     for (const ms of actor.extraMs || []) ms.atkSinceSkill = (ms.atkSinceSkill || 0) + 1;
     if (actor.onAttackEnergy) {
       actor.energy = Math.min(actor.energyMax || 20, (actor.energy || 0) + actor.onAttackEnergy);
     }
+    consumeAtkUp(actor);
     return res;
   }
 
   /* ------------------------------ 我方行动 ------------------------------ */
 
   function allyTurn(b, actor) {
-    /* 招式优先：条件满足就放，指令的防御/保护是没有招式可放时的选择 */
+    /* 招式优先：护盾与治疗都来自蚀刻法招式，指令里的防御是没有招式可放时的选择 */
     const sk = readySkill(b, actor);
     if (sk) {
       startCast(b, actor, sk);
@@ -749,26 +797,6 @@
       actor.lastAction = 'guard';
       log(b, { type: 'guard', actorId: actor.id, text: `${actor.name} 举盾防守` });
       return { res: { dealtDamage: false, action: 'guard' }, action: 'guard' };
-    }
-
-    if (plan.action === 'support') {
-      const cd = actor.cds.__support || 0;
-      const mate = alive(b.allies).find((u) => u.id === plan.targetId) || actor;
-      const wasted = mate.shield >= Math.round(mate.maxHp * D().SUPPORT.shieldCapPct);
-      /* 同一个人不会连续两次护持：否则全队在挨打时会一直举盾不还手 */
-      const repeat = actor.lastAction === 'support';
-      if (cd <= 0 && !wasted && !repeat) {
-        const amount = Math.round(mate.maxHp * D().SUPPORT.shieldPct
-          * (actor.supportMult || 1) * (1 + (actor.shieldMult || 0)));
-        const gained = addShield(mate, amount);
-        actor.cds.__support = D().SUPPORT.cooldown || 4;
-        actor.lastAction = 'support';
-        log(b, {
-          type: 'support', actorId: actor.id, targetId: mate.id, amount: gained,
-          text: `${actor.name} 为 ${mate.name} 支起 ${gained} 点护盾`,
-        });
-        return { res: { dealtDamage: false, action: 'support' }, action: 'support' };
-      }
     }
 
     const res = doAutoAttack(b, actor, plan.targetId);
@@ -954,7 +982,7 @@
       if (endCheck(b)) return ST().ok(next, [{ type: 'round', meta: { round: b.round } }, { type: 'over' }]);
     }
 
-    /* ---- 时间推进：冷却按秒走，能量自然恢复，施法到点结算 ---- */
+    /* ---- 时间推进：冷却按秒走，余裕自然恢复，施法到点结算 ---- */
     const dt = D().DESIGN.stepSeconds;
     const baseSpd = D().DESIGN.baseSpeed || 10;
 
@@ -971,75 +999,86 @@
       const emax = u.energyMax == null ? D().DESIGN.energyBase.max : u.energyMax;
       u.energy = Math.min(emax, (u.energy || 0) + energyRegen(u) * dt);
 
+      const ratio = dt * ((effSpd(u) || baseSpd) / baseSpd);
       if (u.casting) {
         u.castTimer -= dt;
         if (u.castTimer <= 0) finishCast(b, u);
       } else {
-        u.atkTimer = (u.atkTimer || 0) + dt * ((effSpd(u) || baseSpd) / baseSpd);
+        u.atkTimer = (u.atkTimer || 0) + ratio;
       }
+      /* 持续伤害挂在「自己一动」的节拍上：施法、蓄力都不暂停 */
+      u.dotTimer = (u.dotTimer || 0) + ratio;
     });
 
-    /* ---- 到点的单位出手（平A 或起手技能）---- */
-    const actors = [];
+    /* ---- 到点：出手节拍 / 持续伤害节拍 ---- */
+    const due = [];
     [...b.allies, ...b.enemies].forEach((u) => {
-      if (u.alive === false || u.casting) return;
-      const spark = u.extraMs?.find((s) => s.spec.id === 'spark');
-      const iv = (u.attackInterval ?? D().DESIGN.autoAttack.interval) * (spark?.spec.attack.intervalScale ?? 1);
-      if (u.atkTimer >= iv) {
-        u.atkTimer -= iv;
-        actors.push(u);
-      }
+      if (u.alive === false) return;
+      const iv = pulseInterval(u);
+      const dotDue = u.dotTimer >= iv;
+      if (dotDue) u.dotTimer -= iv;
+      /* 施法期间不出手，但节拍照走 */
+      const actDue = !u.casting && u.atkTimer >= iv;
+      if (actDue) u.atkTimer -= iv;
+      if (actDue || dotDue) due.push({ u, act: actDue });
     });
 
-    /* 稳定排序：gauge 高者先，其次我方先，再按 slot，再按 ID */
-    actors.sort((x, y) => (y.atkTimer - x.atkTimer)
-      || (x.side === y.side ? 0 : x.side === 'ally' ? -1 : 1)
-      || (x.slot - y.slot)
-      || String(x.id).localeCompare(String(y.id)));
+    /* 稳定排序：先到者先，其次我方先，再按 slot，再按 ID */
+    due.sort((x, y) => (y.u.atkTimer - x.u.atkTimer)
+      || (x.u.side === y.u.side ? 0 : x.u.side === 'ally' ? -1 : 1)
+      || (x.u.slot - y.u.slot)
+      || String(x.u.id).localeCompare(String(y.u.id)));
 
-    for (const pending of actors) {
+    for (const pending of due) {
       if (b.over) break;
 
       /* 前一个行动可能替换过 allies / enemies 数组，必须按 ID 重新取引用，
          否则 gauge 扣减与 buff 会写到过期对象上。 */
-      const list = pending.side === 'ally' ? b.allies : b.enemies;
-      const actor = list.find((x) => x.id === pending.id);
+      const list = pending.u.side === 'ally' ? b.allies : b.enemies;
+      const actor = list.find((x) => x.id === pending.u.id);
       if (!actor) continue;
       if (actor.alive === false) continue;
 
-      /* 眩晕：跳过的行动不产生 clock，也不消耗待处理 damage */
-      if (actor.skipActions > 0) {
-        actor.skipActions -= 1;
-        log(b, { type: 'skip', actorId: actor.id, text: `${actor.name} 被压住，跳过一次行动` });
+      /* 出手前：中毒 / 灼烧 / 流血先跳；死在毒上，这一拍到此为止 */
+      if (!resolveDots(b, actor, 'pre')) {
+        if (endCheck(b)) break;
         continue;
       }
 
-      if (!beginAction(b, actor)) continue;
+      if (pending.act) {
+        beginAction(b, actor);
 
-      let rootAction;
-      if (actor.side === 'ally') {
-        const r = allyTurn(b, actor);
-        /* 起手技能没有立即伤害，但换位/援护仍按一次出手结算 */
-        rootAction = {
-          actorId: actor.id, side: 'ally',
-          action: r.action === 'cast' ? 'attack' : r.action,
-          dealtDamage: !!r.res.dealtDamage,
-        };
-      } else {
-        const action = enemyTurn(b, actor);
-        rootAction = { actorId: actor.id, side: 'enemy', action, dealtDamage: action === 'main' || action === 'basic' };
-      }
-
-      /* 根行动 → 伤害/死亡 → 主动换位 → 援护 */
-      const pos = V.Positions.resolveAfterAction(b, rootAction);
-      b.allies = pos.battle.allies;
-      b.enemies = pos.battle.enemies;
-      for (const ev of pos.events) {
-        events.push(ev);
-        if (ev.type === 'move') {
-          const moved = byId(b.allies, ev.actorId);
-          log(b, { ...ev, text: `${moved.name} · ${V.Positions.describe(ev)}（${ev.meta.from + 1}→${ev.meta.to + 1}位）` });
+        let rootAction;
+        if (actor.side === 'ally') {
+          const r = allyTurn(b, actor);
+          /* 起手技能没有立即伤害，但换位/援护仍按一次出手结算 */
+          rootAction = {
+            actorId: actor.id, side: 'ally',
+            action: r.action === 'cast' ? 'attack' : r.action,
+            dealtDamage: !!r.res.dealtDamage,
+          };
+        } else {
+          const action = enemyTurn(b, actor);
+          rootAction = { actorId: actor.id, side: 'enemy', action, dealtDamage: action === 'main' || action === 'basic' };
         }
+
+        /* 出手后：腐蚀等「行动之后才发作」的伤害在这里结算，同样先判死 */
+        resolveDots(b, actor, 'post');
+
+        /* 根行动 → 伤害/死亡 → 主动换位 → 援护 */
+        const pos = V.Positions.resolveAfterAction(b, rootAction);
+        b.allies = pos.battle.allies;
+        b.enemies = pos.battle.enemies;
+        for (const ev of pos.events) {
+          events.push(ev);
+          if (ev.type === 'move') {
+            const moved = byId(b.allies, ev.actorId);
+            log(b, { ...ev, text: `${moved.name} · ${V.Positions.describe(ev)}（${ev.meta.from + 1}→${ev.meta.to + 1}位）` });
+          }
+        }
+      } else {
+        /* 这一拍没有出手（施法/蓄力中），腐蚀在拍末照样发作 */
+        resolveDots(b, actor, 'post');
       }
 
       if (endCheck(b)) break;
@@ -1072,14 +1111,6 @@
       alive: u.alive !== false,
       stress: u.stress || 0,
       gauge: u.gauge || 0,
-      energy: u.runtime ? {
-        main: V.Circuit.outputTokens(u.runtime, 'main').length,
-        support: V.Circuit.outputTokens(u.runtime, 'support').length,
-      } : null,
-      charges: u.runtime ? {
-        mainTags: V.Circuit.outputTokens(u.runtime, 'main').flatMap((t) => t.tags),
-        supportTags: V.Circuit.outputTokens(u.runtime, 'support').flatMap((t) => t.tags),
-      } : null,
       buffs: (u.buffs || []).map((x) => ({ k: x.k, v: x.v, d: x.d })),
       charging: !!u.charging,
       intent: u.charging ? { name: u.charging.name, target: u.charging.target } : u.intent || null,
@@ -1170,7 +1201,7 @@
 
   V.Combat = {
     generateEncounter, create, step, report, prepareResult, setTactic,
-    TICK_LIMIT, pressureRegenMultiplier, energyRegen,
+    TICK_LIMIT, pressureRegenMultiplier, pressureDamageMultiplier, energyRegen,
     _internal: {
       applyDamage, healUnit, checkBossPhase, buildAlly, buildEnemy,
       mitigation, addShield, rngValue, log,

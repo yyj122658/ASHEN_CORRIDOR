@@ -205,7 +205,7 @@ test('烙印不能丢掉原纹路，也不能塞两件新件', () => {
   assert.ok(!r2.ok);
 });
 
-test('ember 默认替换线在三个底盘上都能接通主手', () => {
+test('ember 默认替换线在三个底盘上都放得下', () => {
   const { A, V } = boot(306);
   let s = startRun(A, V.State.create(4242, { classicPlate: true }), 306);
   s = atCamp(A, s);
@@ -219,7 +219,8 @@ test('ember 默认替换线在三个底盘上都能接通主手', () => {
     const proposed = placements.concat([{ itemId: part.id, x: 0, y: 1, rotation: 0, mirrorY: false }]);
     const pv = V.Circuit.preview(s, unit.id, proposed);
     assert.ok(pv.ok, `${body}: ${JSON.stringify(pv.errors)}`);
-    assert.ok(pv.reachableOutputs.includes('main'), `${body} 应接通主手`);
+    /* 接线模型已删除：装配只要求几何放得下、负荷不超 */
+    assert.equal(pv.overload, 0, `${body} 不该超载`);
   });
 });
 

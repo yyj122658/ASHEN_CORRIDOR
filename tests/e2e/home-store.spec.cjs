@@ -53,10 +53,13 @@ const { chromium } = require('playwright');
       });
       assert.deepEqual(stocks, [1,1,3]);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth+1));
-      await page.locator('[data-act="openSettings"]').click();
-      await page.locator('.term-guide summary').click();
-      assert.match(await page.locator('.term-guide').innerText(), /0–100/);
-      assert.match(await page.locator('.term-guide').innerText(), /保护/);
+      /* 玩法词条：设置里那个旧的「词条」面板已经撤掉，词条统一到图鉴术语页（terms.js 单一来源） */
+      await page.locator('#nav [data-v=workshop]').click();
+      await page.locator('[data-act=wsCodex]').click();
+      await page.locator('[data-terms] summary').click();
+      const termText = await page.locator('[data-terms]').innerText();
+      assert.match(termText, /0–100/);
+      assert.match(termText, /共鸣阶/);
       assert.deepEqual(errors, []);
       await page.close();
     }

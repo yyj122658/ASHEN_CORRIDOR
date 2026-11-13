@@ -29,7 +29,7 @@
     },
     'veteran.surface.board': {
       path: 'surfaces/living-metal.png', w: 1254, h: 1254,
-      focus: '50% 50%', alt: '生命金属板面底材',
+      focus: '50% 50%', alt: '金属板面板面底材',
     },
     'veteran.relic.channel': {
       path: 'relics/ember-channel.png', w: 1254, h: 1254,

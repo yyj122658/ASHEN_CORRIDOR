@@ -179,7 +179,7 @@ test('起始队伍的蚀刻法触发实战换位，敌人随后攻击新前锋�
 test('压力50/80按档持续影响余裕恢复，低血恢复同乘，食物降压后的下一战按新压力恢复', () => {
   const { A, V, st } = boot(716);
   const initial = fight(A, setNodes(A, startRun(A, st, 716), ['battle']), 'normal').st;
-  for (const [stress, rate] of [[0,1],[49,1],[50,0.8],[79,0.8],[80,0.6],[100,0.6]]) {
+  for (const [stress, rate] of [[0,1],[49,1],[50,0.85],[79,0.85],[80,0.65],[100,0.65]]) {
     const state = V.State.clone(initial);
     const u = state.run.battle.allies[0];
     u.hp = 1; u.regen = 2; u.lowHpRegen = 1; u.energy = 0; u.stress = stress;
@@ -353,3 +353,120 @@ test('execute: 完整流程能打完三种遭遇且状态合法', () => {
 
 /** 取一份合法初始状态。 */
 function s0(V) { return V.State.create(4242, { classicPlate: true }); }
+
+test('持续伤害按出手次数结算：灼烧出手前、腐蚀出手后，每跳前先判死', () => {
+  const { A, V, st } = boot(716);
+  let s = startRun(A, st, 716);
+  s.run.floor = 6;
+  const gen = V.Combat.generateEncounter(s, 'normal');
+  s = V.Combat.create(gen.state, gen.enemyBlueprint, gen.combatRngStart).state;
+  const ally = s.run.battle.allies[0];
+  ally.buffs = [{ k: 'burn', v: 3, hits: 2 }, { k: 'corrode', v: 3, hits: 2 }];
+
+  let guard = 0;
+  while (guard++ < 400) {
+    s = V.Combat.step(s).state;
+    if (s.run.battle.over) break;
+    const alive = s.run.battle.allies.find((x) => x.id === ally.id);
+    if (!alive || !(alive.buffs || []).some((x) => x.k === 'burn' || x.k === 'corrode')) break;
+  }
+  const dots = s.run.battle.logs.filter((l) => l.type === 'dot');
+  assert.ok(dots.some((l) => l.kind === 'burn'), '灼烧应按出手次数发作');
+  assert.ok(dots.some((l) => l.kind === 'corrode'), '腐蚀应按出手次数发作');
+  const burnHits = dots.filter((l) => l.kind === 'burn').length;
+  const corrodeHits = dots.filter((l) => l.kind === 'corrode').length;
+  assert.ok(burnHits <= 2 && burnHits >= 1, `灼烧最多跳 2 次（实际 ${burnHits}）`);
+  assert.ok(corrodeHits <= 2 && corrodeHits >= 1, `腐蚀最多跳 2 次（实际 ${corrodeHits}）`);
+  /* 灼烧在出手前跳：同一次行动里，dot 日志要排在它自己的命中日志之前 */
+  const idxDot = s.run.battle.logs.findIndex((l) => l.type === 'dot' && l.kind === 'burn');
+  const idxHit = s.run.battle.logs.findIndex((l, i) => i > idxDot && l.type === 'hit' && l.actorId === ally.id);
+  if (idxDot >= 0 && idxHit >= 0) assert.ok(idxDot < idxHit, '灼烧应先于本次出手结算');
+});
+
+test('中毒致死就取消这次出手', () => {
+  const { A, V, st } = boot(811);
+  let s = startRun(A, st, 811);
+  s.run.floor = 6;
+  const gen = V.Combat.generateEncounter(s, 'normal');
+  s = V.Combat.create(gen.state, gen.enemyBlueprint, gen.combatRngStart).state;
+  const victim = s.run.battle.allies[0];
+  /* 血给够，先确保它能活到自己出手那一刻，再由毒把它带走 */
+  victim.hp = Math.max(40, victim.maxHp);
+  victim.buffs = [{ k: 'poison', v: 999, hits: 1 }];
+  let guard = 0;
+  while (guard++ < 400 && !s.run.battle.over) {
+    s = V.Combat.step(s).state;
+    const cur = s.run.battle.allies.find((x) => x.id === victim.id);
+    if (!cur || cur.alive === false) break;
+  }
+  const logs = s.run.battle.logs;
+  const dotIdx = logs.findIndex((l) => l.type === 'dot' && l.kind === 'poison');
+  assert.ok(dotIdx >= 0, '中毒应发作');
+  const after = logs.slice(dotIdx + 1).filter((l) => l.type === 'hit' && l.actorId === victim.id);
+  assert.equal(after.length, 0, '毒发致死之后不该再出手');
+});
+
+test('「被压住」是孤儿代码，已整体删除：单位上没有 skipActions，也不会产出 skip 日志', () => {
+  const { A, V, st } = boot(812);
+  let s = startRun(A, st, 812);
+  s.run.floor = 6;
+  const gen = V.Combat.generateEncounter(s, 'normal');
+  s = V.Combat.create(gen.state, gen.enemyBlueprint, gen.combatRngStart).state;
+  const battle = s.run.battle;
+
+  /* 唯一写入点是 doBasicAttack 的 opts.stun，而全仓库无人传过它 */
+  for (const u of [...battle.allies, ...battle.enemies]) {
+    assert.ok(!('skipActions' in u), `${u.name} 不该再有 skipActions 字段`);
+  }
+
+  /* 打完整场，日志里不该再出现 skip 类型 */
+  let guard = 0;
+  while (guard++ < 600 && !s.run.battle.over) s = V.Combat.step(s).state;
+  assert.equal(s.run.battle.logs.filter((l) => l.type === 'skip').length, 0, '不该再产出 skip 日志');
+});
+
+test('数据表里没有残留的 stun 字段（被压住的唯一来源）', () => {
+  const { V } = boot(814);
+  const seen = new WeakSet();
+  const hits = [];
+  const walk = (node, at) => {
+    if (!node || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'stun') hits.push(`${at}.${k}`);
+      walk(v, `${at}.${k}`);
+    }
+  };
+  walk(V.Data, 'Data');
+  assert.deepEqual(hits, [], '不应再有 stun 字段');
+});
+
+test('DOT 挂在自己的节拍上：蓄力期间不暂停', () => {
+  const { A, V, st } = boot(813);
+  let s = startRun(A, st, 813);
+  s.run.floor = 6;
+  const gen = V.Combat.generateEncounter(s, 'normal');
+  s = V.Combat.create(gen.state, gen.enemyBlueprint, gen.combatRngStart).state;
+  const caster = s.run.battle.allies[0];
+  caster.maxHp = 9999;
+  caster.hp = 9999;
+  caster.buffs = [{ k: 'burn', v: 3, hits: 1 }];
+  /* 长蓄力：期间 atkTimer 不推进，不出手 */
+  caster.casting = 'fake';
+  caster.castTimer = 999;
+
+  let guard = 0;
+  while (guard++ < 60 && !s.run.battle.over) {
+    s = V.Combat.step(s).state;
+  }
+  const logs = s.run.battle.logs;
+  assert.ok(
+    logs.some((l) => l.type === 'dot' && l.actorId === caster.id && l.kind === 'burn'),
+    '蓄力中的单位也应按时跳灼烧',
+  );
+  assert.equal(
+    logs.filter((l) => l.type === 'hit' && l.actorId === caster.id).length,
+    0,
+    '蓄力期间确实没有出手',
+  );
+});

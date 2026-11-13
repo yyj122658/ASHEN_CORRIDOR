@@ -1,4 +1,7 @@
 'use strict';
+/* 接线模型（输入极 → 纹路 → 输出极 → 脉冲）已在 2026-11-13 整体删除：
+   普通攻击改由时间轴驱动、余裕由蚀刻法给之后，这套东西没有任何读取方。
+   这个文件守着「它不会悄悄回来」，同时确认装配校验仍然工作。 */
 const test = require('node:test');
 const assert = require('node:assert');
 const { loadVeteran } = require('../helpers/load-veteran.cjs');
@@ -15,171 +18,61 @@ function mk(st, layout) {
   });
 }
 
-function compiled(st, unitId, layout) {
-  const placements = mk(st, layout);
-  const c = V.Circuit.compile(st, unitId, placements);
-  assert.ok(c.ok, JSON.stringify(c.errors));
-  return c.value;
-}
-
 function baseState() {
   const st = V.State.create(777, { classicPlate: true });
   return { st, unit: st.roster[0] };
 }
 
-test('基础直供：一次 clock 脉冲 2 单位到主手', () => {
+test('脉冲与接线 API 已从 Circuit 导出里移除', () => {
+  ['buildGraph', 'pulse', 'token', 'emptyRuntime', 'outputTokens', 'consumeOutput', 'hasSurge', 'hasEmber', 'portKey']
+    .forEach((name) => {
+      assert.equal(V.Circuit[name], undefined, `V.Circuit.${name} 不应再存在`);
+    });
+});
+
+test('preview 只返回几何与负荷结果，不含接线字段', () => {
   const { st, unit } = baseState();
-  const cc = V.Circuit.compile(st, unit.id, unit.board.placements);
+  const placements = mk(st, [
+    { templateId: 'straight', x: 0, y: 1 },
+    { templateId: 'elbow', x: 2, y: 1 },
+  ]);
+  const r = V.Circuit.preview(st, unit.id, placements);
+  assert.ok(r.ok, JSON.stringify(r.errors));
+  assert.equal(r.reachableOutputs, undefined);
+  assert.equal(r.graph, undefined);
+  assert.equal(typeof r.load, 'number');
+  assert.equal(typeof r.overload, 'number');
+  assert.equal(typeof r.cap, 'number');
+});
+
+test('compile 结果可 JSON 序列化，且不再携带图', () => {
+  const { st, unit } = baseState();
+  const placements = mk(st, [{ templateId: 'straight', x: 0, y: 1 }]);
+  const cc = V.Circuit.compile(st, unit.id, placements);
   assert.ok(cc.ok, JSON.stringify(cc.errors));
-  let rt = V.Circuit.emptyRuntime();
-  const r1 = V.Circuit.route(cc.value, rt, { clock: V.Circuit.pulse(2) }, { hpPct: 1 });
-  rt = r1.runtime;
-  assert.equal(V.Circuit.outputTokens(rt, 'main').length, 2);
-  assert.equal(V.Circuit.outputTokens(rt, 'support').length, 0);
+  const json = JSON.parse(JSON.stringify(cc.value));
+  assert.equal(json.graph, undefined);
+  assert.equal(json.reachableOutputs, undefined);
+  assert.ok(json.placements.length === 1);
 });
 
-test('分流器把 2 单位分成 1+1，绝不复制，且连续脉冲公平轮转', () => {
+test('纹路端口仍然保留：增益靠端口与蚀刻法格子的对齐比例结算', () => {
   const { st, unit } = baseState();
-  const cc = compiled(st, unit.id, [
-    { templateId: 'splitter', x: 0, y: 0 },
-    { templateId: 'straight', x: 2, y: 0 },
-    { templateId: 'straight', x: 2, y: 2 },
+  const placements = mk(st, [{ templateId: 'ember', x: 0, y: 1 }]);
+  const lay = V.Circuit.layout(st, placements);
+  assert.ok(lay.ports.length >= 2, '布局结果里应仍有端口（供对齐判定与画面刀口）');
+  assert.ok(lay.ports.every((p) => p.dir && p.role));
+  assert.equal(lay.edges.some((e) => String(e.from).startsWith('T:')), false, '不再有端子连线');
+});
+
+test('装配校验仍会拦下越界与重叠', () => {
+  const { st, unit } = baseState();
+  const oob = mk(st, [{ templateId: 'straight', x: 3, y: 3 }]);
+  assert.equal(V.Circuit.preview(st, unit.id, oob).ok, false);
+
+  const overlap = mk(st, [
+    { templateId: 'straight', x: 1, y: 1 },
+    { templateId: 'straight', x: 1, y: 1 },
   ]);
-  let rt = V.Circuit.emptyRuntime();
-  const r1 = V.Circuit.route(cc, rt, { clock: V.Circuit.pulse(2) }, { hpPct: 1 });
-  rt = r1.runtime;
-  const main1 = V.Circuit.outputTokens(rt, 'main').length;
-  const sup1 = V.Circuit.outputTokens(rt, 'support').length;
-  assert.equal(main1 + sup1, 2, '总量必须还是 2');
-  assert.deepEqual([main1, sup1], [1, 1]);
-
-  const r2 = V.Circuit.route(cc, rt, { clock: V.Circuit.pulse(2) }, { hpPct: 1 });
-  rt = r2.runtime;
-  assert.equal(V.Circuit.outputTokens(rt, 'main').length, 2);
-  assert.equal(V.Circuit.outputTokens(rt, 'support').length, 2);
-});
-
-test('蓄能腔要两次 2 单位才发出一次 4 单位 surge', () => {
-  const { st, unit } = baseState();
-  const cc = compiled(st, unit.id, [
-    { templateId: 'capacitor', x: 0, y: 1 },
-    { templateId: 'elbow', x: 2, y: 1 },
-  ]);
-  let rt = V.Circuit.emptyRuntime();
-  rt = V.Circuit.route(cc, rt, { clock: V.Circuit.pulse(2) }, { hpPct: 1 }).runtime;
-  assert.equal(V.Circuit.outputTokens(rt, 'main').length, 0, '第一次只蓄能');
-
-  const r2 = V.Circuit.route(cc, rt, { clock: V.Circuit.pulse(2) }, { hpPct: 1 });
-  rt = r2.runtime;
-  const toks = V.Circuit.outputTokens(rt, 'main');
-  assert.equal(toks.length, 4, '一次发出 4 单位');
-  assert.ok(toks.every((t) => t.tags.includes('surge')), '应带 surge 标签');
-  assert.ok(r2.events.some((e) => e.type === 'capacitorSurge'));
-});
-
-test('输出储存上限 4，溢出消散但不复制', () => {
-  const { st, unit } = baseState();
-  const cc = V.Circuit.compile(st, unit.id, unit.board.placements).value;
-  let rt = V.Circuit.emptyRuntime();
-  for (let i = 0; i < 5; i++) {
-    rt = V.Circuit.route(cc, rt, { clock: V.Circuit.pulse(2) }, { hpPct: 1 }).runtime;
-  }
-  assert.equal(V.Circuit.outputTokens(rt, 'main').length, 4);
-  assert.ok(rt.dissipated >= 2, '溢出应记消散');
-});
-
-test('闭鳞纹：满血时能量消散，半血以下才通过', () => {
-  const { st, unit } = baseState();
-  const cc = compiled(st, unit.id, [
-    { templateId: 'threshold', x: 0, y: 1 },
-    { templateId: 'elbow', x: 2, y: 1 },
-  ]);
-  let rt = V.Circuit.emptyRuntime();
-  const blocked = V.Circuit.route(cc, rt, { clock: V.Circuit.pulse(2) }, { hpPct: 0.9 });
-  assert.equal(V.Circuit.outputTokens(blocked.runtime, 'main').length, 0);
-  assert.ok(blocked.events.some((e) => e.type === 'gateBlocked'));
-
-  const pass = V.Circuit.route(cc, V.Circuit.emptyRuntime(), { clock: V.Circuit.pulse(2) }, { hpPct: 0.3 });
-  assert.equal(V.Circuit.outputTokens(pass.runtime, 'main').length, 2);
-});
-
-test('余烬纹给流经的能量打 ember 标记', () => {
-  const { st, unit } = baseState();
-  const cc = compiled(st, unit.id, [
-    { templateId: 'ember', x: 0, y: 1 },
-    { templateId: 'elbow', x: 2, y: 1 },
-  ]);
-  const r = V.Circuit.route(cc, V.Circuit.emptyRuntime(), { clock: V.Circuit.pulse(2) }, { hpPct: 1 });
-  const toks = V.Circuit.outputTokens(r.runtime, 'main');
-  assert.equal(toks.length, 2);
-  assert.ok(toks.every((t) => t.tags.includes('ember')));
-  assert.ok(V.Circuit.hasEmber(toks));
-});
-
-test('damage 极也能送能量到主手（基础线之外的第二条路）', () => {
-  const { st, unit } = baseState();
-  const cc = compiled(st, unit.id, [
-    { templateId: 'elbow', x: 0, y: 2, mirrorY: true },
-    { templateId: 'straight', x: 2, y: 2 },
-  ]);
-  const r = V.Circuit.route(cc, V.Circuit.emptyRuntime(), { damage: V.Circuit.pulse(2) }, { hpPct: 1 });
-  assert.equal(V.Circuit.outputTokens(r.runtime, 'main').length, 2);
-});
-
-test('consumeOutput 不足时返回 null，足够时正确扣减', () => {
-  const rt = V.Circuit.emptyRuntime();
-  rt.outputs.main = V.Circuit.pulse(2, ['ember']);
-  const bad = V.Circuit.consumeOutput(rt, 'main', 4);
-  assert.equal(bad, null);
-  const got = V.Circuit.consumeOutput(rt, 'main', 2);
-  assert.ok(got);
-  assert.equal(got.used.length, 2);
-  assert.equal(got.runtime.outputs.main.length, 0);
-  assert.equal(rt.outputs.main.length, 2, '不修改入参');
-});
-
-test('调谐返还只放回输出储存，不产生新脉冲', () => {
-  const rt = V.Circuit.emptyRuntime();
-  rt.outputs.main = V.Circuit.pulse(1);
-  const next = V.Circuit.refund(rt, 'main', ['refund']);
-  assert.equal(next.outputs.main.length, 2);
-  assert.equal(rt.outputs.main.length, 1);
-  assert.equal(next.dissipated, rt.dissipated);
-});
-
-test('同输入两次路由结果完全一致', () => {
-  const { st, unit } = baseState();
-  const cc = compiled(st, unit.id, [
-    { templateId: 'splitter', x: 0, y: 0 },
-    { templateId: 'straight', x: 2, y: 0 },
-    { templateId: 'straight', x: 2, y: 2 },
-  ]);
-  const a = V.Circuit.route(cc, V.Circuit.emptyRuntime(), { clock: V.Circuit.pulse(2) }, { hpPct: 1 });
-  const b = V.Circuit.route(cc, V.Circuit.emptyRuntime(), { clock: V.Circuit.pulse(2) }, { hpPct: 1 });
-  assert.deepEqual(a.runtime, b.runtime);
-  assert.deepEqual(a.events, b.events);
-});
-
-test('编译结果可 JSON 序列化，无函数/循环引用', () => {
-  const { st, unit } = baseState();
-  const cc = V.Circuit.compile(st, unit.id, unit.board.placements);
-  assert.ok(cc.ok);
-  const json = JSON.stringify(cc.value);
-  assert.ok(json.length > 0);
-  assert.deepEqual(JSON.parse(json).reachableOutputs, ['main']);
-});
-
-test('四通纹章三路轮转，每个单脉冲只从一个出口送出', () => {
-  const { st, unit } = baseState();
-  const tpl = D.template('cross');
-  const [entry, north, east, south] = tpl.ports;
-  unit.plateOverride.terminals = Object.fromEntries([
-    ['clock', entry, 'clock'], ['top', north, 'main'], ['right', east, 'support'], ['bottom', south, 'main'],
-  ].map(([id, p, channel]) => [id, { id, role: p.role, cell: p.cell, dir: p.dir, channel }]));
-  const cc = compiled(st, unit.id, [{templateId: 'cross', x: 0, y: 0}]);
-  let rt = V.Circuit.emptyRuntime();
-  for (const expected of [[1,0], [1,1], [2,1], [3,1]]) {
-    rt = V.Circuit.route(cc, rt, { clock: V.Circuit.pulse(1) }).runtime;
-    assert.deepEqual([rt.outputs.main.length, rt.outputs.support.length], expected);
-  }
+  assert.equal(V.Circuit.preview(st, unit.id, overlap).ok, false);
 });
