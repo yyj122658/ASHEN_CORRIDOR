@@ -121,11 +121,13 @@ const { chromium } = require('playwright');
         }
       }
       if (result.loaded !== (skins.length+Object.keys(V.Data.ENEMIES).length)*4) throw new Error('图集不全');
-      return {heroes:ids.size,enemies:enemies.size};
+      /* skins.length 直接带出来：这条断言的意思是「十四种皮肤全过一遍」，
+         写死 21 是十四人之前的口径，数据缩到 14 之后它永远不可能成立 */
+      return {heroes:ids.size,enemies:enemies.size,skins:skins.length};
     });
-    assert.equal(checked.heroes,21);
+    assert.equal(checked.heroes, checked.skins, `应覆盖全部 ${checked.skins} 位传奇，实际 ${checked.heroes}`);
     assert.ok(checked.enemies >= 7);
     assert.deepEqual(errors,[]);
-    console.log('开新局、战斗存档刷新、实时出手、21 位传奇的战斗实体与 28 套实际图集通过。');
+    console.log(`开新局、战斗存档刷新、实时出手、${checked.skins} 位传奇的战斗实体与全部实际图集通过。`);
   } finally { await browser.close(); }
 })().catch(error => {console.error(error);process.exitCode=1;});

@@ -145,8 +145,11 @@ test('营火烙印：生命 ×0.8、当前 HP 等比、压力 +40，每角色每
   assert.ok(r.ok, JSON.stringify(r.error));
   s = r.state;
 
-  const maxAfter = V.Roster.stats(s, s.roster[0]).maxHp;
-  assert.equal(maxAfter, Math.round(maxBefore * 0.8), '生命上限 ×0.8');
+  /* v4.0：完整度由拓扑编译产出，烙印时板面布局也变了（straight 挪走、ember 补上），
+     所以不能拿「烙印前的上限」当基准 —— 要用同一份布局编译出的裸面板 ×0.8。 */
+  const afterStats = V.Roster.stats(s, s.roster[0]);
+  assert.equal(afterStats.maxHp, Math.round(afterStats.panel.maxHp * 0.8), '生命上限 ×0.8');
+  assert.ok(afterStats.maxHp < maxBefore, '烙印之后上限应比之前低');
   assert.equal(s.run.party[0].stress, 40);
   assert.ok(s.run.fieldInscribedUnitIds.includes(unit.id));
   assert.ok(!s.run.bag.includes(newPart.id), '新件从背包转成临时绑定');
@@ -729,7 +732,8 @@ test('每处营火只免费休息一次，读档保留次数，下一处重新�
   const maxHp = V.Roster.stats(s, V.State.unitById(s, p.uid)).maxHp;
   const rested = V.Expedition.campRest(s);
   assert.ok(rested.ok);
-  assert.equal(rested.state.run.party[0].hp, 1 + Math.round(maxHp * 0.45));
+  /* v4.0：营火是「重新浇铸」—— 完整度直接补满（旧规则是回 45%） */
+  assert.equal(rested.state.run.party[0].hp, maxHp, '营火应把完整度补满');
   assert.equal(rested.state.run.party[0].stress, 50);
   s = V.Storage.decode(V.Storage.encode(rested.state)).state;
   const again = V.Expedition.campRest(s);

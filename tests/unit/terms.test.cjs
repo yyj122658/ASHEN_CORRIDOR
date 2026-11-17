@@ -48,6 +48,21 @@ test('禁用词表不是死规则：每条规则都写得出一个能命中的�
   }
 });
 
+test('白名单只放行固定形制名：同一句里的裸词照样被拦', () => {
+  assert.deepEqual(T.audit('纹章 · 竖贯'), [], '形制名是分类，不是板面零件，应放行');
+  const bare = T.audit('这枚纹章');
+  assert.equal(bare.length, 1, '裸的「纹章」仍属禁用词');
+  assert.equal(bare[0].word, '纹章');
+  const mixed = T.audit('纹章 · 竖贯，旁边还有一枚纹章');
+  assert.equal(mixed.length, 1, '整词放行时，句里另一个裸词不能被一并放过');
+
+  for (const a of T.ALLOW) {
+    assert.ok(a.why && a.why.length >= 8, `白名单必须写清为什么放行：${a.text}`);
+    assert.ok(a.text.length >= 4, `白名单至少四个字，避免变成单字后门：${a.text}`);
+    assert.ok(!/[，。；]/.test(a.text), `白名单只收短语，不收整句：${a.text}`);
+  }
+});
+
 test('短词规则不能误伤合法长词：金属板面 / 余裕 / 共鸣阶 都合法', () => {
   assert.deepEqual(T.audit('这块金属板面'), []);
   assert.deepEqual(T.audit('金属板'), [{ word: '金属板', fix: '金属板面', why: '统一叫金属板面' }]);

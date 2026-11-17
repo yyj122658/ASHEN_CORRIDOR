@@ -1,11 +1,7 @@
 /* 前哨共用导航与工作台。场景底图留在工具之外，读数始终在实底上。 */
-:root {
-  --bg: #101317; --surface: #1c2228; --surface-raised: #252c32; --surface-hi: #353c42;
-  --border: #52545a; --border-soft: #343a40; --text: #efe8da; --text-muted: #bdc1c1;
-  --text-dim: #a1a8aa; --accent: #dbb680; --accent-bright: #f3d3a0; --accent-dim: #987344;
-  --success: #95c4bb; --danger: #eca294;
-}
-body.vet { background: radial-gradient(ellipse at 80% 0, #29313a70, transparent 55vh), var(--bg); }
+/* 2026-11-16：这里原本有一份 :root 变量重定义，覆盖了 tokens.css 的整套色。
+   已删除 —— 全站颜色只允许在 styles/tokens.css 定义一次。 */
+body.vet { background: radial-gradient(ellipse at 80% 0, rgba(87, 166, 167, .10), transparent 55vh), var(--bg); }
 #app { width: 100%; max-width: 1600px; padding-inline: clamp(16px, 3.1vw, 52px); }
 .masthead { display: flex; align-items: center; justify-content: flex-start; gap: clamp(16px, 2.8vw, 48px); border-bottom: 1px solid #b695642f; min-height: 68px; }
 .masthead:has(#hud:empty) { display: none; }

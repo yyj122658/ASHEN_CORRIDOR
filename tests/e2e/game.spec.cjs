@@ -384,7 +384,7 @@ async function launch() {
     ok('B15 从仓库拖入第二套，原主修保留', after.equipped[0] === msDrag.primary && after.equipped.includes(msDrag.msId), JSON.stringify({ want: msDrag.msId, ...after }));
     ok('B15b 装上后不再留在仓库（不会被复制）', after.inVault === false, String(after.inVault));
   } else {
-    ok('B15 缺少可装的起始合修或落点', false);
+    ok('B15 缺少可装的起始辅修或落点', false);
   }
 
   await page.locator('svg.board').scrollIntoViewIfNeeded();

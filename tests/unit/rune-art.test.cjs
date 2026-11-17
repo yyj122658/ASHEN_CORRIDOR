@@ -1,5 +1,5 @@
 'use strict';
-/* 纹章切片的朝向必须和电路逻辑完全一致：
+/* 纹路切片的朝向必须和电路逻辑完全一致：
    否则画出来是「旋转过的图」，端口却算在别处。
    这里不重算旋转规则，直接把 V.RuneArt.matrixFor 的输出和
    V.Circuit.layout 的真实格子逐一对比（全部纹路 × 4 旋转 × 2 翻转）。 */
@@ -26,7 +26,7 @@ const STATE = fakeState();
 const IDS = Object.keys(RA.RUNES);
 const IN_DATA = IDS.filter((id) => Data.TEMPLATES[id]);
 
-test('已在 data.js 的纹章，格数与模板一致', () => {
+test('已在 data.js 的纹路，格数与模板一致', () => {
   assert.ok(Data.TEMPLATE_ORDER.length >= 30);
   assert.deepEqual(IN_DATA.slice().sort(), Data.TEMPLATE_ORDER.slice().sort());
   IN_DATA.forEach((tid) => {

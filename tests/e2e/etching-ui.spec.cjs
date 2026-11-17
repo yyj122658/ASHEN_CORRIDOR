@@ -231,7 +231,7 @@ const { chromium } = require('playwright');
     assert.deepEqual(await equipped(), [moved[1], primary]);
     await pick(primary.id);
     await page.locator('[data-act=wsMsUnequip]').click();
-    assert.deepEqual(await equipped(), [moved[1]], '卸下所选合修，另一套保留');
+    assert.deepEqual(await equipped(), [moved[1]], '卸下所选辅修，另一套保留');
     assert.match(await page.locator(`.ms-chip[data-source=vault][data-id="${primary.id}"]`).innerText(), /库存 ×3/);
 
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -259,7 +259,9 @@ const { chromium } = require('playwright');
 
     await page.locator('#nav [data-v=recruit]').click();
     await page.locator('[data-act=refreshShop]').click();
-    assert.ok(await page.locator('.recruit-card .portrait-atlas').count() > 0);
+    /* 14 位传奇现在都有清洗头像，不再走 4×4 图集兜底；
+       断言改成「招募卡上确实有立绘」，两条路径都算通过。 */
+    assert.ok(await page.locator('.recruit-card .legend-portrait img, .recruit-card .legend-portrait svg').count() > 0);
     const atlas = await page.evaluate(() => new Promise((resolve) => {
       const img = new Image(); img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
       img.onerror = () => resolve(null); img.src = 'assets/art/portraits-v2/wanderers.png';

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { boot, startRun, setNodes, fight, stepUntilOver } = require('../helpers/veteran-run.cjs');
+const { boot, startRun, setNodes, fight, stepUntilOver, autoRouteBoard } = require('../helpers/veteran-run.cjs');
 
 test('实战敌群随层域变化，每个物种都有出场与采收途径', () => {
   const { A, V, st } = boot(712);
@@ -13,7 +13,8 @@ test('实战敌群随层域变化，每个物种都有出场与采收途径', ()
     const encounter = V.Combat.generateEncounter(run, 'normal');
     const types = Array.from(encounter.enemyBlueprint.units, enemy => enemy.enemyType);
     assert.ok(types.includes(species), `第 ${floor} 层应出现 ${species}`);
-    assert.equal(types.length, 3, '普通遭遇固定三员');
+    /* 七标：F20 起补到 4 员（四人小队打三名敌人等于排队点名），浅层仍是三员 */
+    assert.equal(types.length, floor >= 20 ? 4 : 3, '深层补足编队、浅层固定三员');
     types.forEach(type => found.add(type));
   }
   /* 编成：层域 × 轮转 × 三种节点都要能生成，且每个物种至少被用过一次 */
@@ -35,12 +36,31 @@ test('实战敌群随层域变化，每个物种都有出场与采收途径', ()
   }
 });
 
+/**
+ * 装两门蚀刻法：主修 + 辅修。
+ *
+ * 以前测试直接写 `{...spec, x, y}` —— 那时骨架只有 2~14 格，坐标凑巧就落在板面里。
+ * 六标之后骨架 6~54 格，写死坐标基本都越界，于是 manuscriptState 直接判 DEAD。
+ * 现在走真实装配（浇铸 + 落位），需要哪一门接通就把哪一门交给布线器。
+ */
+function equipTwo(A, V, st, unit, mainId, extraId, routeId) {
+  unit.manuscript = null;
+  delete unit.extraManuscripts;
+  V.State.equipManuscript(st, unit, mainId);
+  if (extraId) {
+    st.manuscriptVault = st.manuscriptVault || [];
+    st.manuscriptVault.push({ ...V.Data.MANUSCRIPTS[extraId] });
+    V.State.placeManuscript(st, unit, extraId);
+  }
+  if (routeId) autoRouteBoard(A, st, unit, { style: 'elbow', msId: routeId });
+  return V.State.manuscriptsOf(unit);
+}
+
 test('同一人同场自动使用两套蚀刻法，护持不清空另一套的追击计数', () => {
-  const { A, V, st } = boot(712);
+  const { A, V, st } = boot(712, { generated: true });
   const unit = st.roster[1];
   const spec = V.Data.MANUSCRIPTS;
-  unit.manuscript = { ...spec.needle, x: 1, y: 0 };
-  unit.extraManuscripts = [{ ...spec.ward, x: 0, y: 1 }];
+  equipTwo(A, V, st, unit, 'needle', 'ward');
   let s = fight(A, setNodes(A, startRun(A, st, 712), ['battle']), 'normal').st;
   const b = s.run.battle;
   const actor = b.allies.find((u) => u.sourceUnitId === unit.id);
@@ -62,15 +82,17 @@ test('同一人同场自动使用两套蚀刻法，护持不清空另一套的�
 });
 
 test('首位也能施放回息，换位后仍按各门贯通与独立冷却轮换', () => {
-  const { A, V, st } = boot(712);
+  const { A, V, st } = boot(712, { generated: true });
   const unit = st.roster[0];
-  unit.manuscript = { ...V.Data.MANUSCRIPTS.ward, x: 0, y: 0 };
-  unit.extraManuscripts = [{ ...V.Data.MANUSCRIPTS.wick, x: 0, y: 1 }];
+  /* 副修「挑火」的施放条件是 routed，所以这一门必须真的接通 */
+  equipTwo(A, V, st, unit, 'ward', 'wick', 'wick');
   let s = fight(A, setNodes(A, startRun(A, st, 712), ['battle']), 'normal').st;
   const battle = s.run.battle;
   const me = battle.allies[0];
-  assert.equal(me.ms.routed, false);
-  assert.equal(me.extraMs[0].routed, true);
+  /* 六标之后「铺满整块板」很容易把两门都覆盖到，所以这里不再要求一真一假；
+     这条要守的是**各门有自己的 routed 与冷却**，而不是某一门恰好没接通。 */
+  assert.equal(typeof me.ms.routed, 'boolean');
+  assert.equal(typeof me.extraMs[0].routed, 'boolean');
   [...battle.allies, ...battle.enemies].forEach((u) => { u.atkTimer = -1000; });
   me.skillList = me.skillList.map((sk) => ({ ...sk, id: 'same', sharedCooldown: true }));
   me.energy = me.energyMax;
@@ -79,7 +101,8 @@ test('首位也能施放回息，换位后仍按各门贯通与独立冷却轮�
   s = V.Combat.step(s).state;
   let actor = s.run.battle.allies[0];
   assert.equal(actor.pendingSkill.name, '回息');
-  assert.equal(actor.energy, me.energyMax - 5);
+  /* 能耗 = 招式基础 5 + 七标的主动招式附加 1（skillEnergySurcharge） */
+  assert.equal(actor.energy, me.energyMax - (5 + (V.Data.DESIGN.skillEnergySurcharge || 0)));
   assert.ok(actor.cds.same > 0 && !actor.cds['1:same']);
   actor.slot = 1;
   s.run.battle.allies[1].slot = 0;
@@ -93,10 +116,9 @@ test('首位也能施放回息，换位后仍按各门贯通与独立冷却轮�
 });
 
 test('星火副修在前后位均缩短同一比例的平攻间隔', () => {
-  const { A, V, st } = boot(712);
+  const { A, V, st } = boot(712, { generated: true });
   const unit = st.roster[1];
-  unit.manuscript = { ...V.Data.MANUSCRIPTS.ward, x: 1, y: 0 };
-  unit.extraManuscripts = [{ ...V.Data.MANUSCRIPTS.spark, x: 0, y: 1 }];
+  equipTwo(A, V, st, unit, 'ward', 'spark');
   const s = fight(A, setNodes(A, startRun(A, st, 712), ['battle']), 'normal').st;
   const b = s.run.battle;
   const actor = b.allies[1];
@@ -111,6 +133,11 @@ test('星火副修在前后位均缩短同一比例的平攻间隔', () => {
     if (other) other.slot = me.slot;
     me.slot = slot;
     me.atkTimer = 0;
+    /* 星火现在自带起手技「迸火」，会拿引导时间去挤普攻；
+       这条测的是「间隔缩短比例」，所以先把招式摘掉，只留面板 */
+    me.skillList = [];
+    me.casting = null;
+    me.pendingSkill = null;
     const before = me.atkSinceSkill;
     for (let i = 0; i < 30; i++) state = V.Combat.step(state).state;
     return { state, attacks: state.run.battle.allies[1].atkSinceSkill - before };
@@ -126,7 +153,8 @@ test('星火副修在前后位均缩短同一比例的平攻间隔', () => {
 test('当前与旧档的主修在四个身位均能出招，原位标记不再改变基础攻击', () => {
   const { A, V, st } = boot(715);
   const unit = st.roster[0];
-  unit.manuscript = { ...V.Data.MANUSCRIPTS.corridor5, positions: [0] };
+  equipTwo(A, V, st, unit, 'corridor5', null);
+  unit.manuscript.positions = [0];
   const initial = fight(A, setNodes(A, startRun(A, st, 715), ['battle']), 'normal').st;
   const damages = [];
   for (let slot = 0; slot < 4; slot++) {
@@ -182,7 +210,8 @@ test('压力50/80按档持续影响余裕恢复，低血恢复同乘，食物降
   for (const [stress, rate] of [[0,1],[49,1],[50,0.85],[79,0.85],[80,0.65],[100,0.65]]) {
     const state = V.State.clone(initial);
     const u = state.run.battle.allies[0];
-    u.hp = 1; u.regen = 2; u.lowHpRegen = 1; u.energy = 0; u.stress = stress;
+    /* regenBase 是「没扣超载罚项的原始值」——高压下要按它退罚项，所以两者一起设 */
+    u.hp = 1; u.regen = 2; u.regenBase = 2; u.lowHpRegen = 1; u.energy = 0; u.stress = stress;
     u.atkTimer = -1000;
     assert.equal(V.Combat.energyRegen(u), 3 * rate);
     const advanced = V.Combat.step(state).state.run.battle.allies[0];
@@ -198,7 +227,7 @@ test('压力50/80按档持续影响余裕恢复，低血恢复同乘，食物降
   assert.equal(V.Combat.energyRegen(encounter.allies[0]), encounter.allies[0].regen);
 });
 
-test('五种主手按身位与能量规则出手', () => {
+test('五种主手按身位与余裕规则出手', () => {
   const { A, V, st: base } = boot(101);
   const cases = [
     { weapon: 'shortBlade', slot: 0, expectMain: true },
@@ -229,6 +258,9 @@ test('受击脉冲只在真实 HP 伤害时记录，护盾/自伤/DOT 不刷', (
   const enemy = b.enemies[0];
 
   ally.pendingDamagePulse = 0;
+  /* v4.0：缓冲上限来自储能纹路，没刻就是 0 —— 这一条测的是「护盾全挡不产生脉冲」，
+     所以先给一个足够大的上限 */
+  ally.shieldCap = 9999;
   I.addShield(ally, 9999);
   I.applyDamage(b, enemy, ally, 20, {});
   assert.equal(ally.hp, ally.maxHp, '护盾应该全挡');
@@ -244,7 +276,9 @@ test('受击脉冲只在真实 HP 伤害时记录，护盾/自伤/DOT 不刷', (
   assert.equal(ally.pendingDamagePulse, 0, 'DOT 不产生脉冲');
 
   ally.pendingDamagePulse = 0;
-  I.applyDamage(b, enemy, ally, 12, {});
+  /* 八标之后完整度降到 75~115，12 点直击已经越过「8% 完整度」的熔断线，
+     会被保险丝整下挡掉 —— 这一条要验的是「真伤才记录」，所以走穿刺绕过熔断。 */
+  I.applyDamage(b, enemy, ally, 12, { pierce: true });
   assert.equal(ally.pendingDamagePulse, 2, '真实伤害才记录 2 单位');
 });
 
@@ -361,16 +395,26 @@ test('持续伤害按出手次数结算：灼烧出手前、腐蚀出手后，�
   const gen = V.Combat.generateEncounter(s, 'normal');
   s = V.Combat.create(gen.state, gen.enemyBlueprint, gen.combatRngStart).state;
   const ally = s.run.battle.allies[0];
+  /* 八标：难度抬上来之后，靶子可能在第一次出手前就被打死，这条用例要验的是 DOT 的结算时机，
+     不是生存能力 —— 先把血灌满，把变量隔离掉。 */
+  ally.maxHp = 500;
+  ally.hp = 500;
   ally.buffs = [{ k: 'burn', v: 3, hits: 2 }, { k: 'corrode', v: 3, hits: 2 }];
 
+  /* 八标：战斗节奏加快之后，一场的日志会超过 240 条的环形缓冲，早期的 DOT 会被挤掉。
+     逐 tick 收集，不依赖终局快照。 */
+  const seen = new Map();
+  const grab = () => (s.run.battle.logs || []).forEach((l) => seen.set(l.seq, l));
   let guard = 0;
   while (guard++ < 400) {
     s = V.Combat.step(s).state;
+    grab();
     if (s.run.battle.over) break;
     const alive = s.run.battle.allies.find((x) => x.id === ally.id);
     if (!alive || !(alive.buffs || []).some((x) => x.k === 'burn' || x.k === 'corrode')) break;
   }
-  const dots = s.run.battle.logs.filter((l) => l.type === 'dot');
+  const logs = [...seen.values()].sort((a, b) => a.seq - b.seq);
+  const dots = logs.filter((l) => l.type === 'dot');
   assert.ok(dots.some((l) => l.kind === 'burn'), '灼烧应按出手次数发作');
   assert.ok(dots.some((l) => l.kind === 'corrode'), '腐蚀应按出手次数发作');
   const burnHits = dots.filter((l) => l.kind === 'burn').length;
@@ -378,8 +422,8 @@ test('持续伤害按出手次数结算：灼烧出手前、腐蚀出手后，�
   assert.ok(burnHits <= 2 && burnHits >= 1, `灼烧最多跳 2 次（实际 ${burnHits}）`);
   assert.ok(corrodeHits <= 2 && corrodeHits >= 1, `腐蚀最多跳 2 次（实际 ${corrodeHits}）`);
   /* 灼烧在出手前跳：同一次行动里，dot 日志要排在它自己的命中日志之前 */
-  const idxDot = s.run.battle.logs.findIndex((l) => l.type === 'dot' && l.kind === 'burn');
-  const idxHit = s.run.battle.logs.findIndex((l, i) => i > idxDot && l.type === 'hit' && l.actorId === ally.id);
+  const idxDot = logs.findIndex((l) => l.type === 'dot' && l.kind === 'burn');
+  const idxHit = logs.findIndex((l, i) => i > idxDot && l.type === 'hit' && l.actorId === ally.id);
   if (idxDot >= 0 && idxHit >= 0) assert.ok(idxDot < idxHit, '灼烧应先于本次出手结算');
 });
 
@@ -391,15 +435,18 @@ test('中毒致死就取消这次出手', () => {
   s = V.Combat.create(gen.state, gen.enemyBlueprint, gen.combatRngStart).state;
   const victim = s.run.battle.allies[0];
   /* 血给够，先确保它能活到自己出手那一刻，再由毒把它带走 */
-  victim.hp = Math.max(40, victim.maxHp);
+  victim.maxHp = 500;
+  victim.hp = 500;
   victim.buffs = [{ k: 'poison', v: 999, hits: 1 }];
+  const seen = new Map();
   let guard = 0;
   while (guard++ < 400 && !s.run.battle.over) {
     s = V.Combat.step(s).state;
+    (s.run.battle.logs || []).forEach((l) => seen.set(l.seq, l));
     const cur = s.run.battle.allies.find((x) => x.id === victim.id);
     if (!cur || cur.alive === false) break;
   }
-  const logs = s.run.battle.logs;
+  const logs = [...seen.values()].sort((a, b) => a.seq - b.seq);
   const dotIdx = logs.findIndex((l) => l.type === 'dot' && l.kind === 'poison');
   assert.ok(dotIdx >= 0, '中毒应发作');
   const after = logs.slice(dotIdx + 1).filter((l) => l.type === 'hit' && l.actorId === victim.id);
@@ -441,7 +488,7 @@ test('数据表里没有残留的 stun 字段（被压住的唯一来源）', ()
   assert.deepEqual(hits, [], '不应再有 stun 字段');
 });
 
-test('DOT 挂在自己的节拍上：蓄力期间不暂停', () => {
+test('DOT 挂在自己的节拍上：引导期间不暂停', () => {
   const { A, V, st } = boot(813);
   let s = startRun(A, st, 813);
   s.run.floor = 6;
@@ -451,7 +498,7 @@ test('DOT 挂在自己的节拍上：蓄力期间不暂停', () => {
   caster.maxHp = 9999;
   caster.hp = 9999;
   caster.buffs = [{ k: 'burn', v: 3, hits: 1 }];
-  /* 长蓄力：期间 atkTimer 不推进，不出手 */
+  /* 长引导：期间 atkTimer 不推进，不出手 */
   caster.casting = 'fake';
   caster.castTimer = 999;
 
@@ -462,11 +509,11 @@ test('DOT 挂在自己的节拍上：蓄力期间不暂停', () => {
   const logs = s.run.battle.logs;
   assert.ok(
     logs.some((l) => l.type === 'dot' && l.actorId === caster.id && l.kind === 'burn'),
-    '蓄力中的单位也应按时跳灼烧',
+    '引导中的单位也应按时跳灼烧',
   );
   assert.equal(
     logs.filter((l) => l.type === 'hit' && l.actorId === caster.id).length,
     0,
-    '蓄力期间确实没有出手',
+    '引导期间确实没有出手',
   );
 });

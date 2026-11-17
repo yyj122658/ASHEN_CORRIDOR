@@ -46,6 +46,34 @@
     if (V.App && V.App.playSfx) V.App.playSfx(kind);
   }
 
+  /* ---- 2026-11-16：curated 资产的三个入口 ---- */
+
+  /** 战斗背景按层域挑。1/4/7 章水下、2/5 章泉脉、3/6 章炉心；首领战固定炉心。 */
+  function battleBgFor(b) {
+    if (!b) return 'scene.battle.water';
+    if (b.kind === 'boss') return 'scene.battle.furnace';
+    const chap = V.Data && V.Data.chapterAt ? V.Data.chapterAt(b.floor || 1) : null;
+    const n = (chap && chap.number) || 1;
+    if (n % 3 === 0) return 'scene.battle.furnace';
+    if (n % 3 === 2) return 'scene.battle.spring';
+    return 'scene.battle.water';
+  }
+
+  /** 单位的静态小图 id：我方 sprite.<skinId>，敌方 enemy.<sprite|enemyType>。 */
+  function spriteArtId(u) {
+    if (!u || !A.Art) return null;
+    if (u.side === 'ally') return u.skinId ? 'sprite.' + u.skinId : null;
+    const key = u.sprite || u.enemyType;
+    return key && A.Art.getArt('enemy.' + key) ? 'enemy.' + key : null;
+  }
+
+  /* 粒子种类 → curated 贴图。没登记的（heal / surge / death）继续走矢量。 */
+  const VFX_ART = {
+    slash: 'vfx.slash', crit: 'vfx.slash', shield: 'vfx.shield',
+    ember: 'vfx.burn', burn: 'vfx.burn', poison: 'vfx.poison',
+    bleed: 'vfx.bleed', corrode: 'vfx.corrode',
+  };
+
   function targetX(u) {
     /* 我方 slot0 最靠中心（画布右侧），敌方 slot0 最靠中心（画布左侧） */
     if (u.side === 'ally') return 118 - u.slot * 29;
@@ -83,9 +111,14 @@
     if (!ctx) return;
     const b = state && state.run && state.run.battle;
     if (!b) return;
-    bgId = b.kind === 'boss' ? 'scene.boss' : 'scene.corridor';
-    if (o.sync !== false && A.Art) A.Art.preloadArt([bgId]);
+    bgId = battleBgFor(b);
     const units = [...b.allies, ...b.enemies];
+    if (o.sync !== false && A.Art) {
+      /* scene.corridor 一并预热：它仍是横幅与节点插画用的那张，
+         test:battle-art 会等 isReady('scene.corridor') 才继续。 */
+      A.Art.preloadArt([bgId, 'scene.corridor']);
+      A.Art.preloadArt(units.map(spriteArtId).filter(Boolean));
+    }
     units.forEach((u) => {
       if (o.sync !== false || !displayX.has(u.id)) displayX.set(u.id, targetX(u));
     });
@@ -171,7 +204,7 @@
         spawnParticle('death', unitX(target), GROUND - 16, '#8A6F5E');
       } else if (l.type === 'telegraph' && actor) {
         if (A.SpriteAnim) A.SpriteAnim.play(actor, 'attack');
-        spawnPopup(unitX(actor), GROUND - 66, '蓄力!', '#D36A65', true);
+        spawnPopup(unitX(actor), GROUND - 66, '引导!', '#D36A65', true);
         if (!rm) shakeTimer = 140;
       } else if (l.type === 'heal') {
         if (actor && A.SpriteAnim) A.SpriteAnim.play(actor, actor.side === 'ally' ? 'cast' : 'attack');
@@ -190,6 +223,8 @@
       } else if (l.type === 'surge' && actor) {
         spawnPopup(unitX(actor), GROUND - 64, '过载!', '#F2CF7E', false);
         spawnParticle('surge', unitX(actor), GROUND - 20, '#F2CF7E');
+      } else if (l.type === 'dot' && target) {
+        if (target.alive !== false) spawnParticle(l.kind || 'burn', unitX(target), GROUND - 18, '#D87843');
       } else if (l.type === 'ember' && target) {
         spawnParticle('ember', unitX(target), GROUND - 18, '#D87843');
       } else if (l.type === 'phase' && actor) {
@@ -246,6 +281,31 @@
     }
   }
 
+  /**
+   * 静态小人：没有多帧图集时的兜底。
+   * 底部对齐 GROUND，加一点呼吸起伏（静止时 ±1px），受击/前冲的位移由外层 x 负责。
+   * 返回 false 表示连图都没有，调用方自行决定文字占位。
+   */
+  function drawStill(u, x, y, cellPx, now, rm) {
+    const id = spriteArtId(u);
+    const img = id ? A.Art.getImage(id) : null;
+    if (!img) {
+      ctx.fillStyle = '#D4CABB';
+      ctx.font = '7px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(u.name, x, y - 4);
+      return false;
+    }
+    const w = Math.max(8, Math.round(cellPx));
+    const h = Math.max(8, Math.round(w * (img.height / img.width)));
+    const bob = rm || u.alive === false ? 0 : Math.round(Math.sin(now / 520 + (u.slot || 0) * 1.7));
+    ctx.save();
+    if (u.refract > 0 && u.alive !== false) ctx.globalAlpha = 0.68;
+    ctx.drawImage(img, Math.round(x - w / 2), Math.round(y + bob - h), w, h);
+    ctx.restore();
+    return true;
+  }
+
   function overhead(u, x, y) {
     if (u.alive === false) return;
     const bw = 20;
@@ -268,7 +328,7 @@
       ctx.fillStyle = '#a1bfc4';
       ctx.fillRect(bx, y - 46, Math.round(bw * Math.min(1, u.shield / Math.max(1, u.maxHp * 0.3))), 1);
     }
-    /* 蓄力预告 */
+    /* 引导预告 */
     if (u.charging) {
       ctx.fillStyle = '#D36A65';
       ctx.fillRect(x - 2, y - 64, 4, 4);
@@ -292,6 +352,14 @@
       const t = 1 - p.ttl / p.max;
       ctx.save();
       ctx.globalAlpha = Math.max(0, 1 - t);
+      /* 有 curated 贴图就用它；缺图继续走下面的矢量线条 */
+      const vfxImg = VFX_ART[p.kind] && A.Art ? A.Art.getImage(VFX_ART[p.kind]) : null;
+      if (vfxImg) {
+        const size = p.kind === 'crit' ? 46 : 36;
+        ctx.drawImage(vfxImg, Math.round(p.x - size / 2), Math.round(p.y - size / 2), size, size);
+        ctx.restore();
+        return;
+      }
       if (p.kind === 'slash' || p.kind === 'crit') {
         ctx.strokeStyle = p.color;
         ctx.lineWidth = p.kind === 'crit' ? 2.2 : 1.4;
@@ -359,7 +427,7 @@
     const b = state.run && state.run.battle;
     if (!b) return;
 
-    bgId = b.kind === 'boss' ? 'scene.boss' : 'scene.corridor';
+    bgId = battleBgFor(b);
     consumeEvents(state);
 
     const dt = lastTs ? Math.min(120, now - lastTs) : 16;
@@ -412,17 +480,15 @@
 
       const y = GROUND;
       if (A.SpriteAnim) {
+        const cellPx = CELL * (u.isBoss ? 1.45 : u.isElite ? 1.14 : 1);
         ctx.save();
         if (u.refract > 0 && u.alive !== false) ctx.globalAlpha = 0.68;
         if (ht && ht.ttl > 80 && !reducedMotion()) ctx.filter = 'brightness(1.35)';
-        const drawn = A.SpriteAnim.draw(ctx, u, x, y, CELL * (u.isBoss ? 1.45 : u.isElite ? 1.14 : 1), reducedMotion());
-        if (!drawn && u.alive !== false) {
-          ctx.fillStyle = '#d7c7ae';
-          ctx.font = '7px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(u.name, x, y - 4);
-        }
+        const drawn = A.SpriteAnim.draw(ctx, u, x, y, cellPx, reducedMotion());
         ctx.restore();
+        /* 没有多帧图集（八位流浪者、敌方亚种、首领）就画 curated 的 64px 静态小人；
+           连图片也没加载时（test:ui 会 abort 掉 /assets/）才退回文字占位。 */
+        if (!drawn && u.alive !== false) drawStill(u, x, y, cellPx, now, reducedMotion());
       }
       overhead(u, x, y);
     });
@@ -430,7 +496,7 @@
     drawParticles(effDt);
     drawPopups(effDt);
 
-    /* 首领蓄力预告角标 */
+    /* 首领引导预告角标 */
     const chargingEnemy = b.enemies.find((e) => e.alive !== false && e.charging);
     if (chargingEnemy) {
       ctx.save();
@@ -443,7 +509,7 @@
       ctx.font = '12px "Microsoft YaHei", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`⚠ ${chargingEnemy.name}蓄力：${chargingEnemy.charging.name}`, CW * SCALE - 111, 23);
+      ctx.fillText(`⚠ ${chargingEnemy.name}引导：${chargingEnemy.charging.name}`, CW * SCALE - 111, 23);
       ctx.restore();
     }
 

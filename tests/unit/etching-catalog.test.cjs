@@ -2,14 +2,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadVeteran } = require('../helpers/load-veteran.cjs');
+const { autoRouteBoard } = require('../helpers/veteran-run.cjs');
 
-test('21 位固定来客可逐一招募，身份不重复，满员后不收费刷新', () => {
+test('14 位固定来客可逐一招募，身份不重复，满员后不收费刷新', () => {
   const V = loadVeteran().Veteran;
-  assert.equal(V.Data.SKINS.length, 21);
-  assert.equal(new Set(V.Data.SKINS.map((s) => s.name)).size, 21);
+  assert.equal(V.Data.SKINS.length, 14);
+  assert.equal(new Set(V.Data.SKINS.map((s) => s.name)).size, 14);
   let st = V.State.create(42);
   st.gold = 100000;
-  while (st.roster.length < 21) {
+  while (st.roster.length < 14) {
     const refreshed = V.Roster.refreshShop(st, false);
     assert.ok(refreshed.ok);
     st = refreshed.state;
@@ -25,13 +26,87 @@ test('21 位固定来客可逐一招募，身份不重复，满员后不收费�
     st = r.state;
     assert.ok(V.State.validate(st).ok);
   }
-  assert.equal(new Set(st.roster.map((u) => u.skinId)).size, 21);
+  assert.equal(new Set(st.roster.map((u) => u.skinId)).size, 14);
   const full = V.Roster.refreshShop(st, true);
   assert.equal(full.ok, false);
   assert.equal(full.state.gold, st.gold);
 });
 
-test('80 套蚀刻法有可落下的连通拓片和可执行招式', () => {
+test('一门金属最多同时维持 4 门功法，超了拒绝并说明原因', () => {
+  const V = loadVeteran().Veteran;
+  const SLOTS = V.Data.DESIGN.manuscriptSlots;
+  assert.equal(SLOTS, 4, '门数是 4：主修 1 + 辅修 3');
+  const st = V.State.create(3);
+  const u = st.roster[0];
+  assert.equal(V.State.manuscriptsOf(u).length, 1, '开局自带一阶功法');
+
+  /* 往仓库里补满可用的功法，保证失败一定来自门数而不是「没这门」 */
+  for (const id of ['rivet', 'ward', 'needle', 'spark', 'flurry']) {
+    st.manuscriptVault.push({ ...V.Data.manuscript(id) });
+  }
+  for (const id of ['rivet', 'ward', 'needle']) {
+    const r = V.State.placeManuscript(st, u, id);
+    assert.equal(r.ok, true, `${id} 应该装得下：${r.reason || ''}`);
+  }
+  assert.equal(V.State.manuscriptsOf(u).length, SLOTS);
+
+  const back = V.State.placeManuscript(st, u, 'flurry');
+  assert.equal(back.ok, false, '第五门必须被拒绝');
+  assert.ok(/4 门蚀刻法/.test(back.reason), `原因要讲清门数：${back.reason}`);
+  assert.equal(V.State.manuscriptsOf(u).length, SLOTS, '拒绝后不该有副作用');
+  assert.ok(st.manuscriptVault.some((m) => m.id === 'flurry'), '被拒的功法要留在仓库');
+
+  /* 换朝向 / 挪位置不算新增，不该被门数拦 */
+  const first = V.State.manuscriptsOf(u)[1];
+  const moved = V.State.placeManuscript(st, u, first.id);
+  assert.equal(moved.ok, true, `已在板上的功法改位置不该被门数拦：${moved.reason || ''}`);
+  assert.equal(V.State.manuscriptsOf(u).length, SLOTS, '挪位置不该改变门数');
+
+  /* 卸下一门就能再装一门 */
+  assert.equal(V.State.removeManuscript(st, u, 'needle').ok, true);
+  const again = V.State.placeManuscript(st, u, 'flurry');
+  assert.equal(again.ok, true, `腾出位置后应能装：${again.reason || ''}`);
+});
+
+test('拆卸是无损的：原件原样回库，不留瘢痕，不扣任何资源', () => {
+  const V = loadVeteran().Veteran;
+  const st = V.State.create(11);
+  const u = st.roster[0];
+  const stock = V.Data.manuscript('rivet');
+  st.manuscriptVault.push({ ...stock });
+
+  const stats = () => V.Roster.stats(st, u, []);
+  const before = {
+    vault: st.manuscriptVault.length,
+    gold: st.gold,
+    scars: (u.scars || []).length,
+    power: stats().hp + stats().atk + stats().def,
+  };
+
+  assert.equal(V.State.placeManuscript(st, u, 'rivet').ok, true);
+  assert.equal(st.manuscriptVault.length, before.vault - 1, '装上时从库存取走一份');
+  assert.equal(V.State.removeManuscript(st, u, 'rivet').ok, true);
+
+  const back = st.manuscriptVault.find((m) => m.id === 'rivet');
+  assert.ok(back, '拆下来必须回到库存里');
+  /* 姿态是装配时才算出来的东西，拆下清掉；内容一个字段都不能少 */
+  Object.keys(stock).forEach((k) => {
+    assert.deepEqual(back[k], stock[k], `字段 ${k} 没有原样回来`);
+  });
+  ['x', 'y', 'rotation', 'mirrorY'].forEach((k) => {
+    assert.equal(back[k], undefined, `${k} 应随拆下一起清掉`);
+  });
+
+  assert.equal(st.manuscriptVault.length, before.vault, '库存数量回到原样');
+  assert.equal(st.gold, before.gold, '拆卸不花钱');
+  assert.equal((u.scars || []).length, before.scars, '拆卸不留瘢痕（瘢痕只来自营火烙印）');
+  assert.equal(stats().hp + stats().atk + stats().def, before.power, '拆卸不改变面板');
+
+  /* 反悔是双向的：拆下来还能原样装回去，门数没被占死 */
+  assert.equal(V.State.placeManuscript(st, u, 'rivet').ok, true);
+});
+
+test('80 套蚀刻法有可落下的连通蚀刻法和可执行招式', () => {
   const V = loadVeteran().Veteran;
   const specs = Object.values(V.Data.MANUSCRIPTS);
   assert.ok(specs.length >= 80);
@@ -76,7 +151,10 @@ test('80 套蚀刻法有可落下的连通拓片和可执行招式', () => {
       u.hp = Math.round(u.maxHp * 0.4);
       if (u.ms) u.ms.routed = true;
     });
-    st.run.battle.enemies.forEach((u) => { u.maxHp = 5000; u.hp = 1500; });
+    /* 八标：这两个敌人是「不会死的靶子」，只用来撑出足够的回合让人放招。
+       难度抬上来之后它们的攻击会把 0.4 血的靶子打死在放招之前，
+       于是这条用例会变成在测生存而不是测「招式放得出来」—— 关掉它们的伤害即可。 */
+    st.run.battle.enemies.forEach((u) => { u.maxHp = 5000; u.hp = 1500; u.atk = 0; });
     for (let i = 0; !st.run.battle.over && i < 4201; i++) st = V.Combat.step(st).state;
     assert.ok(st.run.battle.over, spec.id);
     assert.ok(V.State.validate(st).ok, spec.id);
@@ -84,52 +162,51 @@ test('80 套蚀刻法有可落下的连通拓片和可执行招式', () => {
   }
 });
 
-test('旧档重复角色保留资产，仍可收齐21种身份', () => {
+test('旧档重复角色保留资产，仍可收齐14种身份', () => {
   const V = loadVeteran().Veteran;
   let st = V.State.create(42);
   const duplicate = V.State.makeUnit(st, { name: '旧档铁鸦', skinId: 'blade', bodyPreset: 'sturdy' });
   V.State.equipPreset(st, duplicate, 'basic');
   st.roster.push(duplicate);
   st.gold = 100000;
-  while (new Set(st.roster.map((u) => u.skinId)).size < 21) {
+  while (new Set(st.roster.map((u) => u.skinId)).size < 14) {
     const refreshed = V.Roster.refreshShop(st, false);
     assert.ok(refreshed.ok);
     const recruited = V.Roster.recruit(refreshed.state, refreshed.state.shop[0].id);
     assert.ok(recruited.ok);
     st = recruited.state;
   }
-  assert.equal(st.roster.length, 22);
+  assert.equal(st.roster.length, 15);
   assert.ok(st.roster.some((u) => u.id === duplicate.id));
   assert.ok(V.State.validate(st).ok);
 });
 
-test('九种新增拼接轮廓用两件真实纹路可以满覆盖并贯通', () => {
-  const V = loadVeteran().Veteran;
-  const st = V.State.create(46);
-  const layouts = [
-    ['chalkLine', 'straight', 'straight', 0, 0],
-    ['oarlock', 'elbow', 'straight', 0, 1],
-    ['pikeHead', 'straight', 'elbow', 0, 0],
-    ['millStone', 'elbow', 'elbow', 0, 1],
-    ['capstan', 'capacitor', 'straight', 0, 0],
-    ['sump', 'straight', 'capacitor', 0, 0],
-    ['copperWick', 'splitter', 'straight', 0, 0],
-    ['soundingLine', 'splitter', 'straight', 0, 2],
-    ['lodestone', 'elbow', 'splitter', 0, 0],
-  ];
-  for (const [id, first, second, y1, y2] of layouts) {
-    const placements = [[first, 0, y1], [second, 2, y2]].map(([templateId, x, y]) => {
-      const p = V.State.makePart(st, { templateId });
-      st.itemsById[p.id] = p;
-      return { itemId: p.id, x, y };
-    });
-    const pieces = V.Manuscript.pieceIndex(V.Circuit.layout(st, placements));
-    const spec = V.Manuscript.normalize(V.Data.manuscript(id));
-    assert.equal(V.Manuscript.coverage(spec, 0, 0, pieces).pct, 100, id);
-    assert.ok(V.Manuscript.route(spec, 0, 0, pieces).ok, id);
-    const incomplete = V.Manuscript.pieceIndex(V.Circuit.layout(st, placements.slice(0, 1)));
-    assert.equal(V.Manuscript.route(spec, 0, 0, incomplete).ok, false, id);
-  }
+test('九种拼接轮廓在真实板面上都能接通，抽掉起点就断', () => {
+  /* 六标之前这条靠「两件纹路手写摆法」，骨架扩到 6~54 格之后那张表必然失真。
+     现在守的是同一件事的现代版本：这些轮廓**能被接通**，而且**通路不是白给的** ——
+     拿走起点那件，route 立刻断。 */
+  const A = loadVeteran();
+  const V = A.Veteran;
+  const ids = ['chalkLine', 'oarlock', 'pikeHead', 'millStone', 'capstan',
+    'sump', 'copperWick', 'soundingLine', 'lodestone'];
+  ids.forEach((id) => {
+    const st = V.State.create(46);
+    const u = V.State.makeUnit(st, { skinId: 'blade', bodyPreset: 'sturdy', name: '试' });
+    u.manuscript = null;
+    delete u.extraManuscripts;
+    st.roster.push(u);
+    st.team[0] = u.id;
+    V.State.equipManuscript(st, u, id);
+    const r = autoRouteBoard(A, st, u, { style: 'elbow' });
+    assert.ok(r.ok, `${id} 应能接通：${r.reason || ''}`);
+
+    const ms = V.State.manuscriptsOf(u)[0];
+    const or = V.Manuscript.orient(V.Manuscript.normalize(ms), ms.rotation || 0, !!ms.mirrorY);
+    const trimmed = u.board.placements.slice(1);
+    const idx = V.Manuscript.pieceIndex(V.Circuit.layout(st, trimmed));
+    assert.equal(V.Manuscript.route(or, ms.x || 0, ms.y || 0, idx).ok, false,
+      `${id} 抽掉通路起点后不该还通`);
+  });
 });
 
 test('撤离谱墨斗与宝箱谱针眼能正常并装，轮流积攒和施展各自招式', () => {
@@ -185,13 +262,17 @@ test('宝箱与精英各有十七门专属谱，并能在对应节点出现的�
     }
     assert.equal(collected.size, levels.length, source);
   }
-  const st = V.State.create(42);
-  for (const [id, templateId] of [['silverTap', 'elbow'], ['coreDrill', 'capacitor']]) {
-    const spec = V.Data.manuscript(id);
-    const part = V.State.makePart(st, { templateId });
-    st.itemsById[part.id] = part;
-    const layout = V.Circuit.layout(st, [{ itemId: part.id, x: 0, y: 0 }]);
-    assert.ok(V.Manuscript.route(V.Manuscript.normalize(spec), 0, 0, V.Manuscript.pieceIndex(layout)).ok, spec.name);
+  /* 现场谱同样要能被接通（单件纹路压满整卷这件事，在 6~54 格的骨架里已经不成立了） */
+  for (const id of ['silverTap', 'coreDrill']) {
+    const st = V.State.create(42);
+    const u = V.State.makeUnit(st, { skinId: 'blade', bodyPreset: 'sturdy', name: '试' });
+    u.manuscript = null;
+    delete u.extraManuscripts;
+    st.roster.push(u);
+    st.team[0] = u.id;
+    V.State.equipManuscript(st, u, id);
+    const r = autoRouteBoard(loadVeteran(), st, u, { style: 'elbow' });
+    assert.ok(r.ok, `${V.Data.manuscript(id).name} 应能接通：${r.reason || ''}`);
   }
 });
 

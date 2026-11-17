@@ -55,11 +55,11 @@ test('一根顺丝纹横跨两格：内部导通，贯通成立', () => {
   assert.equal(s.tierId, 't3');
 });
 
-test('覆盖率共鸣阶给乘算，贯通再叠 15%', () => {
+test('覆盖率共鸣阶给乘算，贯通再叠 15%，负荷不参与乘算', () => {
   const { st, u } = setup();
   const s = V.Circuit.manuscriptState(st, u.id);
-  /* 三阶 1.30 × 贯通 1.15 = 1.50，再乘负荷价（负荷 2 → ×1.03）= 1.55 */
-  assert.equal(s.effects.mainMult, 1.55);
+  /* 三阶 1.30 × 贯通 1.15 = 1.50。负荷不再返利（2026-11-15 删除负荷价），到此为止 */
+  assert.equal(s.effects.mainMult, 1.5);
   assert.equal(s.effects.startEnergy, 1);
 });
 
@@ -72,7 +72,7 @@ test('没装纹路 → 覆盖率 0、没有共鸣阶，效果全是默认值', (
   assert.equal(s.effects.startEnergy, 0);
 });
 
-test('没装蚀刻法 → 没有任何加成（异形板面下也没有能量点）', () => {
+test('没装蚀刻法 → 没有任何加成（异形板面下也没有余裕点）', () => {
   const { st, u } = setup({ noMs: true });
   const s = V.Circuit.manuscriptState(st, u.id);
   assert.equal(s.ok, false);

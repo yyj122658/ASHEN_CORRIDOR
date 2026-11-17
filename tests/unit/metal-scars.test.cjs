@@ -11,10 +11,15 @@ test('瘢痕只在被填充时生效，拆下纹路不抹掉来源记录', () =>
   const cell = V.Circuit.layout(st, u.board.placements).cells[0];
   u.manuscript = null;
   u.scars = [{ x: cell.x, y: cell.y, templateId: 'ember', source: '余烬纹', floor: 1, runId: 'run1' }];
+  /* 只比「有瘢痕 / 无瘢痕」这一项：板面本身也贡献阻抗，
+     拿空板面（[]）当基准会把纹路给的那份阻抗也算进差值里。 */
   const filled = V.Roster.stats(st, u);
-  const empty = V.Roster.stats(st, u, []);
+  u.scars = [];
+  const empty = V.Roster.stats(st, u);
+  u.scars = [{ x: cell.x, y: cell.y, templateId: 'ember', source: '余烬纹', floor: 1, runId: 'run1' }];
   assert.equal(filled.atk, empty.atk + 2);
-  assert.equal(filled.def, empty.def - 1);
+  /* 阻抗有 0 下限：裸板本来就是 0，瘢痕的 −1 只能压到 0 */
+  assert.equal(filled.def, Math.max(0, empty.def - 1));
   assert.equal(u.scars[0].source, '余烬纹');
   assert.equal(V.Circuit.scarState(st, u, [])[0].active, false);
 });
@@ -27,7 +32,10 @@ test('蚀刻法填充也能激活瘢痕', () => {
   const [x, y] = m.cells[0];
   u.scars = [{ x: x + u.manuscript.x, y: y + u.manuscript.y, templateId: 'ember', source: '余烬纹', floor: 1, runId: 'run1' }];
   assert.equal(V.Circuit.scarState(st, u, [])[0].active, true);
-  assert.equal(V.Roster.stats(st, u, []).atk, 30);
+  /* v4.0：幅值基数恒为 10（心核基座），余烬纹的瘢痕再给 +2 */
+  const base = V.Derive.chassis(V.Data.body(u.bodyPreset)).atk;
+  assert.equal(base, 10, '心核基座的幅值应是 10');
+  assert.equal(V.Roster.stats(st, u, []).atk, base + 2);
 });
 
 test('旧档没有瘢痕仍能读取，越界、重叠与伪造来源被拒绝', () => {

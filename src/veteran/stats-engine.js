@@ -68,29 +68,64 @@
 
   /* ---------------- 蚀刻法 ---------------- */
 
-  /** 招式触发条件译为玩家能判断的时机。 */
+  /**
+   * 招式的条件与效果，统一成一套极简短语（2026-11-15）：
+   *   条件 → 方括号短语，和清单脚本 scripts/etching-inventory.cjs 同一套写法；
+   *   效果 → 动词在前，伤害 180% / 灼烧 25%×3 / 回压 8 / 降冷 1s。
+   * 两处必须同源，否则玩家在悬浮窗看到的和底表对不上。
+   */
+  const COND_TAG = {
+    routed: () => '[贯通]',
+    alliesHurt: () => '[队友受伤]',
+    foeHpBelow: (v) => `[敌人生命 <${plainPct(v)}]`,
+    attackCount: (v) => `[普攻 ×${v}]`,
+    energyAbove: (v) => `[余裕 ≥${v}]`,
+    selfHasShield: () => '[自身有盾]',
+    stressAbove: (v) => `[高压 ≥${v}]`,
+    minTier: (v) => `[共鸣${TierText(v).replace('阶', '')}阶]`,
+  };
+
+  /* 条件的固定显示顺序：先门槛（贯通/共鸣阶）、再连携、再目标状态、最后自身状态。
+     顺序固定下来，同一个招式在悬浮窗与清单里的读法才一致。 */
+  const COND_ORDER = ['routed', 'minTier', 'afterTag', 'targetHasDot', 'stressAbove',
+    'attackCount', 'alliesHurt', 'energyAbove', 'selfHasShield', 'foeHpBelow'];
+  const condRank = (k) => {
+    const i = COND_ORDER.indexOf(k);
+    return i < 0 ? COND_ORDER.length : i;
+  };
+
   function conditionText(cond = {}) {
-    const parts = [
-      cond.routed ? '纹路贯通' : '',
-      cond.alliesHurt ? '同伴生命低于 60%' : '',
-      cond.foeHpBelow ? `敌方生命低于 ${plainPct(cond.foeHpBelow)}` : '',
-      cond.attackCount ? `普通攻击 ${cond.attackCount} 次后` : '',
-      cond.energyAbove ? `余裕高于 ${cond.energyAbove}` : '',
-    ].filter(Boolean);
-    return parts.length ? parts.join(' · ') : '余裕足够时';
+    const parts = [];
+    Object.keys(cond).sort((a, b) => condRank(a) - condRank(b)).forEach((k) => {
+      const v = cond[k];
+      if (k === 'targetHasDot') { parts.push(`[目标·${DOT_TEXT[v] || '异常'}]`); return; }
+      if (k === 'afterTag') { parts.push(`[连携·${v}]`); return; }
+      if (k === 'routed' && v === false) { parts.push('[未贯通]'); return; }
+      const fn = COND_TAG[k];
+      if (fn && v) parts.push(fn(v));
+    });
+    return parts.length ? parts.join(' ') : '余裕足够时';
   }
+
+  const DOT_TEXT = { burn: '灼烧', poison: '中毒', bleed: '流血', corrode: '腐蚀', all: '异常', any: '任意异常' };
+  function TierText(n) { return ['一', '二', '三', '四'][n - 1] ? `${['一', '二', '三', '四'][n - 1]}阶` : `${n} 阶`; }
 
   /** 招式效果一行的数值部分。 */
   function skillEffectText(effect = {}) {
     const parts = [];
-    if (effect.heal) parts.push(`治疗 ${plainPct(effect.heal)} 攻击`);
-    else parts.push(`${plainPct(effect.mult || 1.4)} 攻击`);
-    if (effect.hits) parts.push(`${effect.hits} 段`);
-    if (effect.pierce) parts.push(`贯穿前 ${effect.pierce} 位`);
-    if (effect.splash) parts.push('溅射');
-    if (effect.shield) parts.push(`护盾 ${plainPct(effect.shield)} 生命上限`);
-    if (effect.buffAttack) parts.push(`接下来 ${effect.buffAttack.hits || 4} 次普通攻击伤害 ×${num(effect.buffAttack.mult || 1.5)}`);
-    if (effect.dot) parts.push(`附灼烧 ${effect.dot.hits || 2} 次`);
+    if (effect.heal) parts.push(`治疗 ${plainPct(effect.heal)}`);
+    else parts.push(`伤害 ${plainPct(effect.mult || 1.4)}`);
+    if (effect.hits) parts.push(`×${effect.hits} 段`);
+    if (effect.pierce) parts.push(`贯穿 ${effect.pierce}`);
+    if (effect.splash) parts.push(`溅射 ${plainPct(effect.splash)}`);
+    if (effect.shield) parts.push(`护盾 ${plainPct(effect.shield)}`);
+    if (effect.shieldScale) parts.push(`盾击 ×${num(effect.shieldScale)}`);
+    if (effect.buffAttack) parts.push(`强攻 ${effect.buffAttack.hits || 4} 次 ${signed(effect.buffAttack.mult || 1.5)}`);
+    if (effect.dot) parts.push(`${DOT_TEXT[effect.dot.k] || '持续伤害'} ${plainPct(effect.dot.dmgMult || 0)}×${effect.dot.hits || 2}`);
+    if (effect.detonateDot) parts.push(`引爆${effect.detonateDot === 'all' ? '全异常' : (DOT_TEXT[effect.detonateDot] || '异常')}`);
+    if (effect.bonusIfDot) parts.push(`对${DOT_TEXT[effect.bonusIfDot.k] || '异常'}再 ×${num(effect.bonusIfDot.mult)}`);
+    if (effect.cdrOther) parts.push(`降冷 ${effect.cdrOther}s`);
+    if (effect.stressDelta) parts.push(effect.stressDelta < 0 ? `回压 ${-effect.stressDelta}` : `增压 ${effect.stressDelta}`);
     return parts.join(' · ');
   }
 
@@ -159,18 +194,18 @@
     return parts.join(' · ');
   }
 
-  /** 共鸣增幅：共鸣阶 × 贯通 × 负荷价，和 circuit.manuscriptState 同顺序，供界面和结算共用。 */
+  /** 共鸣增幅：共鸣阶 × 贯通，和 circuit.manuscriptState 同顺序，供界面和结算共用。
+      负荷不再参与乘算（2026-11-15 删除负荷价），所以这里也不能再显示「负荷 ×1.09」——
+      界面算的和结算算的必须是同一套，否则玩家会看着一个不存在的加成调板面。 */
   function resonance(ms) {
     if (!ms || !ms.cov) return { pct: 0, parts: [] };
     const tierMult = (ms.cov.tier && ms.cov.tier.effect && ms.cov.tier.effect.mainMult) || 1;
     const routeMult = ms.rt && ms.rt.ok ? (V.Circuit && V.Circuit.ROUTE_MULT) || 1.15 : 1;
-    const loadBonus = ms.cov.tier ? 1 + 0.03 * Math.max(0, (Number(ms.spec && ms.spec.load) || 1) - 1) : 1;
-    const total = Math.round(Math.round(tierMult * routeMult * 100) / 100 * loadBonus * 100) / 100;
+    const total = Math.round(Math.round(tierMult * routeMult * 100) / 100 * 100) / 100;
     const parts = [
       ms.cov.tier ? `${ms.cov.tier.name} ×${num(tierMult)}` : '未达共鸣阶',
       ms.rt && ms.rt.ok ? `贯通 ×${num(routeMult)}` : '未贯通',
     ];
-    if (loadBonus > 1) parts.push(`负荷 ×${num(loadBonus)}`);
     return { pct: Math.round((total - 1) * 100), parts, total };
   }
 

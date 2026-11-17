@@ -23,7 +23,7 @@ function placeManuscript(st, u, msId) {
   return null;
 }
 
-/** 逐枚把纹章压在蚀刻法上：每一步都选「新增对齐格最多」的姿势。 */
+/** 逐枚把纹路压在蚀刻法上：每一步都选「新增对齐格最多」的姿势。 */
 function placeRunes(st, u, msId, msPose, runeIds, opts) {
   const keepRoute = !!(opts && opts.keepRoute);
   const plate = V.Circuit.plateOf(u);
@@ -50,7 +50,7 @@ function placeRunes(st, u, msId, msPose, runeIds, opts) {
               oriented, spec.x || 0, spec.y || 0,
               V.Manuscript.pieceIndex(V.Circuit.layout(st, cand)),
             );
-            /* 只算这一枚自己压中的格：否则后来的纹章随便摆都不掉总覆盖，等于没判断 */
+            /* 只算这一枚自己压中的格：否则后来的纹路随便摆都不掉总覆盖，等于没判断 */
             const aligned = new Set(cov.alignedCells);
             const own = cells.filter(([cx, cy]) => aligned.has(cx + ',' + cy)).length;
             if (!own || own < bestAligned) continue;
@@ -137,9 +137,9 @@ function sample(build, seed) {
 }
 
 const BUILDS = [
-  { name: '平A流', ms: 'inverse', runes: ['ember', 'brazier', 'fuse', 'flint'], note: '余烬纹章把平A堆满，靠攻速与灼烧' },
+  { name: '平A流', ms: 'inverse', runes: ['ember', 'brazier', 'fuse', 'flint'], note: '余烬纹路把平A堆满，靠攻速与灼烧' },
   { name: '走线对照', ms: 'corridor5', runes: ['ember', 'fuse', 'brazier'], note: '同一门蚀刻法，只堆增伤不走线' },
-  { name: '贯通平A', ms: 'corridor5', layout: [['elbow', 2, 0, 0, false], ['straight', 0, 0, 0, false]], extra: ['ember', 'brazier', 'fuse', 'flint'], note: '两枚纹章先拼出通路，再补增伤' },
+  { name: '贯通平A', ms: 'corridor5', layout: [['elbow', 2, 0, 0, false], ['straight', 0, 0, 0, false]], extra: ['ember', 'brazier', 'fuse', 'flint'], note: '两枚纹路先拼出通路，再补增伤' },
   { name: '逆脉贯通', ms: 'inverse', layout: [['reed', 1, 0, 0, true], ['rivet', 0, 0, 0, false], ['reed', 1, 1, 0, false], ['rivet', 0, 1, 0, false]], extra: ['ember', 'brazier', 'fuse'], note: '逆脉的平A在贯通时额外 +25%，走线才成立' },
   { name: '灼烧流', ms: 'flurry', runes: ['ember', 'fuse', 'brazier', 'wickbend'], note: '点火靠余烬，跳伤靠 dotMult' },
   { name: '招式流', ms: 'ember12', runes: ['cistern', 'bellowsCell', 'crook', 'wishbone'], note: '层岩/叠浪抬招式与上限' },

@@ -15,3 +15,10 @@ Thumbs.db
 _*.cjs
 _*.js
 _tmp/
+_probe/
+_smoke/
+
+# 导出产物（美术包 / 截图 / 发布前中间件）
+output/
+# 美术源包：体积大（7~15 MB/个）且由 scripts/process-art-assets.py 再生成，不进仓库
+assets/art/*.zip

@@ -1,353 +1,304 @@
 'use strict';
-/* 老兵回路数值模拟：固定种子，不生成长篇报告文件，只在终端输出。
-   用法：node scripts/simulate-veteran.cjs [每格种子数]
-   注意：这里只做“同一策略下的分布”，不用胜率宣称平衡已完成。 */
+/* v4.0 拓扑流派模拟器：三种鲜明构筑各打一批固定种子的战斗。
+   用法：node scripts/simulate-veteran.cjs [每档局数]
+
+   这里只回答三个问题：
+     ① 三个流派在同层域下的胜率差多少；
+     ② 一场要打几个回合（0.24s/tick，6 tick 一回合）；
+     ③ 外围熔断触发得有多频繁（挡伤机制到底有没有在工作）。
+   不做「平衡已完成」的宣称 —— 单一种子族的分布只能说明趋势。 */
 const { loadVeteran } = require('../tests/helpers/load-veteran.cjs');
+const { autoRouteBoard } = require('../tests/helpers/veteran-run.cjs');
 
 const A = loadVeteran();
 const V = A.Veteran;
 const D = V.Data;
-const N = Number(process.argv[2] || 40);
+const N = Number(process.argv[2] || 50);
+const FLOORS = [1, 22, 36, 49];
 
-function applyPreset(st, unitId, presetId) {
-  const preset = D.PRESETS[presetId];
-  const draft = preset.layout.map((slot) => {
-    const part = V.State.makePart(st, { kind: 'circuit', templateId: slot.templateId });
-    st.itemsById[part.id] = part;
-    return { itemId: part.id, x: slot.x, y: slot.y, rotation: 0, mirrorY: false };
-  });
-  const r = V.Roster.saveBoard(st, unitId, draft);
-  return r.ok ? r.state : st;
-}
-
-function setFormation(st, order) {
-  const ids = order.map((i) => st.roster[i].id);
-  const next = V.State.clone(st);
-  next.team = ids.slice();
-  return next;
-}
-
-function customGambits(st) {
-  const next = V.State.clone(st);
-  next.roster.forEach((u) => {
-    u.gambits = [
-      { id: 'a', enabled: true, conditions: [{ type: 'allyHpBelow', value: 50 }], target: 'lowestHpAlly', action: 'support' },
-      { id: 'b', enabled: true, conditions: [{ type: 'always' }], target: 'lowestHpFoe', action: 'main' },
-      { id: 'c', enabled: true, conditions: [{ type: 'always' }], target: 'frontFoe', action: 'guard' },
-    ].slice(0, u.logicSlots);
-  });
-  return next;
-}
-
-function fight(seed, kind, floor, cfg) {
-  let st = require('../tests/helpers/veteran-run.cjs').fullTeam(V,V.State.create(seed));
-  if (cfg.preset) {
-    st = applyPreset(st, st.roster[0].id, cfg.preset);
-    st = applyPreset(st, st.roster[1].id, cfg.preset);
-  }
-  if (cfg.formation) st = setFormation(st, cfg.formation);
-  if (cfg.gambits === 'custom') st = customGambits(st);
-
-  const started = V.Expedition.start(st, { seed });
-  if (!started.ok) return { error: started.error };
-  st = started.state;
-  st.run.floor = floor;
-
-  const inst = V.State.clone(st);
-  inst.run.nodes = [{ id: 'n', type: kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'battle', consumed: false }];
-  const opened = V.Encounter.open(inst, 'n');
-  if (!opened.ok) return { error: opened.error };
-  const att = V.Encounter.startAttempt(opened.state);
-  if (!att.ok) return { error: att.error };
-  st = att.state;
-
-  let ticks = 0;
-  while (st.run.battle && !st.run.battle.over && ticks < 4000) {
-    const r = V.Combat.step(st);
-    if (!r.ok) return { error: r.error };
-    st = r.state;
-    ticks += 1;
-  }
-  const b = st.run.battle;
-  const totalMax = b.allies.reduce((s, x) => s + x.maxHp, 0);
-  const v = V.State.validate(st);
-  return {
-    win: b.win,
-    outcome: b.outcome,
-    rounds: b.round,
-    ticks,
-    takenPct: Math.round(((b.stats.taken || 0) / totalMax) * 100),
-    healPct: Math.round(((b.stats.healing || 0) / totalMax) * 100),
-    bothAlive: b.allies.filter((x) => x.alive).length,
-    legal: v.ok,
-    illegal: v.ok ? null : v.errors[0],
-  };
-}
-
-const CONFIGS = [
-  { id: 'A 默认阵型 + 基础直供 + 默认指令', formation: [0, 1, 2, 3], preset: 'basic', gambits: 'default' },
-  { id: 'B 默认阵型 + 蓄能回路 + 默认指令', formation: [0, 1, 2, 3], preset: 'charge', gambits: 'default' },
-  { id: 'C 默认阵型 + 基础直供 + 定制指令', formation: [0, 1, 2, 3], preset: 'basic', gambits: 'custom' },
+/* 三种纯色流派 + 一队混编标准队。
+   配方是「刻什么」，不是「装什么」—— v4.0 的面板与输出全部由这份配方编译出来。
+   七标起每个预设是**成员数组**：纯色流派全员同一套配方，
+   混编队按真实玩家的 1/2/3/4 号位各刻一条轴。 */
+const PRESETS = [
+  {
+    id: 'A',
+    name: '高频直导流',
+    members: [{ body: 'agile', style: 'straight', ms: 'flurry' }],
+    note: '直导每格 −4% 间隔，堆到 −30% 上限；靠出手次数吃饭',
+  },
+  {
+    id: 'B',
+    name: '九曲线圈炮',
+    members: [{ body: 'corner', style: 'elbow', ms: 'inverse' }],
+    note: '每个 90° 转折 +12%，回钩再 +20%，储能抬满再放电',
+  },
+  {
+    id: 'C',
+    name: '高温余烬超频流',
+    members: [{ body: 'waist', style: 'ember', ms: 'ember12', overload: 0.35 }],
+    note: '余烬吸压换幅值，闸门在高热时 ×1.65，两截再乘 1.45',
+  },
+  {
+    id: 'Mix',
+    name: '混编标准队',
+    members: [
+      { body: 'sturdy', style: 'capacitor', ms: 'wide14', role: '缓冲前排' },
+      { body: 'agile', style: 'straight', ms: 'flurry', role: '高频直导' },
+      { body: 'corner', style: 'elbow', ms: 'inverse', role: '九曲线圈炮' },
+      { body: 'waist', style: 'ember', ms: 'ember12', role: '高温余烬' },
+    ],
+    note: '1 缓冲 / 2 直导 / 3 线圈炮 / 4 余烬 —— 全局难度标尺，不是天花板',
+  },
 ];
 
-console.log(`固定种子 1–${N}，每种配置 × 三种遭遇\n`);
+/** 上阵人数按层域走：前一天只有两个人，深处才凑得满四个（和真实流程一致） */
+function partySizeFor(floor) {
+  return floor <= 7 ? 2 : floor <= 35 ? 3 : 4;
+}
 
-const rows = [];
-let illegalCount = 0;
+/** 混编队按顺序上人（前排先上），纯色流派全员同配方 */
+function memberAt(preset, i) {
+  return preset.members[i % preset.members.length];
+}
 
-for (const cfg of CONFIGS) {
-  for (const [kind, floor] of [['normal', 1], ['normal', 22], ['elite', 36], ['boss', 49]]) {
-    let n = 0;
+function presetTag(preset) {
+  if (preset.members.length === 1) {
+    const m = preset.members[0];
+    return `底盘 ${m.body} · 主修 ${D.MANUSCRIPTS[m.ms].name} · 布线 ${m.style}`;
+  }
+  return preset.members.map((m, i) => `${i + 1}号 ${m.role}(${m.style})`).join(' / ');
+}
+
+function compose(preset, seed, floor) {
+  let st = V.State.create(seed);
+  st.roster = [];
+  st.team = [];
+  const size = partySizeFor(floor);
+  const skins = V.Data.SKINS.map((x) => x.id);
+  for (let i = 0; i < size; i++) {
+    const mb = memberAt(preset, i);
+    /* 直接按流派底盘造人：先改老角色的 bodyPreset 会让已装蚀刻法的坐标落到新板面之外 */
+    const u = V.State.makeUnit(st, {
+      skinId: skins[i % skins.length],
+      bodyPreset: mb.body,
+      name: `${preset.id}${i + 1}${mb.role ? '-' + mb.role : ''}`,
+    });
+    st.roster.push(u);
+    st.team.push(u.id);
+    for (let s = 1; !u.manuscript && s < 200; s++) {
+      V.State.equipManuscript(st, u, mb.ms);
+      if (!u.manuscript) u.plateSeed = s;
+    }
+    /* 蚀刻法先落位，再交给端口图布线器：它会重新摆姿态、铺通路、填余格 */
+    V.State.manuscriptsOf(u).forEach((m) => { V.State.placeManuscript(st, u, m.id); });
+    const routed = autoRouteBoard(A, st, u, {
+      style: mb.style,
+      overload: mb.overload || 0,
+    });
+    if (!routed.ok) {
+      if (!compose.failures) compose.failures = [];
+      compose.failures.push(`${preset.id}${i + 1}: ${routed.reason}`);
+    }
+  }
+  if (compose.failures && compose.failures.length) {
+    console.error('布线失败：\n  ' + compose.failures.slice(0, 6).join('\n  '));
+    compose.failures = [];
+  }
+  return st;
+}
+
+function fightOne(preset, seed, floor, bossId) {
+  let st = compose(preset, seed, floor);
+  const started = V.Expedition.start(st, { seed });
+  if (!started.ok) return null;
+  st = started.state;
+  st.run.floor = floor;
+  const kind = floor >= 49 ? 'boss' : (floor === 22 || floor === 36) ? 'elite' : 'battle';
+  st.run.nodes = [{ id: 'n', type: kind, consumed: false }];
+  const opened = V.Encounter.open(st, 'n', bossId ? { bossId } : undefined);
+  if (!opened.ok) return null;
+  let s = V.Encounter.startAttempt(opened.state).state;
+  const b0 = s.run.battle;
+  const slots = [...b0.allies, ...b0.enemies].length;
+  /* 贯通率：路径为空说明「覆盖满了但没接通」，脉冲层的机制一律不生效 */
+  const routedAllies = b0.allies.filter((a) => a.pulse && a.pulse.path && a.pulse.path.length).length;
+  let guard = 0;
+  let heatUnits = 0;
+  let liveUnits = 0;
+  while (!s.run.battle.over && guard++ < V.Combat.TICK_LIMIT + 10) {
+    const r = V.Combat.step(s);
+    if (!r.ok) break;
+    s = r.state;
+    /* 高热覆盖率：每 tick 数一次「压力 >=50 的存活单位 / 存活单位」 */
+    const units = [...s.run.battle.allies, ...s.run.battle.enemies].filter((u) => u.alive !== false);
+    liveUnits += units.length;
+    heatUnits += units.filter((u) => (u.stress || 0) >= 50).length;
+  }
+  const b = s.run.battle;
+  const logs = b.logs || [];
+  /* 熔断要两边一起数：我方烧的是**板面纹路**（fusedNodes），
+     敌方烧的是**外围节点层**（outerNodes 递减）—— 同一个机制的两个化身。
+     七标之前只数了前者，于是「敌人被破壳」永远不出现在表里，
+     看上去像保险丝整条没通电。 */
+  const allyFused = b.allies.reduce((n, u) => n + ((u.fusedNodes || []).length), 0);
+  const shellBurst = b.enemies.reduce((n, u, i) => {
+    const before = (b0.enemies[i] && b0.enemies[i].outerNodes) || 0;
+    return n + Math.max(0, before - (u.outerNodes || 0));
+  }, 0);
+  const fused = allyFused + shellBurst;
+  const starved = [...b.allies, ...b.enemies].filter((u) => (u.starveTicks || 0) >= 6).length;
+  /* 过程指标：从日志里数，不额外埋点 */
+  const discharge = logs.filter((l) => l.text && l.text.includes('整仓放电')).length;
+  const starveKill = logs.filter((l) => l.text && l.text.includes('枯竭停机')).length;
+  const interrupted = logs.filter((l) => l.type === 'disrupt' && l.text && l.text.includes('被打断')).length;
+  const heatRate = liveUnits ? heatUnits / liveUnits : 0;
+  /* 通路画像：接通之后每家该有的差异，全在这四个数上 */
+  const avg = (list, fn) => (list.length ? list.reduce((a, x) => a + fn(x), 0) / list.length : 0);
+  const snap = {
+    straight: avg(b0.allies, (a) => (a.pulse && a.pulse.straight) || 0),
+    turns: avg(b0.allies, (a) => (a.pulse && a.pulse.turns) || 0),
+    dodge: avg(b0.allies, (a) => a.dodge || 0),
+    amp: avg(b0.allies, (a) => a.pulseAmp || 1),
+    id: avg(b0.allies, (a) => a.attackInterval || 0),
+  };
+  return { win: !!b.win, rounds: b.round, fused, slots, starved, over: !!b.over, ticks: b.tick,
+    discharge, starveKill, interrupted, heatRate, routed: routedAllies, allies: b0.allies.length, snap };
+}
+
+function run(preset) {
+  return FLOORS.map((floor) => {
     let win = 0;
+    let n = 0;
     let rounds = 0;
-    let taken = 0;
-    let heal = 0;
-    let errors = 0;
-    for (let seed = 1; seed <= N; seed++) {
-      const r = fight(seed * 7919, kind, floor, cfg);
-      if (r.error) { errors += 1; continue; }
-      if (!r.legal) illegalCount += 1;
+    let fused = 0;
+    let slots = 0;
+    let starved = 0;
+    let timeouts = 0;
+    let discharge = 0;
+    let starveKill = 0;
+    let interrupted = 0;
+    let heat = 0;
+    let routed = 0;
+    let allySlots = 0;
+    const snap = { straight: 0, turns: 0, dodge: 0, amp: 0, id: 0 };
+    for (let i = 0; i < N; i++) {
+      const r = fightOne(preset, 90000 + i * 37, floor);
+      if (!r) continue;
       n += 1;
       if (r.win) win += 1;
       rounds += r.rounds;
-      taken += r.takenPct;
-      heal += r.healPct;
+      fused += r.fused;
+      slots += r.slots;
+      starved += r.starved;
+      if (!r.over) timeouts += 1;
+      discharge += r.discharge;
+      starveKill += r.starveKill;
+      interrupted += r.interrupted;
+      heat += r.heatRate;
+      routed += r.routed;
+      allySlots += r.allies;
+      Object.keys(snap).forEach((k) => { snap[k] += (r.snap && r.snap[k]) || 0; });
     }
-    rows.push({
-      cfg: cfg.id,
-      kind,
+    return {
       floor,
-      win: Math.round((win / n) * 100),
-      rounds: (rounds / n).toFixed(1),
-      taken: Math.round(taken / n),
-      heal: Math.round(heal / n),
-      errors,
-    });
-  }
-}
-
-console.table(rows.map((r) => ({
-  配置: r.cfg.slice(0, 1),
-  遭遇: `${r.kind}@${r.floor}`,
-  胜率: r.win + '%',
-  回合: r.rounds,
-  承伤: r.taken + '%',
-  治疗: r.heal + '%',
-  错误: r.errors,
-})));
-
-/* ---------------- 七层端到端 ---------------- */
-
-function fullRun(seed, policy) {
-  let st = V.State.create(seed);
-  const started = V.Expedition.start(st, { seed });
-  if (!started.ok) return { error: started.error };
-  st = started.state;
-  const log = { confirm: 0, retry: 0, inscribe: 0, extract: null, depth: 0, illegal: null };
-
-  for (let guard = 0; guard < 400; guard++) {
-    if (!st.run) break;
-    const r = st.run;
-
-    if (r.stage === 'map') {
-      const hp = r.party.reduce((acc, p) => {
-        const u = st.roster.find((x) => x.id === p.uid);
-        const max = V.Roster.stats(st, u).maxHp;
-        return acc + (p.hp == null ? max : p.hp) / max;
-      }, 0) / Math.max(1, r.party.length);
-
-      if (hp < policy.extractBelow && r.completedFloors >= 1) {
-        const ex = V.Expedition.extract(st, false);
-        log.extract = ex.ok ? 'extract' : 'extract_fail';
-        if (ex.ok) st = ex.state;
-        break;
-      }
-      const pick = r.nodes.find((n) => !n.consumed && policy.prefer.includes(n.type))
-        || r.nodes.find((n) => !n.consumed);
-      if (!pick) { log.extract = 'stuck'; break; }
-      const c = V.Expedition.chooseNode(st, pick.id);
-      if (!c.ok) { log.illegal = c.error.message; break; }
-      st = c.state;
-      continue;
-    }
-
-    if (r.stage === 'prebattle') {
-      const a = V.Encounter.startAttempt(st);
-      if (!a.ok) { log.illegal = a.error.message; break; }
-      st = a.state;
-      continue;
-    }
-
-    if (r.stage === 'battle') {
-      let ticks = 0;
-      while (st.run && st.run.battle && !st.run.battle.over && ticks < 4000) {
-        const s = V.Combat.step(st);
-        if (!s.ok) { log.illegal = s.error.message; break; }
-        st = s.state;
-        ticks += 1;
-      }
-      if (log.illegal) break;
-      const prep = V.Combat.prepareResult(st);
-      if (!prep.ok) { log.illegal = prep.error.message; break; }
-      const outcome = prep.pendingResult.outcome;
-      /* 战败重试一次，再败就认 */
-      if (outcome !== 'win' && log.retry < policy.maxRetry) {
-        log.retry += 1;
-        const rw = V.Encounter.rewind(st);
-        if (!rw.ok) { log.illegal = rw.error.message; break; }
-        st = rw.state;
-        continue;
-      }
-      if (outcome === 'win') {
-        const c = V.Encounter.confirm(st);
-        if (!c.ok) { log.illegal = c.error.message; break; }
-        st = c.state;
-        log.confirm += 1;
-        continue;
-      }
-      const d = V.Expedition.retreat(st, 'defeat');
-      if (!d.ok) { log.illegal = d.error.message; break; }
-      st = d.state;
-      log.extract = 'defeat';
-      break;
-    }
-
-    if (r.stage === 'loot') {
-      for (const id of r.pendingLoot) {
-        if (!V.Expedition.canPack(st, 'part:' + id)) continue;
-        const taken = V.Expedition.resolveLoot(st, id, 'take');
-        if (!taken.ok) { log.illegal = taken.error.message; break; }
-        st = taken.state;
-      }
-      if (log.illegal) break;
-      const f = V.Expedition.finishNode(st, true);
-      if (!f.ok) { log.illegal = f.error.message; break; }
-      st = f.state;
-      continue;
-    }
-
-    if (r.stage === 'event') {
-      const ev = r.event;
-      if (!ev.resolved) {
-        const def = D.event(ev.eventId);
-        const c = V.Expedition.chooseEvent(st, def.choices[def.choices.length - 1].id);
-        if (!c.ok) { log.illegal = c.error.message; break; }
-        st = c.state;
-        continue;
-      }
-      if (st.run.pendingLoot.length) {
-        const fix = V.Expedition.resolveLoot(st, st.run.pendingLoot[0], 'discard');
-        if (fix.ok) { st = fix.state; continue; }
-      }
-      const f = V.Expedition.finishNode(st);
-      if (!f.ok) { log.illegal = f.error.message; break; }
-      st = f.state;
-      continue;
-    }
-
-    if (r.stage === 'camp') {
-      /* 玩家会看血线决定要不要休息 */
-      const avgHp = r.party.reduce((acc, p) => {
-        const u = st.roster.find((x) => x.id === p.uid);
-        const max = V.Roster.stats(st, u).maxHp;
-        return acc + (p.hp == null ? max : p.hp) / max;
-      }, 0) / Math.max(1, r.party.length);
-      if (avgHp < 0.72) {
-        const rest = V.Expedition.campRest(st);
-        if (rest.ok) { st = rest.state; log.rest = (log.rest || 0) + 1; }
-      }
-      /* 有本局新构件就尝试一次烙印 */
-      const hasNew = r.bag.some((id) => st.itemsById[id] && st.itemsById[id].acquiredRunId === r.id);
-      if (hasNew && log.inscribe === 0 && policy.inscribe) {
-        const unit = st.roster.find((u) => u.id === r.party[0].uid);
-        const gate = V.Expedition.inscribable(st, unit.id);
-        if (gate.ok) {
-          const itemId = r.bag.find((id) => st.itemsById[id] && st.itemsById[id].acquiredRunId === r.id);
-          const park = D.STRAIGHT_PARK[unit.bodyPreset];
-          const draft = unit.board.placements.map((p) => (
-            p.x === 0 && p.y === 1 ? { ...p, x: park.x, y: park.y } : { ...p }
-          ));
-          draft.push({ itemId, x: 0, y: 1, rotation: 0, mirrorY: false });
-          const ins = V.Expedition.inscribe(st, unit.id, itemId, draft);
-          if (ins.ok) { st = ins.state; log.inscribe += 1; }
-        }
-      }
-      const f = V.Expedition.finishNode(st);
-      if (!f.ok) { log.illegal = f.error.message; break; }
-      st = f.state;
-      continue;
-    }
-
-    if (r.stage === 'merchant') {
-      const f = V.Expedition.finishNode(st);
-      if (!f.ok) { log.illegal = f.error.message; break; }
-      st = f.state;
-      continue;
-    }
-
-    if (r.stage === 'blessing') {
-      const pick = V.Expedition.chooseBlessing(st, st.run.blessingOptions[0]);
-      if (!pick.ok) { log.illegal = pick.error.message; break; }
-      st = pick.state;
-      continue;
-    }
-
-    if (r.stage === 'battleReview') {
-      const c = V.Encounter.confirm(st);
-      if (c.ok) { st = c.state; log.confirm += 1; continue; }
-      const d = V.Expedition.retreat(st, 'defeat');
-      if (!d.ok) { log.illegal = d.error.message; break; }
-      st = d.state;
-      log.extract = 'defeat';
-      break;
-    }
-
-    log.illegal = 'unknown stage ' + r.stage;
-    break;
-  }
-
-  const v = V.State.validate(st);
-  if (!v.ok) log.illegal = v.errors[0];
-  log.depth = st.settlement ? st.settlement.depth : (st.run ? st.run.completedFloors : 0);
-  log.mode = st.settlement ? st.settlement.mode : null;
-  log.eligible = st.settlement ? st.settlement.eligible : false;
-  return log;
-}
-
-const POLICIES = [
-  { id: '稳健（40% 撤离，偏好战斗）', extractBelow: 0.4, prefer: ['battle', 'elite', 'camp', 'chest'], maxRetry: 1, inscribe: true },
-  { id: '贪心（不主动撤离，偏好战斗）', extractBelow: 0.0, prefer: ['battle', 'elite', 'boss', 'chest'], maxRetry: 1, inscribe: true },
-  { id: '保守（65% 撤离，偏好安全节点）', extractBelow: 0.65, prefer: ['camp', 'chest', 'event', 'battle'], maxRetry: 0, inscribe: false },
-];
-
-const runRows = [];
-for (const p of POLICIES) {
-  let n = 0;
-  let clear = 0;
-  let extract = 0;
-  let defeat = 0;
-  let bad = 0;
-  let depth = 0;
-  for (let seed = 1; seed <= Math.min(N, 30); seed++) {
-    const r = fullRun(seed * 104729, p);
-    if (r.error || r.illegal) { bad += 1; if (r.illegal) console.log('  ! 非法状态：', r.illegal); continue; }
-    n += 1;
-    depth += r.depth;
-    if (r.mode === 'clear') clear += 1;
-    else if (r.mode === 'extract') extract += 1;
-    else if (r.mode === 'defeat') defeat += 1;
-  }
-  runRows.push({
-    策略: p.id,
-    局数: n,
-    通关: clear,
-    撤离: extract,
-    败退: defeat,
-    平均完成层: (depth / Math.max(1, n)).toFixed(1),
-    非法状态: bad,
+      n,
+      win,
+      rate: n ? win / n : 0,
+      rounds: n ? rounds / n : 0,
+      fuseRate: slots ? fused / slots : 0,
+      starveRate: slots ? starved / slots : 0,
+      timeouts,
+      discharge: n ? discharge / n : 0,
+      starveKill: n ? starveKill / n : 0,
+      interrupted: n ? interrupted / n : 0,
+      heat: n ? heat / n : 0,
+      routed: allySlots ? routed / allySlots : 0,
+      snap: Object.fromEntries(Object.entries(snap).map(([k, v]) => [k, n ? v / n : 0])),
+    };
   });
 }
 
-console.log(`\n七层端到端（每策略 ${Math.min(N, 30)} 局）：`);
-console.table(runRows);
-console.log(`\n单场战斗中出现的非法状态总数：${illegalCount}`);
+console.log(`v4.0 拓扑流派模拟：每档 ${N} 局，层域 ${FLOORS.join(' / ')}`);
+console.log('规则：0.24s/tick，6 tick 一回合；敌人按「核心节点」量级（普通 45~85 血 / 首领 180~240）\n');
+
+const summary = [];
+PRESETS.forEach((preset) => {
+  const rows = run(preset);
+  const total = rows.reduce((a, r) => a + r.n, 0);
+  const wins = rows.reduce((a, r) => a + r.win, 0);
+  const rounds = rows.reduce((a, r) => a + r.rounds * r.n, 0) / Math.max(1, total);
+  const fuse = rows.reduce((a, r) => a + r.fuseRate * r.n, 0) / Math.max(1, total);
+  const starve = rows.reduce((a, r) => a + r.starveRate * r.n, 0) / Math.max(1, total);
+  const discharge = rows.reduce((a, r) => a + r.discharge * r.n, 0) / Math.max(1, total);
+  const starveKill = rows.reduce((a, r) => a + r.starveKill * r.n, 0) / Math.max(1, total);
+  const interrupted = rows.reduce((a, r) => a + r.interrupted * r.n, 0) / Math.max(1, total);
+  const heat = rows.reduce((a, r) => a + r.heat * r.n, 0) / Math.max(1, total);
+  const snap = ['straight', 'turns', 'dodge', 'amp', 'id'].reduce((acc, k) => {
+    acc[k] = rows.reduce((a, r) => a + (r.snap[k] || 0) * r.n, 0) / Math.max(1, total);
+    return acc;
+  }, {});
+  const routed = rows.reduce((a, r) => a + r.routed * r.n, 0) / Math.max(1, total);
+  console.log(`=== 预设 ${preset.id}：${preset.name} ===`);
+  console.log(presetTag(preset));
+  console.log(`　${preset.note}`);
+  console.log('　层域  局数  通关率  平均回合  熔断/人  放电/局  枯竭击杀  打断重铸  高热覆盖  贯通%');
+  rows.forEach((r) => {
+    console.log(`　F${String(r.floor).padStart(2)}  ${String(r.n).padStart(4)}  ${(r.rate * 100).toFixed(0).padStart(4)}%  ${r.rounds.toFixed(1).padStart(7)}  ${r.fuseRate.toFixed(2).padStart(7)}  ${r.discharge.toFixed(2).padStart(6)}  ${r.starveKill.toFixed(2).padStart(7)}  ${r.interrupted.toFixed(2).padStart(7)}  ${(r.heat * 100).toFixed(0).padStart(7)}%  ${(r.routed * 100).toFixed(0).padStart(5)}%`);
+  });
+  console.log(`　合计 ${total} 局 · 通关 ${wins}（${(wins / Math.max(1, total) * 100).toFixed(0)}%）· 平均 ${rounds.toFixed(1)} 回合 · 熔断 ${fuse.toFixed(2)}/人 · 停机 ${starve.toFixed(2)}/人`);
+  console.log(`　　　 放电 ${discharge.toFixed(2)}/局 · 枯竭击杀 ${starveKill.toFixed(2)}/局 · 打断重铸 ${interrupted.toFixed(2)}/局 · 高热覆盖 ${(heat * 100).toFixed(0)}%`);
+  const sn = snap;
+  console.log(`　　　 通路：直导格 ${sn.straight.toFixed(1)} · 转角 ${sn.turns.toFixed(1)} · 闪避 ${(sn.dodge * 100).toFixed(1)}% · 幅值 ×${sn.amp.toFixed(2)} · 出手间隔 ${sn.id.toFixed(2)}s\n`);
+  summary.push({
+    id: preset.id, name: preset.name, rate: wins / Math.max(1, total), rounds, fuse, starve,
+    discharge, starveKill, interrupted, heat, routed,
+    straight: sn.straight, turns: sn.turns, dodge: sn.dodge, amp: sn.amp,
+  });
+});
+
+console.log('=== 三流派对比 ===');
+console.log('预设              通关率  平均回合  熔断/人  放电/局  枯竭杀  打断  高热%  贯通%');
+summary.forEach((s) => {
+  console.log(`${(s.id + ' ' + s.name).padEnd(16)}  ${(s.rate * 100).toFixed(0).padStart(4)}%  ${s.rounds.toFixed(1).padStart(7)}  ${s.fuse.toFixed(2).padStart(7)}  ${s.discharge.toFixed(2).padStart(6)}  ${s.starveKill.toFixed(2).padStart(6)}  ${s.interrupted.toFixed(2).padStart(5)}  ${(s.heat * 100).toFixed(0).padStart(5)}%  ${(s.routed * 100).toFixed(0).padStart(5)}%`);
+});
+console.log('');
+console.log('通路画像          直导格  转角  闪避%  幅值×');
+summary.forEach((s) => {
+  console.log(`${(s.id + ' ' + s.name).padEnd(16)}  ${s.straight.toFixed(1).padStart(6)}  ${s.turns.toFixed(1).padStart(4)}  ${(s.dodge * 100).toFixed(1).padStart(5)}  ${s.amp.toFixed(2).padStart(5)}`);
+});
+
+/* ---------------- F49 分首领胜率矩阵 ----------------
+   三位关底首领各带一条正交的防御法则（频次 / 破甲 / 压力）。
+   这张矩阵要回答的不是「难不难」，而是「谁的天敌是谁」：
+   如果三列对某个预设是同一个数，说明那条对位法则没有生效。 */
+const BOSSES = [
+  { id: 'gatekeeper', tag: '频次', short: '守门人' },
+  { id: 'memoryEater', tag: '压力', short: '噬忆者' },
+  { id: 'furnaceHeart', tag: '破甲', short: '炉心俑' },
+];
+const matrixN = Math.max(6, Math.min(N, 25));
+console.log(`\n=== F49 分首领胜率矩阵（每格 ${matrixN} 局）===`);
+console.log('预设      ' + BOSSES.map((b) => `${b.short}(${b.tag})`.padStart(14)).join(''));
+const matrix = {};
+PRESETS.forEach((preset) => {
+  const cells = BOSSES.map((boss) => {
+    let win = 0;
+    let n = 0;
+    let rounds = 0;
+    for (let i = 0; i < matrixN; i++) {
+      const r = fightOne(preset, 90000 + i * 37, 49, boss.id);
+      if (!r) continue;
+      n += 1;
+      if (r.win) win += 1;
+      rounds += r.rounds;
+    }
+    const rate = n ? win / n : 0;
+    matrix[preset.id + ':' + boss.id] = rate;
+    return `${(rate * 100).toFixed(0)}% ${(n ? rounds / n : 0).toFixed(1)}r`.padStart(14);
+  });
+  console.log(`${(preset.id + ' ' + preset.name).padEnd(10)}${cells.join('')}`);
+});
+console.log('');
+console.log('判读：每个预设应有「一列高、一列低」。三列齐平说明对位没有咬合，');
+console.log('      需要回到 data.js 检查 membrane / plating / onAction 是否真的挂到了单位上。');

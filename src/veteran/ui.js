@@ -14,14 +14,29 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  /** 相名的悬停提示：这个人自己怎么叫，另一派怎么叫，两句都给。
+      营地里东西两边的人都有，同一块板会被两种叫法喊——只显示一套，
+      玩家会以为另一套是编的；两套摆在一起，才看得出是两个学派在说同一件东西。 */
+  function styleTip(id, culture) {
+    const east = D().bodyStyle(id);
+    const src = D().bodySource(id);
+    const w = D().bodyWest(id);
+    const eastLine = `东土《铁相录》录作「${east}」${src ? `——${src}` : ''}`;
+    const westLine = w.zh ? `圣髑院登记为 ${w.name}（${w.zh}），归「${w.form}」` : '';
+    const own = culture === 'west' ? westLine : eastLine;
+    const other = culture === 'west' ? eastLine : westLine;
+    return [own, other].filter(Boolean).join('\n');
+  }
+
   function btn(label, act, opts) {
     const o = opts || {};
     const cls = ['btn', o.cls || ''].join(' ').trim();
     const idAttr = o.id ? ` id="${o.id}"` : '';
     const data = o.data ? Object.entries(o.data).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('') : '';
+    const title = o.title ? ` title="${esc(o.title)}"` : '';
     const dis = o.disabled ? ' disabled' : '';
     const style = o.style ? ` style="${o.style}"` : '';
-    return `<button class="${cls}"${idAttr} data-act="${act}"${data}${dis}${style}>${label}</button>`;
+    return `<button class="${cls}"${idAttr} data-act="${act}"${data}${title}${dis}${style}>${label}</button>`;
   }
 
   function bar(v, max, cls) {
@@ -59,6 +74,16 @@
   let svgUid = 0;
 
   /** 人物外观与装配几何分开呈现。@param {object} unit @param {string} cls @returns {string} */
+  /**
+   * 底盘轮廓缩略图（curated/plates/plate_<archetype>.png）。
+   * 缺图时退回人物立绘 —— 界面上不允许出现一块空白。
+   */
+  function plateFace(unit, cls = 'plate-face') {
+    const body = unit && D().body(unit.bodyPreset) ? D().body(unit.bodyPreset) : null;
+    const art = body && body.archetype ? V.Art.plateTag(body.archetype, cls) : '';
+    return art || legendPortrait(unit, cls);
+  }
+
   function legendPortrait(unit, cls = '') {
     return '<div class="legend-portrait ' + esc(cls) + '" role="img" aria-label="' + esc(unit.name) + '">' + V.Art.portraitTag(unit.skinId, '') + '</div>';
   }
@@ -192,7 +217,7 @@
     {
       id: 'ash12',
       name: '余烬十二脉',
-      desc: '4×3 古老回流拓片。共 12 格，覆盖 40%/75%/100% 依次共鸣。',
+      desc: '4×3 古老回流蚀刻法。共 12 格，覆盖 40%/75%/100% 依次共鸣。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [3, 2]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
@@ -206,7 +231,7 @@
     {
       id: 'corridor5',
       name: '直贯五脉',
-      desc: '窄型 5 格拓片，适配狭窄骨架与基础直弯配组。',
+      desc: '窄型 5 格蚀刻法，适配狭窄骨架与基础直弯配组。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [3, 1]],
       veins: { '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,1': ['E'] },
       entry: [0, 0],
@@ -216,7 +241,7 @@
     {
       id: 'wide14',
       name: '重铸阔卷',
-      desc: '5×3 重型拓片，仅厚实宽幅板面可完整容纳。',
+      desc: '5×3 重型蚀刻法，仅厚实宽幅板面可完整容纳。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [4, 2]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'], '4,0': ['S'],
@@ -851,7 +876,7 @@
     <div class="metal-party camp-party">${state.team.map((uid, slot) => {
       const u = uid ? ST().unitById(state, uid) : null;
       return `<article class="metal-card ${u ? '' : 'empty'}"><div class="metal-card-top"><span class="slot-index">0${slot + 1}</span><span class="tiny muted">${slot === 0 ? '前锋' : slot === 3 ? '后阵' : '中阵'}</span>${u ? `<span class="spacer"></span><span class="tiny muted">${(u.scars || []).length} 道瘢痕</span>` : ''}</div>
-      ${u ? `<div class="metal-display">${legendPortrait(u)}</div>
+      ${u ? `<div class="metal-display">${legendPortrait(u)}${plateFace(u, 'plate-chip')}</div>
         <div class="metal-card-name"><h2>${esc(u.name)}</h2><span class="tiny muted" title="${esc(term('stress'))}">压力 ${u.stress}</span></div>
         <div class="metal-card-manuscript"><span class="tiny muted">所修蚀刻法</span><b>${esc(manuscriptNames(u))}</b></div>
         <div class="metal-card-actions">${btn('人物详情', 'inspectUnit', { cls: 'ghost', data: { id: u.id } })}${btn('进入工坊', 'go', { cls: 'ghost', data: { v: 'workshop', id: u.id } })}</div>`
@@ -896,12 +921,22 @@
   function unitDetail(state, u) {
     const s = V.Roster.stats(state, u);
     const h = V.Roster.history(state, u.id);
+    const cracked = u.affliction === 'crack';
     return `<div class="u-detail mt3">
       ${legendPortrait(u, 'unit-portrait')}
       <div class="u-detail-head"><b>${esc(u.name)}</b>
-        <span class="muted small">${esc(D().body(u.bodyPreset).name)} · 压力 ${u.stress} · 逻辑槽 ${u.logicSlots}</span></div>
+        <span class="muted small">${esc(D().body(u.bodyPreset).name)} · <span title="${esc(styleTip(u.bodyPreset, D().cultureOf(u.skinId)))}">${esc(D().bodyStyle(u.bodyPreset, D().cultureOf(u.skinId)))}</span> · 压力 ${u.stress} · 逻辑槽 ${u.logicSlots}</span></div>
+      <p class="tiny muted">${esc(D().originOf(u.skinId))}</p>
+      ${(() => {
+        /* 相性：形状决定「这块铁怎么用」。名字与说明都从数据表来，缺字段就不画，别在界面上留 undefined */
+        const inn = D().body(u.bodyPreset).innate;
+        return inn && inn.name
+          ? `<p class="small mt1"><span class="tag tag-circuit">相性 · ${esc(inn.name)}</span> <span class="muted tiny">${esc(inn.desc || '')}</span></p>`
+          : '';
+      })()}
+      ${cracked ? `<p class="small danger mt1" title="${esc(term('resolve'))}">裂 —— 纹理方向律反转：满压的红利翻成负担，受伤加深，抛光只剩七成。安抚可以清掉。</p>` : ''}
       <div class="stat-row">
-        <span>生命 ${s.maxHp}</span><span>攻击 ${s.atk}</span><span>防御 ${s.def}</span>
+        <span title="结构完整度">完整度 ${s.maxHp}</span><span title="输出脉冲幅值">幅值 ${s.atk}</span><span title="回路阻抗">阻抗 ${s.def}</span>
         <span>负荷 ${s.loadCap}</span>
       </div>
       <div class="inscribed-list">${V.State.manuscriptsOf(u).map(m => `<p><b>${itemLabel('etching', m)}</b><span>${esc(V.Flavor.etching(m))}</span></p>`).join('') || '<p>尚未装配蚀刻法</p>'}</div>
@@ -987,11 +1022,13 @@
     const equipped = V.State.manuscriptsOf(unit);
     const installed = (id) => equipped.some((m) => m.id === id);
     const chip = (m, location) => `<button class="ms-chip${ms?.id === m.id ? ' is-active' : ''}" data-act="wsMsPick" data-ms-drag="${readOnly ? '0' : '1'}" data-source="${location}" data-id="${m.id}" aria-pressed="${ms?.id === m.id}" title="${location === 'board' && unit.manuscript?.id === m.id ? '主修决定普通攻击与余裕' : esc(m.name)}">
-      <span class="ms-chip-name">${itemLabel('etching', m)}</span><span class="ms-chip-meta">${location === 'board' ? (unit.manuscript?.id === m.id ? '主修' : '合修') : '库存 ×' + vault.filter((v) => v.id === m.id).length} · ${m.cells.length} 格</span></button>`;
-    const picker = `<p class="small muted mb2">${T('第一门是主修，定普通攻击节奏与余裕恢复。后面的门是合修：只出自己的招式（冷却短 1 秒），纹路增益减半计入余裕。')}</p><div class="row wrap tight mb2 ms-chips">${equipped.map((m) => chip(m, 'board')).join('')}
+      <span class="ms-chip-name">${itemLabel('etching', m)}</span><span class="ms-chip-meta">${location === 'board' ? (unit.manuscript?.id === m.id ? '主修' : '辅修') : '库存 ×' + vault.filter((v) => v.id === m.id).length} · ${m.cells.length} 格</span></button>`;
+    const picker = `<p class="small muted mb2">${T('第一门是主修，定普通攻击节奏与余裕恢复。后面的门是辅修：只出自己的招式（冷却短 1 秒），纹路增益减半计入余裕。')}</p>
+      <p class="tiny muted mb2">${T('装卸随时可以反悔：拆下来的蚀刻法原样回到库存，不损坏也不折扣。')}</p>
+      <div class="row wrap tight mb2 ms-chips">${equipped.map((m) => chip(m, 'board')).join('')}
       ${catalog.filter((m) => inVault(m.id)).map((m) => installed(m.id) ? `<span class="tiny muted">${esc(m.name)} · 库存 ×${vault.filter((v) => v.id === m.id).length}</span>` : chip(m, 'vault')).join('')}</div>
       <div class="row wrap tight mb2">${readOnly ? '' : ms && installed(ms.id)
-        ? (unit.manuscript?.id !== ms.id ? btn('设为主修', 'wsMsPromote', { cls: 'gold xs' }) : '') + btn('卸下蚀刻法', 'wsMsUnequip', { cls: 'ghost xs' })
+        ? (unit.manuscript?.id !== ms.id ? btn('设为主修', 'wsMsPromote', { cls: 'gold xs' }) : '') + btn('卸下蚀刻法', 'wsMsUnequip', { cls: 'ghost xs', title: '取下来原件不会损失，随时可以再装回去' })
         : ms && inVault(ms.id) ? btn('装入蚀刻法', 'wsMsEquip', { cls: 'gold xs' })
           : ms?.spec ? `<span class="tiny muted">${ms.spec.fieldSource ? `第 ${ms.spec.fieldDepth} 层起 · ${ms.spec.fieldSource === 'chest' ? '搜宝箱' : '击败精英'}后撤离` : `第 ${D().rewardNodes[ms.spec.unlockDepth-1]} 节点起撤离可发现`}</span>` : ''}</div>`;
 
@@ -1002,14 +1039,14 @@
     const unfit = !ms.fits;
     const tierName = ms.cov.tier ? ms.cov.tier.name : '未达共鸣阶';
     const pctText = `${ms.cov.aligned}/${ms.cov.total} · ${ms.cov.pct}%`;
-    /* 共鸣增幅统一走数值引擎：共鸣阶 × 贯通 × 负荷价，顺序与结算一致。 */
+    /* 共鸣增幅统一走数值引擎：共鸣阶 × 贯通，顺序与结算一致（负荷不返利，已从两边一起删掉）。 */
     const res = V.Stats.resonance(ms);
     const gainPct = res.pct;
     const gainSource = res.parts.join(' · ');
     return `<div class="ms-panel ${unfit ? 'ms-unfit' : ''}" data-ms-fits="${ms.fits ? '1' : '0'}">
       ${picker}
       <div class="row wrap tight">
-        <span class="small"><b class="${unfit ? 'danger' : 'gold'}">${itemLabel('etching', ms.spec)}</b> <span class="tiny muted">${installed(ms.id) ? (unit.manuscript?.id === ms.id ? '主修' : '合修') : '预览'} · ${ms.cov.total} 格 · 负荷 ${ms.spec.load || 0}</span></span>
+        <span class="small"><b class="${unfit ? 'danger' : 'gold'}">${itemLabel('etching', ms.spec)}</b> <span class="tiny muted">${installed(ms.id) ? (unit.manuscript?.id === ms.id ? '主修' : '辅修') : '预览'} · ${ms.cov.total} 格 · 负荷 ${ms.spec.load || 0}</span></span>
         <div class="spacer"></div>
         <span class="tag ${unfit ? '' : ms.cov.tier ? 'tag-weapon' : ''}" data-ms-tier>${esc(unfit ? '无法覆盖' : tierName)}</span>
       </div>
@@ -1040,18 +1077,18 @@
   function workshopCodex(state, ui) {
     const original = state.roster.find((u) => u.id === ui.wsUnit) || state.roster[0];
     const unit = workshopUnit(original, ui) || original;
-    const owned = new Map(V.State.manuscriptsOf(unit).map((m, i) => [m.id, i === 0 ? '主修' : '合修']));
+    const owned = new Map(V.State.manuscriptsOf(unit).map((m, i) => [m.id, i === 0 ? '主修' : '辅修']));
     const vault = state.manuscriptVault || [];
     const catalog = Object.values(D().MANUSCRIPTS || {});
     const source = (m) => (m.fieldSource
-      ? `第 ${m.fieldDepth} 层起 · ${m.fieldSource === 'chest' ? '宝箱拓本' : '精英战获'}`
+      ? `第 ${m.fieldDepth} 层起 · ${m.fieldSource === 'chest' ? '宝箱产出' : '精英战获'}`
       : `${D().rewardNodes[m.unlockDepth - 1]} 节点起 · 撤离奖励`);
     return `<header class="atelier-head"><div><h1>蚀刻法图鉴</h1>
       <p class="small muted">共 ${catalog.length} 门。点一门回工坊选中它，板面会跟着标出形制与落点。</p></div>
       ${btn(ui.wsMode === 'inscribe' ? '返回营火烙印' : '返回工坊', 'wsCodex', { cls: 'ghost sm' })}</header>
       <div class="codex-book" data-catalogue="codex" data-catalogue-limit="9999">
-      ${catalogueControls('查名称、效果或出处', [['', '全部'], ['chest', '宝箱拓本'], ['elite', '精英拓本'], ['camp', '营地与撤离'], ['owned', '已持有']])}
-      <div class="codex-shelves">${[['chest', '宝箱拓本'], ['elite', '精英拓本'], [undefined, '营地与撤离']].map(([key, label]) => {
+      ${catalogueControls('查名称、效果或出处', [['', '全部'], ['chest', '宝箱产出'], ['elite', '精英战获'], ['camp', '营地与撤离'], ['owned', '已持有']])}
+      <div class="codex-shelves">${[['chest', '宝箱产出'], ['elite', '精英战获'], [undefined, '营地与撤离']].map(([key, label]) => {
     const list = catalog.filter((m) => m.fieldSource === key);
     if (!list.length) return '';
     return `<section class="codex-group"><h2 class="codex-group-h">${label}<span>${list.length}</span></h2>
@@ -1115,7 +1152,7 @@
 
     const surface = !plate.generated ? V.Art.imgTag('veteran.surface.board', 'board-surface-img') : '';
     return `
-    <header class="atelier-head"><div><h1>${ui.wsMode === 'inscribe' ? '营火烙印 · 装入纹路' : '纹路工坊'}</h1>
+    <header class="atelier-head">${V.Art.anyImgTag('scene.workshop', 'atelier-head-bg')}<div><h1>${ui.wsMode === 'inscribe' ? '营火烙印 · 装入纹路' : '纹路工坊'}</h1>
       ${ui.wsMode === 'inscribe' ? `<span>${esc(unit.name)}</span>` : `<div class="ws-unit-picker">${state.roster.map(u => btn(esc(u.name), 'wsUnit', { cls: u.id === unit.id ? 'gold xs' : 'ghost xs', data: { id: u.id } })).join('')}</div>`}</div>
       ${ui.wsMode === 'inscribe' ? '' : `<div class="atelier-head-actions">${btn(`图鉴 · ${Object.keys(D().MANUSCRIPTS || {}).length}`, 'wsCodex', { cls: 'ghost sm' })}${btn(isDirty ? '保存改动' : '保存装配', 'wsSave', { cls: 'gold sm' })}</div>`}
     </header>
@@ -1128,15 +1165,15 @@
       </aside>
 
       <div class="ws-board">
-        <div class="board-heading"><div class="plate-owner">${legendPortrait(unit, 'plate-face')}<div><strong>${esc(unit.name)}</strong><span>${cellsList.length} 格金属 · 已装 ${V.State.manuscriptsOf(unit).length} 门</span></div></div>
-          <div class="plate-load"><span>负荷 <b>${pv.load}</b> / ${loadCap}${loadOver ? ` <span class="danger">超载 +${pv.load - loadCap}</span>` : ''}</span>${bar(pv.load, loadCap, loadOver ? 'hp' : 'energy')}</div></div>
+        <div class="board-heading"><div class="plate-owner">${plateFace(unit)}<div><strong>${esc(unit.name)}</strong><span>${cellsList.length} 格金属 · 已装 ${V.State.manuscriptsOf(unit).length} 门</span></div></div>
+          <div class="plate-load"><span>负荷 <b>${pv.load}</b> / ${loadCap}${pv.scarSaved > 0 ? ` <span class="tiny muted" title="永久瘢痕已成肉身之纹，不再需要维持">瘢痕 −${pv.scarSaved}</span>` : ''}${loadOver ? ` <span class="danger">${V.Art.iconTag('rust', 'icon-inline')}超载 +${pv.load - loadCap}</span>` : ''}</span>${bar(pv.load, loadCap, loadOver ? 'hp' : 'energy')}</div></div>
         <div class="plate-key"><button type="button" class="film-switch" data-act="wsFilmView" aria-pressed="${!!ui.wsFilmView}"><i aria-hidden="true"></i>${ui.wsFilmView ? '返回装配视图' : '查看覆膜'}</button>
-          <span class="scar-key" title="${esc(term('scar'))}">⌁ 瘢痕 ${(unit.scars || []).length}</span></div>
+          <span class="scar-key" title="${esc(term('scar'))}">${V.Art.iconTag('scar', 'icon-inline')}⌁ 瘢痕 ${(unit.scars || []).length}</span></div>
         <div class="board-stack ${ui.wsFilmView ? 'film-view' : ''}">
           ${surface ? `<div class="board-surface">${surface}</div>` : ''}
           ${boardSvg(state, unit.id, draft, { interactive: true, pickId: ui.wsPick, locked, ms, readOnlyMs: ui.wsMode === 'inscribe' })}
         </div>
-        <div class="plate-readout">${draftStats ? `<span>生命 <b>${draftStats.maxHp}</b></span><span>攻击 <b>${draftStats.atk}</b></span><span>防御 <b>${draftStats.def}</b></span>` : ''}</div>
+        <div class="plate-readout">${draftStats ? `<span title="结构完整度">完整度 <b>${draftStats.maxHp}</b></span><span title="输出脉冲幅值">幅值 <b>${draftStats.atk}</b></span><span title="回路阻抗">阻抗 <b>${draftStats.def}</b></span><span title="电容缓冲上限">缓冲 <b>${draftStats.shieldCap || 0}</b></span>` : ''}</div>
         ${pickedTpl ? `<div class="ws-focus mt2">
           <div class="row wrap tight">
             <span class="gold small">${itemLabel('rune', pickedTpl)}</span>
@@ -1208,11 +1245,14 @@
 
   function recruitScreen(state, ui) {
     const offers = state.shop || [];
-    return `<section class="hearth-arrivals">${pageHeading('火塘来客', `已结识 ${D().SKINS.filter((s) => state.roster.some((u) => u.skinId === s.id)).length} / 21 位`, btn('打听来客 · 12 金', 'refreshShop', { cls: 'ghost', disabled: state.gold < 12 || D().SKINS.every((s) => state.roster.some((u) => u.skinId === s.id)) }))}
+    return `<section class="hearth-arrivals">${pageHeading('火塘来客', `已结识 ${D().SKINS.filter((s) => state.roster.some((u) => u.skinId === s.id)).length} / ${D().SKINS.length} 位`, btn('打听来客 · 12 金', 'refreshShop', { cls: 'ghost', disabled: state.gold < 12 || D().SKINS.every((s) => state.roster.some((u) => u.skinId === s.id)) }))}
       <div class="recruit-grid">${offers.map((o) => {
-        const preview = ST().makeUnit({ ...state }, { ...o, plateSeed: o.plateSeed == null ? A.Random.seedFrom(o.id) : o.plateSeed });
+        const preview = ST().makeUnit({ ...state }, o);
         const plate = V.Circuit.plateOf(preview);
-        return `<article class="recruit-card metal-card ${o.sold ? 'sold' : ''}"><div class="metal-display">${legendPortrait(preview)}</div><h2>${esc(o.name)}</h2><p class="arrival-body">${esc(D().body(preview.bodyPreset).name)} · ${plate.cellsList.length} 格板面</p><div class="recruit-price"><span><b>${o.price}</b> <span class="muted tiny">金币</span></span>${o.sold ? '<span class="quiet-status">已加入营地</span>' : btn('邀请加入 →', 'recruitOffer', { cls: 'gold', data: { id: o.id }, disabled: state.gold < o.price || state.roster.some((u) => u.skinId === o.skinId) })}</div></article>`;
+        return `<article class="recruit-card metal-card ${o.sold ? 'sold' : ''}"><div class="metal-display">${legendPortrait(preview)}${plateFace(preview, 'plate-chip')}</div><h2>${esc(o.name)}</h2><p class="arrival-body">${esc(D().body(preview.bodyPreset).name)} · <span title="${esc(styleTip(preview.bodyPreset, D().cultureOf(o.skinId)))}">${esc(D().bodyStyle(preview.bodyPreset, D().cultureOf(o.skinId)))}</span> · ${plate.cellsList.length} 格板面</p><p class="arrival-origin tiny muted">${esc(D().originOf(o.skinId))}${(() => {
+          const inn = D().body(preview.bodyPreset).innate;
+          return inn && inn.name ? ` · 相性「${esc(inn.name)}」` : '';
+        })()}</p><div class="recruit-price"><span><b>${o.price}</b> <span class="muted tiny">金币</span></span>${o.sold ? '<span class="quiet-status">已加入营地</span>' : btn('邀请加入 →', 'recruitOffer', { cls: 'gold', data: { id: o.id }, disabled: state.gold < o.price || state.roster.some((u) => u.skinId === o.skinId) })}</div></article>`;
       }).join('') || '<div class="empty-note">火塘旁暂时没有来客</div>'}</div>${ui.shopMsg ? `<div class="err-box mt3">${esc(ui.shopMsg)}</div>` : ''}</section>`;
   }
 
@@ -1234,7 +1274,7 @@
   function archiveCatalogue() {
     const entries = (items, kind) => items.map(m => {
       const source = kind === 'rune' ? '战获 · 宝箱 · 游商' : m.fieldSource
-        ? `第 ${m.fieldDepth} 层起 · ${m.fieldSource === 'chest' ? '宝箱拓本' : '精英战获'}`
+        ? `第 ${m.fieldDepth} 层起 · ${m.fieldSource === 'chest' ? '宝箱产出' : '精英战获'}`
         : `完成 ${D().rewardNodes[m.unlockDepth-1]} 个节点起 · 撤离奖励`;
       const facts = kind === 'rune' ? V.Stats.runeFacts(m) : V.Stats.manuscriptFacts(m);
       return `<article class="catalogue-entry" data-catalogue-item="${esc([m.name, m.desc, source].join(' '))}" data-filter="${kind}">
@@ -1441,8 +1481,8 @@
       `${r.floor < 3 ? '完成三层' : '完成本层'}后撤离，可带回「${upcoming.name}」`;
     const rewards = { battle: '金币 · 纹路 · 战后取材', elite: '更多金币 · 两件纹路 · 取材', boss: r.floor === max ? '通关 · 三件纹路' : '突破本章 · 三件纹路', chest: '两件纹路 · 采集食材', camp: '休整 · 营火做菜 · 烙印', merchant: '购买纹路', event: '调查现场 · 自选结果' };
     if (!r.fieldManuscript) {
-      rewards.chest += ' · 可能藏有拓本';
-      rewards.elite += ' · 战获拓本';
+      rewards.chest += ' · 可能藏有蚀刻法';
+      rewards.elite += ' · 战获蚀刻法';
     }
     return `<div class="ex-page">
       ${expeditionHeader(state, chapter.step === 7 ? 'scene.boss' : 'scene.corridor', chapter.step === 7 ? D().enemy(chapter.boss).name : chapter.name, milestone)}
@@ -1469,7 +1509,7 @@
           <small>${p.slot + 1}号位 · 压力 ${p.stress}</small>${bar(hp, maxHp, 'hp')}</div><span>${hp}<small>/${maxHp}</small></span></div>`;
       }).join('')}</div><div class="ex-pack">
         <h2>撤离可带回</h2><p>金币 <b>${r.goldFound}</b>　遗物 <b>${r.shards}</b>　纹路 <b>${r.bag.length}</b></p>
-        <p>拓本匣 · <b>${r.fieldManuscript ? itemLabel('etching', D().manuscript(r.fieldManuscript)) : '空 0/1'}</b></p>
+        <p>蚀刻法匣 · <b>${r.fieldManuscript ? itemLabel('etching', D().manuscript(r.fieldManuscript)) : '空 0/1'}</b></p>
         <details class="k-carry"><summary>随行食材 · ${ingredientSummary(r.ingredients)}</summary>${ingredientRows(r.ingredients, false)}</details>
         ${bar(V.Expedition.bagUsed(state), V.Expedition.bagCapacity(state), 'energy')}
         <small>背包 ${V.Expedition.bagUsed(state)} / ${V.Expedition.bagCapacity(state)} 格 · 已完成 ${r.completedFloors} 层</small>
@@ -1493,7 +1533,7 @@
       ${panel('敌方情报', `<div class="enemy-list">${bp.units.map((u) => `<div class="enemy-row">
         ${u.isBoss ? V.Art.bossTag(u.enemyType, 'enemy-boss-img') : ''}
         <span class="enemy-name ${u.isBoss ? 'boss' : ''}">${esc(u.name)}</span>
-        <span class="muted tiny">${u.hp} 生命 · ${u.atk} 攻击 · ${u.def} 防御 · ${u.spd} 速度</span>
+        <span class="muted tiny">${u.hp} 完整度 · ${u.atk} 幅值 · ${u.def} 阻抗 · ${u.spd} 节拍</span>
         <span class="k-harvest-note">可取材 · ${itemLabel('ingredient', V.Kitchen.INGREDIENTS[V.Kitchen.ECOSYSTEM[u.enemyType].ingredient])} ×1</span>
         ${u.isBoss ? tag('首领', 'tag-boss') : ''}
       </div>`).join('')}</div>
@@ -1563,7 +1603,7 @@
       <span class="bt-round">回合 ${b.round}</span>
       <span class="bt-tick muted tiny">${(b.tick * D().DESIGN.stepSeconds).toFixed(1)}s</span>
       <div class="spacer"></div>
-      <button class="btn ghost xs" id="btlTactic" data-act="setTactic" title="均衡：按战前指令；集火：优先虚弱者；压制：优先蓄力敌人">战术：${({ balance: '均衡', focus: '集火', safe: '压制' })[b.tactic] || '均衡'}</button>
+      <button class="btn ghost xs" id="btlTactic" data-act="setTactic" title="均衡：按战前指令；集火：优先虚弱者；压制：优先引导敌人">战术：${({ balance: '均衡', focus: '集火', safe: '压制' })[b.tactic] || '均衡'}</button>
       <button class="btn ghost xs" id="btlSpeed" data-act="cycleSpeed">速度 ×${ui.speed || 1}</button>
       <button class="btn ghost xs" data-act="togglePause">${ui.paused ? '继续' : '暂停'}</button>
     </div>
@@ -1589,8 +1629,14 @@
 
   function battleBar(u) {
     const isAlly = u.side === 'ally';
-    const pressurePenalty = Math.round((1 - V.Combat.pressureRegenMultiplier(u.stress)) * 100);
-    const pressureBoost = Math.round((V.Combat.pressureDamageMultiplier(u.stress) - 1) * 100);
+    /* 裂了的人，同一个压力档位算出来是负的：回裕要乘抛光倍率，伤害加成是反的 */
+    const cracked = !!u.cracked;
+    const polish = u.polishMult == null ? 1 : u.polishMult;
+    const pressurePenalty = Math.round((1 - V.Combat.pressureRegenMultiplier(u.stress) * polish) * 100);
+    const pressureBoost = Math.round((V.Combat.pressureDamageMultiplier(u.stress, u) - 1) * 100);
+    /* 高热：压力顶到 50 之上，超载扣的那段回裕被抵掉。bar 上要说出来，
+       否则玩家只看「压力 60 · 回裕 −15%」会以为超载还在罚他 */
+    const heatOn = isAlly && (u.overloadPenalty || 0) > 0 && V.Combat.heatConducting(u);
     /* 时间轴：余裕按秒回，出手靠 atkTimer，不再有「行动条」 */
     const energy = [Math.floor(u.energy || 0), Math.round(u.energyMax || 20)];
     const gPct = Math.max(0, Math.min(100, ((u.atkTimer || 0) / (u.attackInterval || 0.5)) * 100));
@@ -1608,8 +1654,10 @@
         <span>${u.hp}/${u.maxHp}</span>
         ${u.shield > 0 ? `<span class="shield">盾${u.shield}</span>` : ''}
         ${isAlly ? `<span class="energy" title="${esc(term('energy'))}">余裕 ${energy[0]}/${energy[1]}</span>` : ''}
-        ${isAlly ? `<span class="${pressurePenalty ? 'tag tag-warn' : ''}" title="${esc(term('stress'))} · 每秒自然恢复${V.Combat.energyRegen(u).toFixed(2)}余裕">压力 ${u.stress || 0}${pressurePenalty ? ` · 回裕 −${pressurePenalty}%` : ''}${pressureBoost ? ` · 伤害 +${pressureBoost}%` : ''}</span>` : ''}
-        ${u.charging ? tag('蓄力 · ' + u.charging.name, 'tag-boss') : ''}
+        ${isAlly ? `<span class="${pressurePenalty ? 'tag tag-warn' : ''}" title="${esc(term('stress'))} · 每秒自然恢复${V.Combat.energyRegen(u).toFixed(2)}余裕${u.overloadPenalty ? ` · 超载已扣 ${u.overloadPenalty.toFixed(2)}${heatOn ? '（高热：已抵掉）' : ''}` : ''}">压力 ${u.stress || 0}${pressurePenalty ? ` · 回裕 −${pressurePenalty}%` : ''}${pressureBoost ? ` · 伤害 ${pressureBoost > 0 ? '+' : ''}${pressureBoost}%` : ''}</span>` : ''}
+        ${heatOn ? tag('高热', 'tag-ok') : ''}
+        ${cracked ? tag('裂', 'tag-boss') : ''}
+        ${u.charging ? tag('引导 · ' + u.charging.name, 'tag-boss') : ''}
         ${dots.map((d) => tag(`${DOT_NAME[d.k]} ×${d.hits || 0}`, 'tag-warn')).join('')}
         ${hasGuard ? tag('减伤', 'tag-circuit') : ''}
         ${atkUp ? tag(`强化 ×${atkUp.hits || 0}`, 'tag-ok') : ''}
@@ -1629,7 +1677,7 @@
     const rep = p.report || {};
     const win = p.outcome === 'win';
     return `
-    <div class="ex-page">${expeditionHeader(state, rep.kind === 'boss' ? 'scene.boss' : 'scene.corridor', win ? '战斗胜利' : p.outcome === 'timeout' ? '回廊闭合' : '小队败退', rep.allies?.filter(u => u.alive).length + ' 人仍可作战')}
+    <div class="ex-page">${expeditionHeader(state, rep.kind === 'boss' ? 'scene.boss' : win ? 'scene.corridor' : 'scene.extract', win ? '战斗胜利' : p.outcome === 'timeout' ? '回廊闭合' : '小队败退', rep.allies?.filter(u => u.alive).length + ' 人仍可作战')}
     ${panel(win ? '可领取战利品' : '战后决定', `
       <div class="row wrap mb3">
         <span class="chip">${((rep.tick || 0) * D().DESIGN.stepSeconds).toFixed(1)}s</span><span class="chip">回合 ${rep.round || 0}</span>
@@ -1782,7 +1830,7 @@
     const items = groundItems(state, ui);
     const rows = ui.groundSurvey.rows;
     const slots = Array.from({length:rows * groundColumns}, (_,i) => `<span class="ground-slot" data-ground-slot="${i}" aria-hidden="true" style="grid-column:${i%groundColumns+1};grid-row:${Math.floor(i/groundColumns)+1}"></span>`).join('');
-    return `<div class="ex-page loot-page"><div class="loot-columns">
+    return `<div class="ex-page loot-page">${expeditionHeader(state, 'scene.chest', chest ? '封存宝箱' : '战利品', D().chapterLabel(r.floor))}<div class="loot-columns">
       ${packDialog(state, ui, true)}
       <section class="loot-ground" aria-labelledby="loot-heading"><header class="pack-heading"><h2 id="loot-heading">${chest ? '封存宝箱' : '战利品'}</h2><small>${D().chapterLabel(r.floor)}</small></header>
       <div class="ground-grid" role="group" aria-label="地面战利品，六列" data-ground-columns="${groundColumns}" style="--ground-rows:${rows}">${slots}${items.map(groundPiece).join('')}</div>
@@ -1804,7 +1852,7 @@
     if (eff.ingredient) tags.push(`食材 ×${eff.ingredient.n || 1}`);
     if (eff.consumeIngredient) tags.push(`耗食材 ${eff.consumeIngredient}`);
     if (eff.meal) tags.push(`成菜 ×${eff.meal}`);
-    if (eff.manuscript) tags.push('战利谱');
+    if (eff.manuscript) tags.push('蚀刻法');
     if (eff.blessing) tags.push('祝福');
     if (eff.healPct) tags.push(`回血 ${Math.round(eff.healPct * 100)}%`);
     if (eff.damagePct) tags.push(`有人受伤 ${Math.round(eff.damagePct * 100)}%`);
@@ -1819,14 +1867,14 @@
     const resolved = state.run.event.resolved;
     const branch = state.run.event.branch;
     if (resolved) {
-      return `<div class="ex-page ex-event">${expeditionHeader(state, 'node.event', ev.title, ev.text)}
+      return `<div class="ex-page ex-event">${expeditionHeader(state, 'scene.event', ev.title, ev.text)}
         <div class="story mt2 success">${esc(state.run.event.resultText)}</div>
         ${branch ? `<div class="muted tiny mt2">${branch === 'win' ? '这一次赌赢了。' : '这一次没赌赢。'}</div>` : ''}
         <div class="row mt3">${btn('继续', 'eventDone', { cls: 'gold' })}</div>
       </div>`;
     }
     const choices = V.Expedition.eventChoices(state);
-    return `<div class="ex-page ex-event">${expeditionHeader(state, 'node.event', ev.title, ev.text)}
+    return `<div class="ex-page ex-event">${expeditionHeader(state, 'scene.event', ev.title, ev.text)}
       <div class="mt3">${choices.map((c) => {
     const tags = effectTags(c.effects);
     const tagLine = `${c.combat ? '战斗' : ''}${c.gamble ? '赌局' : ''}${tags.join(' · ')}`;
@@ -1841,7 +1889,7 @@
 
   function campNodeScreen(state, ui) {
     const r = state.run;
-    return `<div class="ex-page">${expeditionHeader(state, 'veteran.scene.field', '废弃营火', '火还有余温。铁在这里会变软一点。')}
+    return `<div class="ex-page">${expeditionHeader(state, 'scene.camp', '废弃营火', '火还有余温。铁在这里会变软一点。')}
     ${panel('火边休整', `
       <div class="row wrap mt3">
         ${btn(r.campRested ? '已休整' : '休息（恢复 45% 生命，压力 -30）', 'campRest', { cls: 'gold', disabled: !!r.campRested })}
@@ -1866,7 +1914,7 @@
   function merchantScreen(state) {
     const r = state.run;
     const free = V.Expedition.bagCapacity(state) - V.Expedition.bagUsed(state);
-    return `<div class="ex-page">${expeditionHeader(state, 'node.merchant', '回廊游商', '可用金币 ' + state.gold + ' · 背包空余 ' + free + ' 格')}
+    return `<div class="ex-page">${expeditionHeader(state, 'scene.merchant', '回廊游商', '可用金币 ' + state.gold + ' · 背包空余 ' + free + ' 格')}
       <div class="ex-offers">${(r.shop || []).map((o) => {
         const it = state.itemsById[o.itemId];
         if (!it) return '';
@@ -1909,7 +1957,7 @@
         <span class="chip">遗物 +${s.shards}</span>
         <span class="chip">纹路 +${s.items.length}</span>
       </div>
-      ${s.fieldManuscript ? `<div class="manuscript-found"><h2>拓本入库 · ${itemLabel('etching', D().manuscript(s.fieldManuscript))}</h2>${manuscriptDetails(D().manuscript(s.fieldManuscript))}</div>` : ''}
+      ${s.fieldManuscript ? `<div class="manuscript-found"><h2>蚀刻法入库 · ${itemLabel('etching', D().manuscript(s.fieldManuscript))}</h2>${manuscriptDetails(D().manuscript(s.fieldManuscript))}</div>` : ''}
       <div class="k-pantry-door"><div><h3>入库食材</h3><p>${ingredientSummary(s.ingredients)}</p></div></div>
       ${s.manuscript ? `<div class="manuscript-found"><h2>撤离奖励 · ${itemLabel('etching', s.manuscript)}</h2>${manuscriptDetails(D().manuscript(s.manuscript.id))}</div>` : ''}
       ${s.items.length ? `<div class="part-list mt2">${s.items.map((id) => `<div class="part-item static">
@@ -2027,7 +2075,7 @@
         <div class="pack-tools"><span>空余 ${free} 格</span>${editable ? btn('一键整理','packSort',{cls:'ghost sm',disabled:free === slots.length}) : ''}</div></div>
         <aside class="pack-detail" aria-live="polite">${details}${ui.packMessage ? `<p class="pack-message">${esc(ui.packMessage)}</p>` : ''}</aside></div>
       ${editable && slots.some(t=>t?.startsWith('meal:')) ? packDiners(state, item?.meal ? item : null) : ''}
-      ${overflowPanel}${r ? `<div class="pack-folio"><strong>拓本匣</strong>${r.fieldManuscript ? itemLabel('etching', D().manuscript(r.fieldManuscript)) : '<span>空</span>'}<small>独立收纳</small></div>` : ''}`;
+      ${overflowPanel}${r ? `<div class="pack-folio"><strong>蚀刻法匣</strong>${r.fieldManuscript ? itemLabel('etching', D().manuscript(r.fieldManuscript)) : '<span>空</span>'}<small>独立收纳</small></div>` : ''}`;
     if (inline) return `<section class="loot-pack" aria-labelledby="pack-title">${inventory}</section>`;
     return `<div class="modal-backdrop"><div class="modal-dim" data-act="closeModal"></div>
       <section class="modal-card pack-dialog" role="dialog" aria-modal="true" aria-labelledby="pack-title" data-editable="${editable}">

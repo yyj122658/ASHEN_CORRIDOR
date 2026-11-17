@@ -1016,8 +1016,10 @@
         Object.assign(unit, V.UI.workshopUnit(unit, ui));
         const plate = V.Circuit.plateOf(unit);
         const ms = V.UI.resolveManuscript(unit, plate, ui, V.Circuit.layout(next, ui.wsDraft));
+        /* 玩家把蚀刻法拖到某个格：坐标一给，朝向就按他手上那个来（rotation 缺省才是 0）。
+           以前这里写 `|| 0`，会把「没指定朝向」也压成 0，等于替玩家做了决定。 */
         const pose = action.type === 'wsMsEquipAt'
-          ? { x: action.ox, y: action.oy, rotation: action.rotation || 0, mirrorY: !!action.mirrorY }
+          ? { x: action.ox, y: action.oy, rotation: action.rotation ?? 0, mirrorY: !!action.mirrorY }
           : ms && ms.fits ? { x: ms.ox, y: ms.oy, rotation: ms.rot, mirrorY: ms.mir } : undefined;
         const result = action.type === 'wsMsUnequip'
           ? V.State.removeManuscript(next, unit, id)
@@ -1025,7 +1027,7 @@
           : V.State.placeManuscript(next, unit, id, pose, ui.wsDraft);
         if (!result.ok) { ui.wsErrors = [result.reason]; render(); toast(result.reason); return; }
         saveWorkshop(next, action.type === 'wsMsUnequip' ? unit.manuscript?.id : id,
-          action.type === 'wsMsUnequip' ? '蚀刻法已卸下，装配已保存' : action.type === 'wsMsPromote' ? '主修已保存' : '蚀刻法已装上，装配已保存');
+          action.type === 'wsMsUnequip' ? '蚀刻法已卸下，原件回到库存' : action.type === 'wsMsPromote' ? '主修已保存' : '蚀刻法已装上，装配已保存');
         return;
       }
 
@@ -1121,7 +1123,7 @@
         const unit = state.roster.find((u) => u.id === action.id);
         if (!unit || !V.Expedition.inscribable(state, unit.id).ok) return;
         const bagCircuits = state.run.bag.filter(id => state.itemsById[id]?.kind === 'circuit' && state.itemsById[id].acquiredRunId === state.run.id);
-        if (!bagCircuits.length) { toast('背包里没有本局获得的回路纹路'); return; }
+        if (!bagCircuits.length) { toast('背包里没有本局获得的纹路'); return; }
         openWorkshop(unit.id);
         ui.wsMode = 'inscribe';
         ui.wsUnit = unit.id;
@@ -1325,7 +1327,7 @@
             ? `紧急撤退？\n\n保留 ${p.keepParts.length} 件新纹路，丢弃 ${p.lostParts.length} 件。\n金币 +${p.gold}，遗物 +${p.shards}，压力 +${p.stress}。\n本次不算合格撤离。`
             : `确认败退？\n\n本局新收获全失，原有装备与板面纹路保留，压力 +${p.stress}。`;
           const field = D().manuscript(state.run.fieldManuscript);
-          if (!window.confirm(msg + (field ? `\n将遗失随行拓本「${field.name}」。` : ''))) return;
+          if (!window.confirm(msg + (field ? `\n将遗失随行蚀刻法「${field.name}」。` : ''))) return;
         }
         const r = run(() => V.Expedition.retreat(state, mode));
         if (r && r.ok) { ui.screen = 'settlement'; render(); }
@@ -1765,7 +1767,7 @@
     return null;
   }
 
-  /** 工坊手动试铺与双击共用当前预览的拓片和草稿。 */
+  /** 工坊手动试铺与双击共用当前预览的蚀刻法和草稿。 */
   function findQuickPlaceSpot(itemId, prefRot, prefMir) {
     const unit = V.UI.workshopUnit(state.roster.find(u => u.id === ui.wsUnit), ui);
     if (!unit) return null;

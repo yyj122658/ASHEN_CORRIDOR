@@ -16,6 +16,7 @@ const ORDER = [
   'src/veteran/terms.js',
   'src/veteran/flavor.js',
   'src/veteran/stats-engine.js',
+  'src/veteran/derive.js',
   'src/veteran/state.js',
   'src/veteran/kitchen.js',
   'src/veteran/catalogue-art.js',

@@ -1,10 +1,13 @@
 /* 回廊行图与远征界面。节点插画直接来自游戏图集。 */
 .ex-page {
-  --ex-metal: #1a242b;
-  --ex-edge: #394852;
-  --ex-copper: #e0ab7f;
-  --ex-type: #e4e8e9;
-  --ex-muted: #acbcc5;
+  /* 2026-11-16：原来这里自带一套 #1a242b / #e0ab7f 的独立色。
+     现在只做「别名」—— 值全部来自 styles/tokens.css，不再有第二份色源。
+     文件里其余写死的十六进制是局部高光/阴影，留在原处不影响统一。 */
+  --ex-metal: var(--surface);
+  --ex-edge: var(--border-soft);
+  --ex-copper: var(--accent);
+  --ex-type: var(--text);
+  --ex-muted: var(--text-muted);
   color: var(--ex-type);
   display: grid;
   gap: 18px;

@@ -1,35 +1,51 @@
-/* 设计 token：颜色、字体、间距、层次 */
+/* 设计 token：《遗迹秘仪》十色 · 像素皮肤的唯一色源。
+
+   2026-11-16 收口：此前 atelier.css 在 :root 里重定义了一遍同名变量、
+   expedition.css 又在 .ex-page 里带一套 --ex-* 局部色，运行时三套色系同时生效。
+   现在只有这里定义颜色，其余两处改成「映射到本文件的变量」，不再各写各的。
+
+   十色与 scripts/process-art-assets.py 的 PALETTE、assets/art/curated/ 的
+   清洗产物严格同一份 —— 换色只能改这个文件，否则图与界面会分家。 */
 :root {
-  --bg: #0B0A10;
-  --surface: #17141F;
-  --surface-raised: #211B2B;
-  --surface-hi: #2A2233;
-  --border: #514351;
-  --border-soft: #352B3C;
+  /* 底与面 */
+  --bg: #141722;
+  --surface: #1E2230;
+  --surface-raised: #262C3E;
+  --surface-hi: #323A50;
 
-  --text: #E5DBCA;
-  --text-muted: #B0A597;
-  --text-dim: #7E7466;
+  /* 描边 */
+  --border: #7A838F;
+  --border-soft: #4F5968;
 
-  --accent: #D9AD65;
-  --accent-bright: #F2CF7E;
-  --accent-dim: #8A6F32;
-  --ember: #D87843;
-  --danger: #D36A65;
-  --success: #8DB69B;
-  --ice: #7FBBC8;
-  --shadow: #AD8AC7;
+  /* 字 */
+  --text: #D4CABB;
+  --text-muted: #9BA3B0;
+  --text-dim: #7A838F;
 
-  --metal-edge: #6E593F;
-  --metal-hi: rgba(239, 208, 130, 0.22);
-  --metal-shade: rgba(5, 4, 9, 0.65);
+  /* 强调 */
+  --accent: #BC8C50;
+  --accent-bright: #E0963F;
+  --accent-dim: #7D5B32;
+  --ember: #E0963F;
+  --danger: #A64D4F;
+  --success: #57A6A7;
+  --ice: #57A6A7;
+  --shadow: #79508F;
 
-  --q0: #8A8A8A;
-  --q1: #B0A597;
-  --q2: #8DB69B;
-  --q3: #7FBBC8;
-  --q4: #AD8AC7;
-  --q5: #D9AD65;
+  /* 最深的那个色：轮廓、硬投影、凹槽 */
+  --ink: #0F111A;
+
+  --metal-edge: #7D5B32;
+  --metal-hi: rgba(224, 150, 63, 0.18);
+  --metal-shade: rgba(15, 17, 26, 0.72);
+
+  /* 稀有度：灰 → 金属 → 共振青 → 秘仪紫 → 炬火橙 → 古铜金 */
+  --q0: #4F5968;
+  --q1: #7A838F;
+  --q2: #57A6A7;
+  --q3: #79508F;
+  --q4: #E0963F;
+  --q5: #BC8C50;
 
   --font-body: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
   --font-title: "Songti SC", "SimSun", "STSong", Georgia, serif;
@@ -43,10 +59,13 @@
   --s6: 32px;
   --s7: 48px;
 
-  --radius: 3px;
+  /* 像素皮肤没有圆角 */
+  --radius: 0px;
   --line: 1px solid var(--border);
   --line-soft: 1px solid var(--border-soft);
-  --shadow-hard: 3px 3px 0 #000;
+  /* 硬边投影：不用模糊，拉开一层就够 */
+  --shadow-hard: 2px 2px 0 var(--ink);
+  --shadow-hard-lg: 4px 4px 0 var(--ink);
 
   --maxw: 1280px;
 }

@@ -7,16 +7,24 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-test('蚀刻法拓片与纹路分层：异形板上合法覆盖并能达到100%贯通', () => {
+test('蚀刻法与纹路分层：单件压不满骨架，起手通路才接通', () => {
+  /* 六标之后骨架有 6~54 格，「一件 straight 压满 → 100% 贯通」这件事不再成立，
+     而它本来想守的语义是**分层**：纹路是填充物，不是一件就点亮的开关。
+     现在守两半：单件压不满（pct < 100、接不通），起手通路能接通。 */
   const V = loadVeteran().Veteran;
   const st = V.State.create(42);
   const u = st.roster[0];
   const part = st.itemsById[u.board.placements[0].itemId];
   part.templateId = 'straight';
-  u.board.placements = [{ itemId: part.id, x: u.manuscript.x, y: u.manuscript.y, rotation: u.manuscript.rotation, mirrorY: u.manuscript.mirrorY }];
-  assert.equal(V.Circuit.preview(st, u.id, u.board.placements).ok, true);
-  assert.equal(V.Circuit.manuscriptState(st, u.id).pct, 100);
-  assert.equal(V.Circuit.manuscriptState(st, u.id).routed, true);
+  const single = [{ itemId: part.id, x: u.manuscript.x, y: u.manuscript.y, rotation: 0, mirrorY: false }];
+  assert.equal(V.Circuit.preview(st, u.id, single).ok, true);
+  assert.ok(V.Circuit.manuscriptState(st, u.id, single).pct < 100, '单件不该压满整块骨架');
+
+  const loadout = V.Circuit.autoLoadout(st, u);
+  assert.ok(loadout && loadout.length >= 2, '起手通路应铺得出来');
+  const ms = V.Circuit.manuscriptState(st, u.id, loadout);
+  assert.equal(ms.routed, true, '起手通路应接通');
+  assert.ok(ms.pulse.path.length >= 2);
 });
 
 test('新队伍有铁鸦与灰烬两人，开局已形成共鸣', () => {
@@ -27,7 +35,11 @@ test('新队伍有铁鸦与灰烬两人，开局已形成共鸣', () => {
     assert.deepEqual(Array.from(st.team),[...st.roster.map(u=>u.id),null,null]);
     assert.equal(new Set(st.roster.map(u=>u.manuscript.id)).size,2);
     for (const u of st.roster) {
-      assert.equal(V.Circuit.manuscriptState(st, u.id).pct, 100);
+      /* 开局要「已经形成共鸣」：通路接通、面板有占格。
+         不再要求 100% 覆盖 —— 骨架扩到 6~54 格之后，开局铺不满是设计而不是缺陷。 */
+      const ms = V.Circuit.manuscriptState(st, u.id);
+      assert.equal(ms.routed, true, `${u.name} 开局应已接通`);
+      assert.ok(ms.pct > 0, `${u.name} 开局应有覆盖`);
       assert.equal(V.Circuit.preview(st, u.id, u.board.placements).ok, true);
     }
   }
@@ -119,7 +131,8 @@ test('治疗贡献属于施法者，战场1号位确实最靠近敌人', () => {
   const { V, st, b, actor } = battleFixture();
   actor.casting = 'care'; actor.castTimer = 0;
   actor.pendingSkill = { id: 'care', target: 'ally', effect: { heal: 1 } };
-  b.allies[1].hp -= 60;
+  /* v4.0 的完整度只有 25~120：按比例掉血，别直接打成负数（死了就没人可治） */
+  b.allies[1].hp = Math.max(1, b.allies[1].hp - Math.round(b.allies[1].maxHp * 0.5));
   const after = V.Combat.step(st).state.run.battle;
   assert.ok(after.allies[0].stats.healing > 0);
   assert.equal(after.allies[1].stats.healing, 0);
@@ -130,10 +143,15 @@ test('治疗贡献属于施法者，战场1号位确实最靠近敌人', () => {
 
 test('旧档携带双流旧招式顺序，仍使用当前规则择机护持', () => {
   const V = loadVeteran().Veteran;
-  let st = V.State.create(42, { classicPlate: true });
+  /* 77 格异形板 + 真实装配：双流是 44 格的骨卷，14 格经典夹具塞不下 */
+  let st = V.State.create(42);
   const ms = V.Data.MANUSCRIPTS.twinflow;
-  st.roster[0].manuscript = { ...ms, x: 0, y: 0, rotation: 0, mirrorY: false,
-    skills: [ms.skills.find((s) => s.id === 'flowA'), { ...ms.skills.find((s) => s.id === 'flowB'), cond: { energyAbove: 14 } }] };
+  V.State.equipManuscript(st, st.roster[0], 'twinflow');
+  V.Circuit.autoLoadout(st, st.roster[0]);
+  st.roster[0].manuscript = {
+    ...st.roster[0].manuscript,
+    skills: [ms.skills.find((s) => s.id === 'flowA'), { ...ms.skills.find((s) => s.id === 'flowB'), cond: { energyAbove: 14 } }],
+  };
   const decoded = V.Storage.decode(V.Storage.encode(st));
   assert.equal(decoded.ok, true);
   st = V.Expedition.start(decoded.state, { seed: 42 }).state;
@@ -141,6 +159,8 @@ test('旧档携带双流旧招式顺序，仍使用当前规则择机护持', ()
   st = V.Combat.create(generated.state, generated.enemyBlueprint, generated.combatRngStart).state;
   const b = st.run.battle;
   [...b.allies, ...b.enemies].forEach((u) => { u.atkTimer = -100; });
-  b.allies[0].atkTimer = 100; b.allies[0].energy = 20; b.allies[1].hp = 30;
+  b.allies[0].atkTimer = 100; b.allies[0].energy = 20;
+  /* 双流的右流要「有人受伤」（<60%）才排到前面 */
+  b.allies[1].hp = Math.max(1, Math.round(b.allies[1].maxHp * 0.4));
   assert.equal(V.Combat.step(st).state.run.battle.allies[0].casting, 'flowB');
 });

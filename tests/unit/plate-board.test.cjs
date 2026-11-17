@@ -13,13 +13,16 @@ const key = (c) => c[0] + ',' + c[1];
 test('新开档走异形板面，每个单位都有自己的 plateSeed', () => {
   const st = V.State.create(4242);
   assert.equal(st.plateMode, 'plate');
+  const shapes = new Set();
   st.roster.forEach((u) => {
     assert.ok(Number.isInteger(u.plateSeed), `${u.name} 缺少 plateSeed`);
     const plate = V.Circuit.plateOf(u);
     assert.equal(plate.generated, true);
-    const target = V.Data.BODIES[u.bodyPreset].plate.target;
+    const target = V.PlateGen.PLATE_TARGET;
     assert.equal(plate.cells.size, target, `${u.name} 格数应命中 ${target}`);
+    shapes.add([...plate.cells].sort().join('|'));
   });
+  assert.equal(shapes.size, st.roster.length, '每个单位的板面都该不一样');
 });
 
 test('同一单位重复取板面结果一致（seed 稳定，可存档）', () => {
@@ -62,14 +65,14 @@ test('板面外的位置报「不在板面上」，不再说屏蔽格', () => {
   const st = V.State.create(2468);
   const u = st.roster[0];
   const plate = V.Circuit.plateOf(u);
-  /* 找一个肯定不在板面上的格 */
+  /* 找一个肯定不在板面上的格：板面装在 12×12 包围盒里，73% 的格子是空的 */
   let outside = null;
-  for (let y = 0; y < 7 && !outside; y++) {
-    for (let x = 0; x < 7 && !outside; x++) {
+  for (let y = 0; y < plate.size && !outside; y++) {
+    for (let x = 0; x < plate.size && !outside; x++) {
       if (!plate.cells.has(x + ',' + y)) outside = [x, y];
     }
   }
-  assert.ok(outside, '板面不该铺满 7x7');
+  assert.ok(outside, `板面不该铺满 ${plate.size}x${plate.size}`);
   const part = V.State.makePart(V.State.clone(st), { kind: 'circuit', templateId: 'straight' });
   const tmp = V.State.clone(st);
   tmp.itemsById[part.id] = part;

@@ -64,7 +64,7 @@ test('余裕为 0 也照样普通攻击，余裕全留给招式', () => {
   assert.equal(r.cost, 0);
 });
 
-test('重炮在 4 号位只要 2 能量，别处要 4', () => {
+test('重炮在 4 号位只要 2 余裕，别处要 4', () => {
   assert.equal(T.mainCost('heavyCannon', 3), 2);
   assert.equal(T.mainCost('heavyCannon', 0), 4);
   assert.equal(T.mainCost('shortBlade', 0), 2);
@@ -76,7 +76,7 @@ test('长矛只在 0/1 号位可用', () => {
   assert.equal(T.mainAllowed('longSpear', 2), false);
 });
 
-test('atSlot 与 enemyCharging 条件按身位和蓄力解析', () => {
+test('atSlot 与 enemyCharging 条件按身位和引导解析', () => {
   const c = ctx();
   c.enemies[0].charging = true;
   const r = T.evaluate(c, [{

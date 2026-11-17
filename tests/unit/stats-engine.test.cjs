@@ -41,12 +41,14 @@ test('改 boost 数值后，文案自动跟着变（文案里没有硬编码）'
 test('蚀刻法数值事实：主修间隔、余裕、招式、共鸣阶齐全', () => {
   const f = S.manuscriptFacts(D.manuscript('corridor5'));
   assert.equal(f.flavor, '一线穿喉，余势不断，前排没有谁能独自站着。');
-  assert.deepEqual(f.main.map((x) => `${x.label} ${x.value}`), ['普通攻击间隔 0.50s', '余裕恢复 +1/s', '余裕上限 20']);
-  assert.equal(f.skills.length, 1);
+  assert.deepEqual(f.main.map((x) => `${x.label} ${x.value}`), ['普通攻击间隔 1.10s', '余裕恢复 +1/s', '余裕上限 20']);
+  /* 2 阶起每门都有两个招式：核心招 + 异常/连携追击招（2026-11-15 分轴改造） */
+  assert.equal(f.skills.length, 2);
+  assert.deepEqual(f.skills.map((x) => x.name), ['一线穿心', '续裂']);
   const sk = f.skills[0];
   assert.equal(sk.name, '一线穿心');
   assert.equal(sk.condition, '余裕足够时');
-  assert.equal(sk.effect, '180% 攻击 · 贯穿前 2 位');
+  assert.equal(sk.effect, '伤害 180% · 贯穿 2');
   assert.equal(sk.cost, '6 余裕');
   assert.equal(sk.cooldown, '冷却 4s');
   assert.deepEqual(f.tiers.map((t) => t.at), ['40%', '80%', '100%']);
@@ -55,21 +57,24 @@ test('蚀刻法数值事实：主修间隔、余裕、招式、共鸣阶齐全',
 
 test('招式条件译成玩家能判断的时机', () => {
   assert.equal(S.conditionText({}), '余裕足够时');
-  assert.equal(S.conditionText({ alliesHurt: true }), '同伴生命低于 60%');
-  assert.equal(S.conditionText({ attackCount: 4, foeHpBelow: 0.5 }), '敌方生命低于 50% · 普通攻击 4 次后');
+  /* 条件统一成方括号短语（2026-11-15 词表统一），与清单脚本同一套写法 */
+  assert.equal(S.conditionText({ alliesHurt: true }), '[队友受伤]');
+  assert.equal(S.conditionText({ attackCount: 4, foeHpBelow: 0.5 }), '[普攻 ×4] [敌人生命 <50%]');
+  assert.equal(S.conditionText({ afterTag: '流血', minTier: 2 }), '[共鸣二阶] [连携·流血]');
+  assert.equal(S.conditionText({ stressAbove: 50, selfHasShield: true }), '[高压 ≥50] [自身有盾]');
 });
 
-test('共鸣增幅与结算同顺序：共鸣阶 × 贯通 × 负荷价', () => {
+test('共鸣增幅与结算同顺序：共鸣阶 × 贯通（负荷不返利）', () => {
   const ms = {
-    cov: { tier: { name: '三阶 · 圆满', effect: { mainMult: 1.24 } } },
+    cov: { tier: { name: '共鸣三阶 · 圆满', effect: { mainMult: 1.24 } } },
     rt: { ok: true },
     spec: { load: 2 },
   };
   const r = S.resonance(ms);
-  /* 1.24 × 1.15 = 1.43，再 ×1.03（负荷 2）= 1.47 */
-  assert.equal(r.total, 1.47);
-  assert.equal(r.pct, 47);
-  assert.deepEqual(r.parts, ['三阶 · 圆满 ×1.24', '贯通 ×1.15', '负荷 ×1.03']);
+  /* 1.24 × 1.15 = 1.43。负荷价已删，界面也不能再显示那一行 */
+  assert.equal(r.total, 1.43);
+  assert.equal(r.pct, 43);
+  assert.deepEqual(r.parts, ['共鸣三阶 · 圆满 ×1.24', '贯通 ×1.15']);
 });
 
 test('风味句里不允许出现数字：文案与数值彻底分开', () => {
@@ -120,11 +125,14 @@ test('窄栏版只缩长术语：数字、名称、风味句都不动', () => {
 });
 
 test('短标签只出现在窄栏版：全称输出里不得出现「普攻」', () => {
+  /* 条件短语里的 [普攻 ×N] 是标准写法（2026-11-15 词表统一），
+     所以先把方括号段摘掉，再查正文里有没有漏进短标签 */
+  const prose = (t) => t.replace(/\[[^\]]*\]/g, '');
   for (const m of Object.values(D.MANUSCRIPTS)) {
-    assert.ok(!factsText(S.manuscriptFacts(m)).includes('普攻'), `全称版混进了短标签：${m.id}`);
+    assert.ok(!prose(factsText(S.manuscriptFacts(m))).includes('普攻'), `全称版混进了短标签：${m.id}`);
   }
   for (const t of Object.values(D.TEMPLATES)) {
-    assert.ok(!factsText(S.runeFacts(t)).includes('普攻'), `纹路全称版混进了短标签：${t.id}`);
+    assert.ok(!prose(factsText(S.runeFacts(t))).includes('普攻'), `纹路全称版混进了短标签：${t.id}`);
   }
 });
 

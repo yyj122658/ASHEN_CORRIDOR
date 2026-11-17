@@ -49,13 +49,43 @@
     },
   };
 
+  /* 2026-11-16：curated 产物的入口。路径带 assets/ 前缀，get() 会原样用，
+     不再拼 BASE —— 旧的 veteran-v1 目录保留，两边可以共存。 */
+  const CURATED = 'assets/art/curated/';
+
+  Object.entries({
+    'veteran.icon.etching':      'icons/etching_scroll.png',
+    'veteran.icon.channel':      'icons/rune_channel.png',
+    'veteran.icon.capacitor':    'icons/rune_capacitor.png',
+    'veteran.icon.ember':        'icons/rune_ember.png',
+    'veteran.icon.splitter':     'icons/rune_splitter.png',
+    'veteran.icon.threshold':    'icons/rune_threshold.png',
+    'veteran.icon.scar':         'icons/scar_mark.png',
+    'veteran.icon.rust':         'icons/rust_mark.png',
+  }).forEach(([id, path]) => {
+    ASSETS[id] = { path: CURATED + path, w: 32, h: 32, focus: '50% 50%', alpha: true, alt: '' };
+  });
+
+  /* 十四相板面轮廓：id 用底盘 archetype（full / bar / square …），
+     和数据里的 BODIES[].archetype 一一对应，界面不用再记一张表。 */
+  const ARCHETYPES = ['full', 'bar', 'square', 'cross', 'ring', 'ell', 'shield',
+    'hourglass', 'bilobe', 'gear', 'crescent', 'stair', 'zigzag', 'spine'];
+  ARCHETYPES.forEach((key) => {
+    ASSETS['veteran.plate.' + key] = {
+      path: CURATED + 'plates/plate_' + key + '.png',
+      w: 120, h: 120, focus: '50% 50%', alpha: true, alt: '',
+    };
+  });
+
   const status = {};
   const cache = {};
 
   function get(id) {
     const a = ASSETS[id];
     if (!a) return null;
-    return Object.assign({ id, src: BASE + a.path }, a);
+    /* 带 assets/ 前缀的是 curated 的绝对路径，其余仍按 veteran-v1 拼 */
+    const src = a.path.startsWith('assets/') ? a.path : BASE + a.path;
+    return Object.assign({ id, src }, a);
   }
 
   function load(id) {
@@ -119,15 +149,11 @@
 
   /* ---------- v1 美术（营地场景 / 节点插画 / 立绘 / 首领） ---------- */
 
-  /* 皮肤 → v1 职业立绘。SKINS 只带 id 与中文名，画面对应在这里。 */
-  const SKIN_PORTRAIT = {
-    blade: 'portrait.blade',
-    warden: 'portrait.warden',
-    ranger: 'portrait.ranger',
-    warlock: 'portrait.warlock',
-    cleric: 'portrait.cleric',
-    rogue: 'portrait.rogue',
-  };
+  /* 皮肤 → 立绘 id。2026-11-16 起十四人全有清洗头像，所以按 SKINS 直接推，
+     不再手写六个 —— 手写的那份永远会漏掉后加的八位（wanderer0..7）。 */
+  const SKIN_PORTRAIT = Object.fromEntries(
+    (V.Data.SKINS || []).map((skin) => [skin.id, 'portrait.' + skin.id]),
+  );
 
   /** 用 A.Art 的固定映射产出图片标签；没登记或已失败时返回 ''。 */
   function v1Tag(id, cls, style) {
@@ -156,8 +182,28 @@
 
   /** 首领肖像：gatekeeper / memoryEater。 */
   function bossTag(bossId, cls) {
-    if (bossId !== 'gatekeeper' && bossId !== 'memoryEater') return '';
+    if (!bossId || !A.Art.getArt('enemy.' + bossId)) return '';
     return v1Tag('enemy.' + bossId, 'boss-img ' + (cls || ''));
+  }
+
+  /** 板面轮廓缩略图：按底盘 archetype 取 curated/plates/plate_<key>.png。
+      缺图时返回空串，调用方保留原有排版（不留破图）。 */
+  function plateTag(archetype, cls) {
+    const id = 'veteran.plate.' + archetype;
+    const art = get(id);
+    if (!art || status[id] === 'failed') return '';
+    return `<img class="v-art plate-art ${cls || ''}" src="${art.src}" loading="eager" decoding="async"
+      alt="" style="object-position:${art.focus}"
+      onerror="this.classList.add('art-broken');this.removeAttribute('src')">`;
+  }
+
+  /** 图标：etching / channel / capacitor / ember / splitter / threshold / scar / rust。 */
+  function iconTag(name, cls) {
+    const id = 'veteran.icon.' + name;
+    const art = get(id);
+    if (!art || status[id] === 'failed') return '';
+    return `<img class="v-art icon-art ${cls || ''}" src="${art.src}" loading="eager" decoding="async"
+      alt="" onerror="this.classList.add('art-broken');this.removeAttribute('src')">`;
   }
 
   /* 纹路模板 → 收藏品物件图 */
@@ -195,7 +241,7 @@
 
   V.Art = {
     BASE, ASSETS, TEMPLATE_ART, SKIN_PORTRAIT, get, load, preload, image, isReady, statusOf,
-    imgTag, v1Tag, anyImgTag, portraitTag, bossTag,
+    imgTag, v1Tag, anyImgTag, portraitTag, bossTag, plateTag, iconTag, CURATED,
     relicArtFor, relicThumb, sceneBanner, preloadFor,
   };
 })(globalThis.Ashen ||= {});

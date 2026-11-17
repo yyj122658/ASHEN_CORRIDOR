@@ -25,7 +25,7 @@ test('所有传奇与敌人按真实身份选图，换位不换外观', async ()
   const heroes = A.Veteran.Data.SKINS.map(({id}) => fakeUnit({id,skinId:id}));
   const enemies = Object.keys(A.Veteran.Data.ENEMIES).map(id => fakeUnit({id,side:'enemy',enemyType:id}));
   const units = [...heroes, ...enemies];
-  assert.equal(heroes.length,21);
+  assert.equal(heroes.length,14);
   const first = SA.preload(units.map(SA.charIdFor));
   const second = SA.preload(units.map(SA.charIdFor));
   for (const result of await Promise.all([first, second])) assert.equal(result.failed,0);

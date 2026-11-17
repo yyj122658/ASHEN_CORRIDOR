@@ -98,7 +98,7 @@
     return units.filter((x) => x.slot < beforeSlot).map((x) => x.id);
   }
 
-  // 旧档中的拓片尚无阵形动作字段，按谱号从现行谱目补取。
+  // 旧档中的蚀刻法尚无阵形动作字段，按谱号从现行蚀刻法补取。
   function hasMove(actor, id) {
     return actor.modId === id || [actor.ms, ...(actor.extraMs || [])].some(ms =>
       ms?.spec && (ms.spec.modId === id || D().manuscript(ms.spec.id)?.modId === id));

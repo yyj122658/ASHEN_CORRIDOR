@@ -39,9 +39,10 @@
   }
 
   /**
-   * open(st, nodeId)：只在第一次生成敌人/RNG/检查点；重复调用返回同一遭遇。
+   * open(st, nodeId, opts)：只在第一次生成敌人/RNG/检查点；重复调用返回同一遭遇。
+   * opts.bossId 是给模拟器的「分首领胜率矩阵」用的强制首领，生产调用不带。
    */
-  function open(st, nodeId) {
+  function open(st, nodeId, opts) {
     if (!st.run) return ST().fail(st, 'no_run', '还没有远征');
     const node = (st.run.nodes || []).find((n) => n.id === nodeId);
     if (!node) return ST().fail(st, 'no_node', '找不到这个节点');
@@ -58,7 +59,7 @@
     }
 
     const kind = node.type === 'boss' ? 'boss' : node.type === 'elite' ? 'elite' : 'normal';
-    const gen = C().generateEncounter(st, kind);
+    const gen = C().generateEncounter(st, kind, opts);
 
     const next = ST().clone(gen.state);
     next.run.lockedNodeId = nodeId;

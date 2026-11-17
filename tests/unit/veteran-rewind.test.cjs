@@ -45,7 +45,7 @@ test('检查点里没有自嵌套的 encounter', () => {
   assert.ok(!JSON.stringify(cp).includes('"checkpoint"'), '快照里不该再有 checkpoint');
 });
 
-test('rewind 完整恢复 HP / 压力 / 能量 / 背包 / nextId / RNG', () => {
+test('rewind 完整恢复 HP / 压力 / 余裕 / 背包 / nextId / RNG', () => {
   const { A, V } = boot(203);
   let s = startRun(A, V.State.create(4242, { classicPlate: true }), 203);
   s = setNodes(A, s, ['battle']);

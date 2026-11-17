@@ -8,20 +8,79 @@
   /* ------------------------------ 全局参数 ------------------------------ */
   const DESIGN = {
     /* 金属形态只影响装配条件，不再附赠职业面板。 */
-    metalBase: { hp: 140, atk: 28, def: 12, spd: 10 },
+    /* v4.0：攻/防/血锚点已废除。裸装心核基座写在 derive.js 的 CHASSIS 里，
+       所有增量由 circuit.compile 按纹路拓扑产出 —— 这里不再有第二份面板。 */
+    /* 负荷上限 = 板面格数 × 系数，但**两套板面两个系数**，别合并：
+       - 经典 4×4 夹具（14 格，只给老存档与单测用）沿用 0.57 → 8 点；
+       - 异形板面（77 格，真游戏）用 0.26 → 20 点。
+
+       为什么异形板面反而更紧：0.57 那条是从「14 格配 8 点」反推出来的每格密度，
+       直接套到 77 格上会得到 44 点——而装满 4 门功法加纹路只要 18~22 点，
+       于是「超载转裂纹」在正常局内永远触发不了，负荷系统整条空转。
+       压到 20 点之后，装第二门重功法就要开始算账，§6.4 的过用则裂才有机会发生。
+
+       为什么夹具不跟着改：14 格 × 0.26 只有 4 点，老测试与老存档会成片崩。
+       夹具是测量用的尺子，不是玩法；尺子跟着玩法变，就没法比较了。 */
+    capPerCell: 0.57,
+    /* 六标：蚀刻法从 2~14 格扩到 6~54 格，0.26（77 格 → 20 点）就再也压不满一门大卷了 ——
+       骨架占了大半块板，纹路却只买得起 20 点，覆盖永远卡在三成。
+       0.72 → 77 格 = 55 点，正好是「满配有效占格 ~55」的量级。 */
+    generatedCapPerCell: 0.72,
+    /* 超载转裂纹：每超 1 点负荷，开局压力 +8、自然回裕 -0.04/s。
+       压力在 heatThreshold 之上算「高热」——超载扣的那一段回裕不再扣，
+       金属被自己的热顶开了，维持纹路的那点阻力反而抵掉了。
+       **但压力本身的 0.85 / 0.65 乘算照旧，裂的抛光惩罚也照旧**：
+       免的只是超载那一笔，不是高压的代价（高压仍然是走钢丝，不是红利）。 */
+    overload: { stressPerPoint: 8, regenPerPoint: 0.04, heatThreshold: 50 },
+    /* 同时维持的功法数。超过 4 门，方向律与深度律会互相拉扯（正交抵消、斜交制约深度），
+       装得下也刻不深，等于自废。硬上限只是把这个自然结论写死。 */
+    manuscriptSlots: 4,
     gridSize: 4,
     /* 时间轴：一步 0.24s，战斗按秒推进 */
     stepSeconds: 0.24,
-    autoAttack: { interval: 0.5, mult: 0.55 },
-    energyBase: { regen: 1.0, max: 20 },
+    /* v4.0：一次普攻 = 一次完整脉冲（1.1 倍幅值）。
+       0.55 是旧世界（140 完整度 + 敌人 0.13 伤害缩放）的产物 —— 那时候敌人
+       几乎打不动人，普攻砍半也无所谓。现在两边同量级，普攻还砍半就等于
+       玩家天生比敌人少一半输出，3 打 2 必输。 */
+    /* v4.0 五标：1.10s 一跳。0.5 的时候四人齐射能压到 16:1（我方 11.8 跳/s 对敌方 0.53），
+       读不出来也打不出取舍。拉到 1.10 之后，单人对敌人是 3.8:1（enemyPace 不变），
+       整队约 5:1 —— 这是「看得清楚」和「还有压力」的交点。 */
+    /* 七标：敌我行动比重新对齐。3.8 的节点脉动（4.18s）配 1.10s 的四人小队，
+       前中期的有效出手比落在 10:1 以上，敌人整场只挥得动两三下 ——
+       于是「外围熔断」「打断重铸」这些**靠敌人重击才成立**的机制永远见不到。
+       2.4 → 单节点 2.64s 一跳，整队比收敛到 ~6:1：还在四打一，但压力是可读的。 */
+    autoAttack: { interval: 1.1, mult: 0.75 },
+    /* 七标：起手余裕从「半满」砍到「四分之一」。半满意味着开场就能连放两招，
+       招式永远轮不到「差一点」的窘境，枯竭停机因此从未发生。
+       1/4 起手（满配约 4~5 点）刚好够第一手，第二手必须等回裕 —— 资源张力从这里开始。 */
+    /* 招式能耗附加：所有主动招式在结算时多扣 1 点余裕（skillCost 里加，最低仍是 1）。
+       0.55/s 的回裕下，1 点 = 1.82s 的等待 —— 足够让「这一手交不交」变成真问题。
+       只对我方生效：敌方是核心节点，没有余裕预算这回事。 */
+    skillEnergySurcharge: 1,
+        /* 八标：回裕 0.55 → 0.42/s。从 0 恢复到 1 点要 2.38s ≈ 10 tick，
+       已经**超过** 6 tick 的停机阈值 —— 空转会真的把人带走，不再只是「超载与被抽」的故事。
+       配合 1/5 起手（见 combat.js 的 buildAlly），高耗能招式必须算余裕。 */
+    energyBase: { regen: 0.42, max: 20 },
     energyPerHit: 0,
     baseSpeed: 10,
     /* 蚀刻法稀有度直接抬角色面板：这是除乘算之外唯一的成长维度 */
-    rarityStat: { atk: 0.06, hp: 0.07, def: 0.04 },
-    /* 敌人仍走旧的行动逻辑，伤害按普通攻击的新量级统一缩放，避免一边倒 */
-    enemyDamageScale: 0.13,
-    /* 我方普通攻击归一化后，敌人血池要相应拉长，否则一场只有 10 秒 */
-    enemyHpScale: 2.6,
+    /* v4.0：阶位不再膨胀属性。「高阶层」只是刻得更深，不是天生更大。 */
+    /* v4.0：补丁常数全部归零。敌人的血与伤直接写进 ENEMIES 的「核心节点量级」，
+       不再乘一层神秘系数 —— 想调平衡就改那张表，别在这里加一个 0.13。 */
+    enemyDamageScale: 1,
+    enemyHpScale: 1,
+    /* 节点脉动比人慢：敌方是「核心节点」，不是决斗者。
+       它们单次脉冲和玩家同量级（atk 8~14 对 10），但充能要更久，
+       否则三个人齐射会在第一个回合把 2 人小队打穿（实测 4 回合减员 1 人）。
+       这是节奏参数，不是伤害补丁 —— 改伤害请改 ENEMIES 的 atk。
+       七标：3.8 → 2.4。3.8 是 4v1 时代的数；现在四人小队 + 深层的 3~4 名编队，
+       再按 3.8 走会让敌人整场只挥两下，熔断与打断都成了摆设。 */
+    /* 八标：节点脉动改成「浅层慢、深层快」的插值。
+       全局压到 1.40 会让第 1~2 章（两人小队 + 1 阶骨架）直接不可通关；
+       而全局留在 2.40 又会让 F36/F49 的敌人整场只挥两三下。
+       从第 7 层的 2.40 线性收到第 49 层的 enemyPace —— 两头都成立。 */
+    enemyPaceShallow: 2.40,
+    enemyPace: 1.40,
     baseHit: 0.94,
     baseCrit: 0.10,
     baseDodge: 0.05,
@@ -45,37 +104,166 @@
     logicUnlockExtracts: 2,
     attuneRuns: 3,
     fieldInscribe: { maxHpMult: 0.8, stress: 40 },
+    /* 满压临界（过用则裂）。压力顶到 100 的那一刻，金属要做一次决断——一人一场只掷一次。
+       大概率它裂：纹理方向律反转，原本「越紧绷越利」的那条纹，转头去撕它自己。
+       满压的 ×1.25 在裂的人身上是 damageMult，回裕还要再乘 polishMult，受到的伤害另乘 takenMult。
+       小概率它砺：不声张，压力自己卸掉一半，抛光反而更顺。砺不留记录。
+       80 档仍是纯增益，所以最优打法是「顶到 99 不要到 100」——满压不是增益，是悬崖。 */
+    resolve: {
+      whetChance: 0.25,
+      crack: { damageMult: 0.85, takenMult: 1.25, polishMult: 0.70 },
+      whet: { stress: 50, polishMult: 1.20 },
+    },
     emergency: { stress: 10, keepRatio: 0.5 },
     defeat: { stress: 20 },
+    /* 异常 / 连携的一批常量。四种异常的结算逻辑在 combat.js 的 DOT 段，
+       这里只放数字，改数值不用动代码。 */
+    detonate: { mult: 1.25 },                          /* 引爆剩余总伤 ×1.25 */
+    corrode: { defPerStack: 0.04, defCap: 0.4, stressMult: 1.3 }, /* 每层降防 4%（上限 40%），压力 +30% */
+    /* afterTag 的接续窗口。5 秒是按余裕推出来的：基础回裕 1.0~1.6/s、第二招 4~12 点，
+       攒够一手要 3~8 秒，窗口比这短就等于「永远差一点」。
+       队友的窗口更短（3.5s）：跨角色接力要更讲究时机，不然一个队四个人永远互相续着。 */
+    comboWindow: 5,
+    comboWindowAlly: 3.5,
     recruitCost: { min: 55, max: 80 },
-    scaling: { hpPerFloor: 0.15, atkPerFloor: 0.09, defPerFloor: 0.06, minionHpMult: 0.72, bossMinionHpMult: 0.40 },
+    /* v4.0：成长曲线按「绝对层数 / 6」摊。旧值（0.15 / 0.09）是给 140 完整度 + 0.13 伤害补丁
+       的时代定的 —— 现在敌人数值直接生效，第 28 层的首领会抬到 atk 28 / hp 300，而玩家的
+       面板只随装配涨，两边脱节。压到 0.06 / 0.035：最深一层血 ×1.48、幅值 ×1.28。
+
+       七标：atkPerFloor 0.035 → 0.075。0.035 让 F49 的攻击只涨 28%，
+       而玩家的板面在同一段里能翻一倍 —— 后半场因此一路 100% 通关。
+       0.075 让 F49 的幅值到 ×1.60，与 ENEMIES 里整体上调的 30% 叠起来
+       约 ×2.08：深层敌人的一下重击终于够得着熔断阈值。
+       hpPerFloor 保持 0.06：完整度的成长不是问题（战斗早已够长），
+       让它跟着攻击一起涨只会把回合数推到超时。 */
+    /* 八标：逐层成长也分浅层 / 深层两档（第 7 层用 shallow，第 49 层用深层值，中间线性）。
+       只把深层曲线拉陡会让第 2~3 章（2~3 人小队、1~2 阶骨架）变成数值墙；
+       两档插值之后，浅层保持七标手感，深层才是重标后的压强。 */
+    scaling: {
+      hpPerFloor: 0.38, atkPerFloor: 0.14,
+      hpPerFloorShallow: 0.10, atkPerFloorShallow: 0.075,
+      defPerFloor: 0.02, minionHpMult: 0.72, bossMinionHpMult: 0.28,
+    },
     floorRecovery: 0.12,
   };
 
-  /* ------------------------------ 底盘 ------------------------------ */
-  /* blocked 为 4x4 内的屏蔽格，坐标 x 向右、y 向下，0-3 */
+  /* ------------------------------ 底盘（生命金属形态） ------------------------------ */
+  /* 14 种形态，共 77 格。blocked 只服务经典 4×4 夹具（老存档与单测）。
+     profile 是面板的分配权重（四项和 = 1），不再写死 hp/atk/def/spd——
+     数值由 V.Derive 从 profile 派生，见 derive.js。
+     保留 sturdy / agile / conduit 三个旧 id，老存档按同名回落到新形态。 */
   const BODIES = {
     sturdy: {
-      id: 'sturdy', name: '厚铸躯壳',
-      hp: 160, atk: 28, def: 18, spd: 8,
-      loadCap: 8, blocked: [[2, 3], [3, 3]],
-      /* 板面：由 seed 生成的异形金属，格数与形状解耦 */
-      plate: { archetype: 'full', target: 28, loadCap: 16 },
-      desc: '厚甲慢步。能扛住贯穿，但上手慢。',
+      id: 'sturdy', name: '厚铸躯壳', archetype: 'full',
+      profile: { hp: 0.44, atk: 0.20, def: 0.26, spd: 0.10 },
+      blocked: [[2, 3], [3, 3]],
+      desc: '最大的一块铁。皮层厚、重心低，出手慢半拍。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'sturdy', name: '无相包容', desc: '板面负荷上限 +35%：母板更厚，压得住更多纹路。' },
     },
     agile: {
-      id: 'agile', name: '轻量骨架',
-      hp: 120, atk: 28, def: 8, spd: 14,
-      loadCap: 6, blocked: [[0, 0], [2, 3]],
-      plate: { archetype: 'bar', target: 22, loadCap: 13 },
-      desc: '出手快、皮薄。余裕周转快，容错低。',
+      id: 'agile', name: '轻量骨架', archetype: 'bar',
+      profile: { hp: 0.30, atk: 0.24, def: 0.12, spd: 0.34 },
+      blocked: [[0, 0], [2, 3]],
+      desc: '窄长的梁。护不住，但每一下都比别人来得早。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'agile', name: '一往无前', desc: '板面每空出 10% 的格，输出脉冲幅值 +8%（最多 +40%）。' },
     },
     conduit: {
-      id: 'conduit', name: '导流腔体',
-      hp: 140, atk: 28, def: 12, spd: 10,
-      loadCap: 7, blocked: [[0, 0], [3, 3]],
-      plate: { archetype: 'square', target: 28, loadCap: 15 },
-      desc: '居中。屏蔽格偏角，两条基础线路都能过。',
+      id: 'conduit', name: '导流腔体', archetype: 'square',
+      profile: { hp: 0.40, atk: 0.24, def: 0.18, spd: 0.18 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '方整的坯。四项都不吃亏，也都不出挑。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'conduit', name: '虚室生白', desc: '每装配 1 门 1–2 阶浅层蚀刻法，全招式余裕消耗 −1（最低 1）；但所有蚀刻法最高只按共鸣二阶结算。' },
+    },
+    throat: {
+      id: 'throat', name: '空腔喉管', archetype: 'ring',
+      profile: { hp: 0.38, atk: 0.22, def: 0.16, spd: 0.24 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '中间是空的。纹路只能绕着腔壁走，越绕越顺。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'throat', name: '周流回环', desc: '每形成一个闭合环路，脉冲幅值 +10%（上限 +60%）。' },
+    },
+    corner: {
+      id: 'corner', name: '折角板', archetype: 'ell',
+      profile: { hp: 0.42, atk: 0.22, def: 0.22, spd: 0.14 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '缺一角。直角那一侧特别吃得住，缺的那边要拿纹路补。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'corner', name: '三隅稳固', desc: '每次 90° 转折的脉冲增益翻倍（每次 +24%），且每次转向补充电容缓冲。' },
+    },
+    aegis: {
+      id: 'aegis', name: '覆盾', archetype: 'shield',
+      profile: { hp: 0.46, atk: 0.18, def: 0.26, spd: 0.10 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '上宽下收。正面最厚，两侧薄得能看见光。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'aegis', name: '正面如壁', desc: '位于队伍 1 号位时，自身获得护盾量 +25%，且防御减伤时反弹 35% 减免伤害。' },
+    },
+    waist: {
+      id: 'waist', name: '两截', archetype: 'hourglass',
+      profile: { hp: 0.32, atk: 0.26, def: 0.16, spd: 0.26 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '中间掐断。两端各有一片开阔地，连接处只有两三格。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'waist', name: '两极共振', desc: '压力 ≥50 时脉冲幅值 ×1.45；单次受到超过生命上限 15% 的伤害额外 +5 压力。' },
+    },
+    twin: {
+      id: 'twin', name: '孪生', archetype: 'bilobe',
+      profile: { hp: 0.38, atk: 0.26, def: 0.18, spd: 0.18 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '两团金属长在一起。纹路可以从一边铺到另一边。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'twin', name: '双生主修', desc: '第 2 门蚀刻法（第一辅修）按 100% 主修乘算结算，且不同标签的招式之间可直接触发连携。' },
+    },
+    ratchet: {
+      id: 'ratchet', name: '棘轮', archetype: 'gear',
+      profile: { hp: 0.34, atk: 0.24, def: 0.24, spd: 0.18 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '边缘一圈齿。齿尖放不下大纹路，却能把细纹咬得很死。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'ratchet', name: '齿咬碎纹', desc: '板上每铺设 1 件占格不超过 2 格的纹路，基础回裕 +0.08/s（上限 +0.48/s）。' },
+    },
+    arc: {
+      id: 'arc', name: '弧月', archetype: 'crescent',
+      profile: { hp: 0.36, atk: 0.22, def: 0.14, spd: 0.28 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '弯的一条。中间薄、两头厚，长纹路只能顺着弯铺。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'arc', name: '孤弧锋锐', desc: '主修蚀刻法达到 100% 覆盖且贯通时，所有攻击与招式无视目标 25% 防御，且引爆异常伤害 +20%。' },
+    },
+    terrace: {
+      id: 'terrace', name: '阶台', archetype: 'stair',
+      profile: { hp: 0.40, atk: 0.24, def: 0.22, spd: 0.14 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '一级一级错下去。三个高度各有各的落点。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'terrace', name: '累土递进', desc: '战斗每经过 1 个完整回合（6 步），全招式伤害与治疗叠加 +4%（上限 +32%）。' },
+    },
+    ripple: {
+      id: 'ripple', name: '波纹带', archetype: 'zigzag',
+      profile: { hp: 0.34, atk: 0.26, def: 0.14, spd: 0.26 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '起伏的一条。顺着波峰能连成长线，横着切却处处错开。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'ripple', name: '曲径通幽', desc: '板上每铺设 1 件曲折纹路，闪避率 +3%（上限 +18%）、招式引导时间 −15%（最多 −60%）。' },
+    },
+    spine: {
+      id: 'spine', name: '脊梁', archetype: 'spine',
+      profile: { hp: 0.38, atk: 0.26, def: 0.20, spd: 0.16 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '一条中轴加四对横肋。中轴最好用，横肋只够挂一件。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'spine', name: '中脊挂刺', desc: '主修蚀刻法每搭配 1 门 1 阶辅修蚀刻法，主修招式伤害 +14%（上限 +42%）。' },
+    },
+    crucible: {
+      id: 'crucible', name: '十字枢', archetype: 'cross',
+      profile: { hp: 0.34, atk: 0.26, def: 0.18, spd: 0.22 },
+      blocked: [[0, 0], [3, 3]],
+      desc: '四臂张开。四个方向都够得着，四角都是空的。',
+      /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
+      innate: { id: 'crucible', name: '四达并存', desc: '已贯通的横向与纵向同时存在时，分流系数由 0.65 提升到 1.0。' },
     },
   };
 
@@ -137,10 +325,10 @@
   /* 「保护」行动已撤：护盾只由蚀刻法招式给，行动里不再有独立的护持。 */
   const GUARD = {
     energy: 0, reduce: DESIGN.guardReduce,
-    desc: `不耗余裕，下一次受击减伤 ${Math.round(DESIGN.guardReduce * 100)}%，到下次自身行动失效。`,
+    desc: `不耗余裕，受到的下一次攻击减伤 ${Math.round(DESIGN.guardReduce * 100)}%（用掉即失效）。`,
   };
 
-  /* ------------------------------ 回路纹路 ------------------------------ */
+  /* ------------------------------ 纹路 ------------------------------ */
   /* cells 为占格；ports 相对格坐标，dir 为朝向；links 为内部有向连通（端口 id） */
   const TEMPLATES = {
     straight: {
@@ -241,7 +429,10 @@
   addRune('splitter', 'cross', '十字星纹', '十字分水盘', '星芒交于一点，脉动依次传向三个末端。', 3, [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]], [0, 1, 'W'], [[1, 0, 'N'], [2, 1, 'E'], [1, 2, 'S']],
     { skillCostCut: 1, max: 3 }, '招式消耗 -1、余裕上限 +3');
 
-  addRune('straight', 'jack', '折角纹', '单孔角接', '一格之内，细纹从侧缘折向上缘。', 1, [[0, 0]], [0, 0, 'W'], [[0, 0, 'N']],
+  /* 折角纹从直导系挪到弯折系：它同一格给出「侧缘进、上缘出」，
+     本来就是一次 90° 转折。留在直导系里等于让「堆转角」的流派白嫖攻速与闪避，
+     A/B 两家永远分不开。 */
+  addRune('elbow', 'jack', '折角纹', '单孔角接', '一格之内，细纹从侧缘折向上缘。', 1, [[0, 0]], [0, 0, 'W'], [[0, 0, 'N']],
     { max: 1 }, '余裕上限 +1');
   addRune('straight', 'rail', '长脊纹', '冷拉长轨', '一道脊纹直贯四格。', 2, [[0, 0], [1, 0], [2, 0], [3, 0]], [0, 0, 'W'], [[3, 0, 'E']],
     { regen: 0.26, max: 1, healMult: 0.18 }, '余裕恢复 +0.26/s、上限 +1、治疗 +18%');
@@ -323,7 +514,7 @@
     { id: 'always', name: '总是', needsValue: false },
     { id: 'selfHpBelow', name: '自身生命低于', needsValue: true },
     { id: 'allyHpBelow', name: '有队友生命低于', needsValue: true },
-    { id: 'enemyCharging', name: '敌人正在蓄力', needsValue: false },
+    { id: 'enemyCharging', name: '敌人正在引导', needsValue: false },
     { id: 'atSlot', name: '自身位于', needsValue: true },
   ];
   const THRESHOLDS = [25, 50, 75];
@@ -331,7 +522,7 @@
     { id: 'frontFoe', name: '正面敌人' },
     { id: 'lowestHpFoe', name: '最残敌人' },
     { id: 'lowestHpAlly', name: '最残队友' },
-    { id: 'chargingFoe', name: '蓄力中的敌人' },
+    { id: 'chargingFoe', name: '引导中的敌人' },
     { id: 'self', name: '自己' },
   ];
   const ACTIONS = [
@@ -368,10 +559,13 @@
   };
 
   /* ------------------------------ 敌人 ------------------------------ */
+  /* 七标：基础 atk 整体 ×1.30。原来的 8~20 是「敌人几乎打不动人」时代的数，
+     配上 3.8 的节点脉动，后半场敌人整场只挥两三下 —— 熔断保险丝从来没被点着过。
+     上调之后单次脉冲（13~26）才够摸到「满配底盘 8% 完整度」的熔断线。 */
   const ENEMIES = {
     bone: {
       id: 'bone', name: '骸骨兵', enemyType: 'bone',
-      hp: 285, atk: 22, def: 6, spd: 9, hits: 0.94,
+      hp: 69, atk: 13, def: 6, spd: 9, hits: 0.94,
       skills: [
         { id: 'slash', name: '锈刃', energy: 2, mult: 1.0, target: 'frontFoe' },
         { id: 'cleave', name: '横扫', energy: 3, mult: 0.75, target: 'allFoe', cd: 2 },
@@ -380,7 +574,7 @@
     },
     hound: {
       id: 'hound', name: '骨犬', enemyType: 'hound',
-      hp: 230, atk: 26, def: 4, spd: 15, hits: 0.94,
+      hp: 56, atk: 16, def: 5, spd: 15, hits: 0.94,
       skills: [
         { id: 'bite', name: '撕咬', energy: 2, mult: 1.1, target: 'lowestHpFoe' },
         { id: 'howl', name: '嚎叫', energy: 2, mult: 0, target: 'allFoe', stress: 6, cd: 3 },
@@ -389,7 +583,7 @@
     },
     hulk: {
       id: 'hulk', name: '石傀', enemyType: 'hulk',
-      hp: 470, atk: 32, def: 14, spd: 6, hits: 0.90,
+      hp: 106, atk: 14, def: 15, spd: 6, hits: 0.90,
       skills: [
         { id: 'slam', name: '抡砸', energy: 2, mult: 1.25, target: 'frontFoe' },
         { id: 'quake', name: '震地', energy: 3, mult: 0.7, target: 'allFoe', cd: 3 },
@@ -398,7 +592,7 @@
     },
     shuffler: {
       id: 'shuffler', name: '扰位石傀', enemyType: 'shuffler',
-      hp: 430, atk: 24, def: 12, spd: 7, hits: 0.92,
+      hp: 94, atk: 12, def: 12, spd: 7, hits: 0.92,
       skills: [
         { id: 'shove', name: '推挤', energy: 2, mult: 0.8, target: 'frontFoe' },
       ],
@@ -407,7 +601,7 @@
     },
     wraith: {
       id: 'wraith', name: '幽魂', enemyType: 'wraith',
-      hp: 260, atk: 28, def: 6, spd: 12, hits: 0.96,
+      hp: 62, atk: 17, def: 5, spd: 12, hits: 0.96,
       skills: [
         { id: 'drain', name: '汲取', energy: 2, mult: 1.0, target: 'frontFoe', lifesteal: 0.5 },
         { id: 'curse', name: '诅咒', energy: 3, mult: 0.6, target: 'allFoe', dot: { k: 'corrode', v: 4, hits: 2 }, cd: 3 },
@@ -418,7 +612,7 @@
     boneBell: {
       id: 'boneBell', name: '鸣钟骨', enemyType: 'boneBell', sprite: 'bone',
       filter: 'hue-rotate(148deg) saturate(1.6) brightness(1.06)',
-      hp: 255, atk: 19, def: 7, spd: 9, hits: 0.93,
+      hp: 75, atk: 10, def: 7, spd: 9, hits: 0.93,
       skills: [
         { id: 'toll', name: '敲钟', mult: 0.25, target: 'allFoe', blind: { v: 0.22, d: 2 }, stress: 3, cd: 3 },
         { id: 'chime', name: '碎铃', mult: 1.0, target: 'frontFoe' },
@@ -428,7 +622,7 @@
     houndLean: {
       id: 'houndLean', name: '瘦犬', enemyType: 'houndLean', sprite: 'hound',
       filter: 'sepia(0.55) hue-rotate(-12deg) brightness(0.9)',
-      hp: 200, atk: 25, def: 3, spd: 17, hits: 0.95,
+      hp: 56, atk: 18, def: 5, spd: 17, hits: 0.95,
       skills: [
         { id: 'hamstring', name: '断筋', mult: 1.0, target: 'lowestHpFoe', dot: { k: 'bleed', v: 3, hits: 2 } },
         { id: 'leap', name: '扑背', mult: 1.15, target: 'backFoe' },
@@ -438,7 +632,7 @@
     hulkSlag: {
       id: 'hulkSlag', name: '炉渣傀', enemyType: 'hulkSlag', sprite: 'hulk',
       filter: 'sepia(0.6) hue-rotate(8deg) brightness(0.88)',
-      hp: 415, atk: 28, def: 15, spd: 5, hits: 0.90,
+      hp: 100, atk: 13, def: 14, spd: 5, hits: 0.90,
       skills: [
         { id: 'crush', name: '压碎', mult: 1.3, pierce: 0.35, target: 'frontFoe' },
         { id: 'vent', name: '泄渣', mult: 0.5, target: 'allFoe', dot: { k: 'burn', v: 4, hits: 2 }, cd: 3 },
@@ -449,7 +643,7 @@
     wraithChoir: {
       id: 'wraithChoir', name: '唱喑', enemyType: 'wraithChoir', sprite: 'wraith',
       filter: 'hue-rotate(236deg) saturate(1.35) brightness(1.02)',
-      hp: 310, atk: 21, def: 9, spd: 10, hits: 0.95,
+      hp: 81, atk: 12, def: 9, spd: 10, hits: 0.95,
       skills: [
         { id: 'dirge', name: '挽歌', mult: 0, healAllies: 0.16, cd: 4 },
         { id: 'wail', name: '悲鸣', mult: 0.55, target: 'allFoe', stress: 5, cd: 4 },
@@ -459,58 +653,94 @@
     shufflerDragger: {
       id: 'shufflerDragger', name: '拖骸者', enemyType: 'shufflerDragger', sprite: 'shuffler',
       filter: 'sepia(0.4) hue-rotate(180deg) brightness(0.82)', elite: true,
-      hp: 560, atk: 26, def: 16, spd: 9, hits: 0.93,
+      hp: 286, atk: 23, def: 18, spd: 13, hits: 0.93,
       skills: [
-        { id: 'dragChain', name: '拖链', mult: 0.9, target: 'frontFoe', drainEnergy: 2, stripShield: true },
+        { id: 'dragChain', name: '拖链', mult: 0.9, target: 'frontFoe', drainEnergy: 2, stripShield: true, pierce: 0.66 },
       ],
       disrupt: { everyActions: 2, effect: 'insertFrontLast' },
       desc: '不断把人从后排拖到最前，顺手抽走刚攒起来的余裕。',
+      outerNodes: 2,
     },
     stoker: {
       id: 'stoker', name: '火工', enemyType: 'stoker', sprite: 'hulk',
       filter: 'sepia(0.75) saturate(1.7) hue-rotate(-16deg)', elite: true,
-      hp: 520, atk: 30, def: 12, spd: 8, hits: 0.91,
+      hp: 308, atk: 25, def: 16, spd: 13, hits: 0.91,
       skills: [
-        { id: 'blast', name: '鼓风', mult: 0.8, target: 'allFoe', telegraph: true, cd: 3, dot: { k: 'burn', v: 5, hits: 2 } },
-        { id: 'slagSpray', name: '泼渣', mult: 1.2, pierce: 0.4, target: 'frontFoe' },
+        { id: 'blast', name: '鼓风', mult: 0.8, target: 'allFoe', telegraph: true, cd: 3, pierce: 0.66, dot: { k: 'burn', v: 5, hits: 2 } },
+        { id: 'slagSpray', name: '泼渣', mult: 1.2, pierce: 0.66, target: 'frontFoe' },
       ],
       desc: '它先鼓风，再点火。中间那几秒是用来换位的。',
+      outerNodes: 1,
     },
     gatekeeper: {
       id: 'gatekeeper', name: '守门人', enemyType: 'gatekeeper', boss: true,
-      hp: 285, atk: 30, def: 18, spd: 8, hits: 0.94,
+      hp: 288, atk: 20, def: 26, spd: 10, hits: 0.94,
       skills: [
-        { id: 'smash', name: '碎地', energy: 3, mult: 1.0, target: 'allFoe', cd: 3, telegraph: true },
-        { id: 'guardBreak', name: '破阵', energy: 2, mult: 1.35, target: 'frontFoe', pierce: 0.5 },
+        { id: 'smash', name: '碎地', energy: 3, mult: 1.0, target: 'allFoe', cd: 3, telegraph: true, pierce: 0.30 },
+        { id: 'guardBreak', name: '破阵', energy: 2, mult: 1.35, target: 'frontFoe', pierce: 0.30 },
       ],
       phaseAt: 0.5,
       phaseBuff: { name: '裂甲', atkMult: 1.25, spdAdd: 3 },
       phaseSkills: [{ id: 'gateClose', name: '合门', mult: 1.15, target: 'allFoe', telegraph: true, cd: 3 }],
       desc: '门后面的东西。大招会预告，第二阶段会关上门再砸一次。',
+      outerNodes: 2,
+      /* 七标 · 频次检验：**奖励高频直导（A），克制慢重炮（B）**。
+         八标：5 层 / −90%。护膜只拦**够重**的脉冲（单发 >= minHit 20 点）：
+         拦下时本体伤害 −90%，并且每次独立冲击只剥 1 层（单发再高也只剥 1 层，
+         多段与 DOT 每跳各算一次）。B 的 60 点重炮被吃掉九成，A 的 10~16 点连刺原样穿过。
+         小脉冲（A 的 10~16 点连刺）从膜缝里直接穿过去，不剥层、不减伤。
+         为什么加 minHit 这一刀：4 层/回合 + 按次减免对「7.3 次/回合」与
+         「6.7 次/回合」几乎是同一个数（实测两列相差不到 9%），
+         真正把 A 和 B 分开的是**单发尺寸**（12 对 60）——
+         所以护膜必须按尺寸筛，而不是按次数摊，否则这条对位是假咬合。 */
+      membrane: { layers: 5, reduce: 0.90, minHit: 16, name: '相位护膜' },
     },
     memoryEater: {
       id: 'memoryEater', name: '噬忆者', enemyType: 'memoryEater', boss: true,
-      hp: 268, atk: 32, def: 14, spd: 11, hits: 0.96,
+      hp: 259, atk: 24, def: 22, spd: 14, hits: 0.96,
       skills: [
-        { id: 'devour', name: '吞忆', energy: 3, mult: 0.95, target: 'allFoe', stress: 8, cd: 3, telegraph: true },
-        { id: 'reap', name: '收割', energy: 2, mult: 1.3, target: 'lowestHpFoe' },
+        { id: 'devour', name: '吞忆', energy: 3, mult: 0.95, target: 'allFoe', stress: 8, cd: 3, telegraph: true, pierce: 0.40 },
+        { id: 'reap', name: '收割', energy: 2, mult: 1.3, target: 'lowestHpFoe', pierce: 0.40 },
       ],
       phaseAt: 0.5,
       phaseBuff: { name: '饥饿', atkMult: 1.3, spdAdd: 2 },
       phaseSkills: [{ id: 'recall', name: '追忆', mult: 1.3, target: 'backFoe', lifesteal: 0.4, cd: 2 }],
       desc: '它记得你们每一个人。第二阶段开始专挑后排。',
+      outerNodes: 2,
+      /* 七标 · 稳态与压力检验：**奖励高温余烬（C），克制常规续航流**。
+         八标：每次行动抽前排 2 人各 3 点余裕、全家 +10 压力。
+         靠余裕循环维持招式的阵容会被一路抽到「枯竭停机」；
+         C 流派的余烬把压力当燃料（每点压力 +0.5% 幅值），被抽反而变强。 */
+      onAction: { drainEnergy: 5, drainTarget: 'front2', stressAll: 10, stripShield: true, name: '抽忆' },
     },
     furnaceHeart: {
       id: 'furnaceHeart', name: '炉心俑', enemyType: 'furnaceHeart', boss: true, sprite: 'hulk',
-      hp: 300, atk: 27, def: 18, spd: 7, hits: 0.94,
+      hp: 259, atk: 29, def: 30, spd: 16, hits: 0.94,
       skills: [
-        { id: 'furnacePulse', name: '炉脉', mult: 0.55, target: 'allFoe', dot: { k: 'burn', v: 5, hits: 2 }, cd: 2 },
-        { id: 'reforge', name: '重铸', mult: 0, healSelf: 0.08, selfShield: 0.16, cd: 4 },
+        { id: 'furnacePulse', name: '炉脉', mult: 1.25, target: 'allFoe', dot: { k: 'burn', v: 5, hits: 2 }, cd: 2, pierce: 0.60 },
+        /* 重铸：一局最多三次。8%+16% 每 4 秒是「时间站在它那边」，但没有上限时
+           残局会被它拖到超时——这不是难，是打不动。改成 4%+10% / 6 秒 / 三次之后，
+           它仍然是「越拖越难杀」的敌人，但残存一两人也收得掉。 */
+        /* 重铸改成「按秒计的准备窗口」：0.72s（3 tick）里挨到 >=20 的脉冲就被打断，
+           连带震碎刚结起来的护盾。高幅值蓄力的机制红利就在这里 —— 不是打得更疼，
+           是让它打不出来。 */
+        {
+          id: 'reforge', name: '重铸', mult: 0, healSelf: 0.08, selfShield: 0.15, cd: 6, maxUses: 3,
+          telegraph: true, castTime: 0.72, interruptAt: 20,
+        },
       ],
       phaseAt: 0.55,
       phaseBuff: { name: '过载', atkMult: 1.28, spdAdd: 2 },
       phaseSkills: [{ id: 'overload', name: '过载喷发', mult: 1.5, target: 'allFoe', telegraph: true, cd: 4 }],
       desc: '烧了七层的炉子。它靠灼烧和自修把战斗拖长，时间站在它那边。',
+      outerNodes: 2,
+      /* 七标 · 破甲与打断检验：**奖励线圈重炮（B），克制高频刮痧（A）**。
+         八标：阈值 18 / 衰减 55%。单发不到 18 点的脉冲在炉壁上再被砍掉一半多：A 的 10~16 点连刺掉到 5~9，
+         对着 0.72s 的重铸窗口永远攒不出那一记打断（interruptAt 也是 20，同一条线）。
+         单发 >= 20 点的高幅值重击不受衰减，并且**直接贯穿**重铸的读条 ——
+         B 的储能放电一发就能把它按回去。
+         thinAt 只是「典型薄脉冲」的量级注释，判定统一用 pierceAt。 */
+      plating: { thinAt: 18, reduce: 0.72, pierceAt: 18, name: '炉壁重甲' },
     },
   };
 
@@ -565,7 +795,7 @@
     const c = chapterAt(floor);
     return `第 ${c.number} 章 · ${c.name} · ${c.step}/7`;
   }
-  function chapterEncounter(kind,index,floor) {
+  function chapterEncounter(kind,index,floor,opts) {
     const c = chapterAt(floor), zone = biome(c.region);
     const roll = index+c.step-1+c.number-1;
     const encounter = encounterTemplate(kind,roll,c.region);
@@ -577,6 +807,9 @@
       const others = zone.pool.filter(id => id !== c.signature);
       encounter.minionIds = [c.signature, others[roll%others.length], others[(roll+1)%others.length]];
     }
+    /* 七标：允许指定关底首领（只给模拟器的「分首领胜率矩阵」用）。
+       生产路径不带 opts，走的还是章节自身那一只。 */
+    if (opts && opts.bossId && kind === 'boss') encounter.bossId = opts.bossId;
     return encounter;
   }
 
@@ -615,14 +848,14 @@
   };
 
   /* ------------------------------ 蚀刻法谱 ------------------------------ */
-  /* 蚀刻法是压在金属板面上的拓片：自己占格、自带纹路要求与出入口。
+  /* 蚀刻法是压在金属板面上的蚀刻法：自己占格、自带纹路要求与出入口。
      有蚀刻法才谈得上余裕路由；没有蚀刻法，板面只是一块带槽位的金属。
      cells/veins/entry/exits 与 src/veteran/manuscript.js 的判定口径一致。 */
   const MANUSCRIPTS = {
     /* 一阶：微蚀刻法，占地 2 格、负荷 1，任何板面都塞得下。只有攻势，没有守势 */
     spark: {
       id: 'spark', name: '星火', rarity: 1, load: 1,
-      desc: '普通攻击间隔缩短15%，合修也生效。',
+      desc: '普通攻击间隔缩短15%，辅修也生效。',
       cells: [[0, 0], [1, 0]],
       veins: { '0,0': ['W'], '1,0': ['E'] },
       io: { clock: { cell: [0, 0], dir: 'W' }, main: { cell: [1, 0], dir: 'E' } },
@@ -636,7 +869,7 @@
       ],
     },
 
-    /* 二阶：第一个无条件技能 */
+    /* 二阶：第一个无条件招式 */
     corridor5: {
       id: 'corridor5', name: '直贯五脉', rarity: 2, load: 2,
       desc: '一线穿刺，同时打击前两名敌人。',
@@ -662,7 +895,7 @@
       ],
     },
 
-    /* 三阶：技能带条件 */
+    /* 三阶：招式带条件 */
     ember12: {
       id: 'ember12', name: '余烬十二脉', rarity: 3, load: 3,
       desc: '贯通后引燃敌人，灼烧持续施压。',
@@ -723,7 +956,7 @@
       ],
     },
 
-    /* 五阶：技能改写普通攻击 */
+    /* 五阶：招式改写普通攻击 */
     flurry: {
       id: 'flurry', name: '连刺', rarity: 5, load: 3,
       desc: '招式后强化普通攻击，持续数次。',
@@ -752,10 +985,10 @@
       ],
     },
 
-    /* 六阶：双技能 + 独特余裕 */
+    /* 六阶：双招式 + 独特余裕 */
     twinflow: {
       id: 'twinflow', name: '双流', rarity: 6, load: 4,
-      desc: '八格双线拓片。两个招式共享冷却，余裕上限更高、回得更快。',
+      desc: '八格双线蚀刻法。两个招式共享冷却，余裕上限更高、回得更快。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
@@ -786,7 +1019,7 @@
     /* 七阶：改写规则 */
     inverse: {
       id: 'inverse', name: '逆脉', rarity: 7, load: 5,
-      desc: '八格逆流拓片。普通攻击额外获得贯通增幅，招式贯穿三位并提供护盾。',
+      desc: '八格逆流蚀刻法。普通攻击额外获得贯通增幅，招式贯穿三位并提供护盾。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
@@ -814,7 +1047,7 @@
     },
   };
   const MANUSCRIPT_ORDER = ['spark', 'corridor5', 'ember12', 'wide14', 'flurry', 'twinflow', 'inverse'];
-  /* 入门练法共享两格拓片，差异来自打法，不附赠职业面板。 */
+  /* 入门蚀刻法共享两格蚀刻法，差异来自打法，不附赠职业面板。 */
   MANUSCRIPTS.needle = {
     ...MANUSCRIPTS.spark, id: 'needle', name: '逐隙',
     desc: '每四次普通攻击追击虚弱敌人。',
@@ -834,8 +1067,8 @@
       { at: 100, id: 't2', name: '二阶 · 顺手', effect: { mainMult: 1.14, startEnergy: 1, supportMult: 1.22 } },
     ],
   };
-  /* 沿用已验证的拓片几何，组合现有战斗效果形成不同节奏。 */
-  /* 拓片以可以实际拼接的整件纹路为原型；入口在左侧，出口在末件右侧。 */
+  /* 沿用已验证的蚀刻法几何，组合现有战斗效果形成不同节奏。 */
+  /* 蚀刻法以可以实际拼接的整件纹路为原型；入口在左侧，出口在末件右侧。 */
   function channelPattern(cells, entry, exit, out, inlet) {
     const veins = { [entry]: ['W'], [out]: ['E'], [inlet]: ['W'], [exit]: ['E'] };
     return { cells, veins, entry, exits: [exit], io: { clock: { cell: entry, dir: 'W' }, main: { cell: exit, dir: 'E' } } };
@@ -867,7 +1100,7 @@
     { id: 'torrent', name: '疾雨', base: 'flurry', unlockDepth: 4, rarity: 3,
       desc: '短促三连击，快速收束单体伤害。', 
       skills: [{ id: 'torrent', name: '骤雨', cost: 7, castTime: 0.3, cooldown: 4, cond: {}, target: 'frontFoe', effect: { mult: 0.85, hits: 3 } }] },
-    { id: 'razor', name: '裂锋', base: 'corridor5', unlockDepth: 4, rarity: 3,
+    { id: 'razor', name: '流血', base: 'corridor5', unlockDepth: 4, rarity: 3,
       desc: '两段穿刺，压低敌方前后两人的生命。', 
       skills: [{ id: 'razor', name: '双裂', cost: 9, castTime: 0.9, cooldown: 6, cond: {}, target: 'frontFoe', effect: { mult: 0.9, hits: 2, pierce: 2 } }] },
     { id: 'tide', name: '潮汐', base: 'flurry', unlockDepth: 5, rarity: 3,
@@ -916,7 +1149,7 @@
       desc: '四次普通攻击后穿过前两敌，并在前敌留下灼伤。', 
       skills: [{ id: 'awl', name: '灼穿', cost: 7, castTime: 0.55, cooldown: 5, cond: { attackCount: 4 }, target: 'frontFoe', effect: { mult: 1.2, pierce: 2, dot: { dmgMult: 0.3, hits: 3 } } }] },
     { id: 'crucible', name: '回炉', base: 'bellows', unlockDepth: 7, rarity: 4, load: 3,
-      desc: '两名同伴重伤时优先急救，平时蓄力追击弱敌。', 
+      desc: '两名同伴重伤时优先急救，平时引导追击弱敌。', 
       skills: [
         { id: 'crucibleMend', name: '熔补', cost: 5, castTime: 0.45, cooldown: 4, cond: { alliesHurt: 2 }, target: 'ally', effect: { heal: 2.2 } },
         { id: 'cruciblePour', name: '浇铸', cost: 5, castTime: 0.55, cooldown: 5, cond: { energyAbove: 12 }, target: 'lowestHpFoe', effect: { mult: 1.6, splash: 0.35 } },
@@ -1015,9 +1248,11 @@
       skills: [{ id: 'quarrySaw', name: '双锯', cost: 8, castTime: 0.65, cooldown: 6,
         cond: { energyAbove: 12 }, target: 'frontFoe', effect: { mult: 1.55, pierce: 2, buffAttack: { mult: 1.45, hits: 6 } } }] },
     { id: 'coalSeam', name: '煤层', base: 'spark', rarity: 4, load: 3, unlockDepth: 6,
-      ...CHANNELS.trough, desc: '四次普通攻击后震裂敌阵，黑火留在前锋身上并为自己聚盾。',
-      skills: [{ id: 'coalSeam', name: '塌层', cost: 7, castTime: 0.75, cooldown: 6,
-        cond: { attackCount: 4 }, target: 'frontFoe', effect: { mult: 1.35, splash: 0.6, dot: { hits: 2, dmgMult: 0.38 }, shield: 0.12 } }] },
+      ...CHANNELS.trough, desc: '三次普通攻击后震裂敌阵，黑火留在前锋身上并为自己聚盾。',
+      /* 2026-11-15：煤层拿到第三招（高压），7 点 + 四次普攻的双门槛让它几乎排不上队
+         （实测 0.25 次/场）。降到 5 点 / 三次普攻，与同门的两个追打同价。 */
+      skills: [{ id: 'coalSeam', name: '塌层', cost: 5, castTime: 0.75, cooldown: 5,
+        cond: { attackCount: 3 }, target: 'frontFoe', effect: { mult: 1.35, splash: 0.6, dot: { hits: 2, dmgMult: 0.38 }, shield: 0.12 } }] },
     { id: 'lodestone', name: '磁极', base: 'twinflow', rarity: 5, load: 3, unlockDepth: 7,
       ...CHANNELS.crown, desc: '一路贯通且余裕达到十四点时穿透前三敌，自身获得磁壳。',
       skills: [{ id: 'lodestone', name: '连极', cost: 9, castTime: 0.8, cooldown: 7,
@@ -1118,7 +1353,7 @@
         cond: { alliesHurt: 2, energyAbove: 13 }, target: 'ally', effect: { heal: 2.3, shield: 0.16, buffAttack: { mult: 1.45, hits: 6 } } }] },
   ];
   ETCHING_VARIANTS.forEach(({ base, ...spec }) => { MANUSCRIPTS[spec.id] = { ...MANUSCRIPTS[base], ...spec }; });
-  // 阵形动作只属于这三门；同一拓片几何的变体各有自己的招式。
+  // 阵形动作只属于这三门；同一蚀刻法几何的变体各有自己的招式。
   MANUSCRIPTS.spark.modId = 'refractRetreat';
   MANUSCRIPTS.needle.modId = 'shadowAdvance';
   MANUSCRIPTS.ward.modId = 'ironCover';
@@ -1126,9 +1361,522 @@
     m.unlockDepth = m.unlockDepth || Math.max(3, MANUSCRIPT_ORDER.indexOf(m.id) + 1);
   });
   MANUSCRIPTS.twinflow.skills.reverse();
+
+  /* ========================== 蚀刻法骨架重塑（v4.0 六标） ==========================
+     77 格的母板上，2~14 格的蚀刻法只占 3%~18% 面积 —— 板面大片空着，
+     「压满大半块板才吃到高阶共鸣」这条设计根本没机会出现。
+     这里按稀有度把 80 门重排成**镂空电路矩阵**：
+       ① 一条 4~6 格的**主干走廊**：入口在头、出口在尾，折数决定这门的脉冲形状；
+       ② 主干之外长一片**枝体**：整体只挂在出口格上（不许贴主干其它格），
+          所以它不会替通路造出捷径 —— 入口到出口的距离由走廊决定；
+       ③ 枝体生长时禁止「补满 2×2」，于是天然留下 1×2 / 2×2 的镶嵌槽。
+     面积阶梯：R1 6~9 · R2 10~14 · R3 16~21 · R4 23~29 · R5 32~39 · R6/R7 44~54。 */
+  const SKELETON_LADDER = {
+    1: { sizes: [6, 9], load: 2 },
+    2: { sizes: [10, 14], load: 3 },
+    3: { sizes: [16, 21], load: [4, 5] },
+    4: { sizes: [23, 29], load: [6, 7] },
+    5: { sizes: [32, 39], load: [8, 9] },
+    6: { sizes: [44, 54], load: [11, 12] },
+    7: { sizes: [44, 54], load: [11, 12] },
+  };
+
+  /* 主干走廊：前三份直/一折，后面几份带回钩 —— 折数就是这门的「脉冲形状」 */
+  const SKELETON_CORRIDORS = [
+    [[0, 0], [1, 0], [2, 0], [3, 0]],
+    [[0, 0], [1, 0], [2, 0], [2, 1]],
+    [[0, 0], [0, 1], [1, 1], [2, 1], [2, 2]],
+    [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2]],
+    [[0, 0], [0, 1], [1, 1], [1, 2], [2, 2]],
+    [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2], [3, 2]],
+  ];
+  const SK_ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const SK_NEAR = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+  function skHash(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function skRng(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const skKey = (c) => c.x + ',' + c.y;
+  const skDirOf = (a, b) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (dx === 1) return 'E';
+    if (dx === -1) return 'W';
+    if (dy === 1) return 'S';
+    if (dy === -1) return 'N';
+    return null;
+  };
+  const SK_OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
+
+  /**
+   * 生成一块骨架：走廊 + 枝体。
+   * @param {number} target 目标格数
+   * @param {number} seed   同 id 恒定
+   * @param {number} variant 走廊款式
+   */
+  function skeletalMatrix(target, seed, variant) {
+    const rnd = skRng(seed);
+    const corridor = SKELETON_CORRIDORS[variant % SKELETON_CORRIDORS.length]
+      .map(([x, y]) => ({ x, y }));
+    const cw = Math.max.apply(null, corridor.map((c) => c.x)) + 1;
+    const ch = Math.max.apply(null, corridor.map((c) => c.y)) + 1;
+
+    const connected = (set) => {
+      const first = set.values().next().value;
+      if (first == null) return false;
+      const seen = new Set([first]);
+      const q = [first];
+      while (q.length) {
+        const cur = q.shift();
+        const [x, y] = cur.split(',').map(Number);
+        for (const [dx, dy] of SK_ORTH) {
+          const nk = (x + dx) + ',' + (y + dy);
+          if (!set.has(nk) || seen.has(nk)) continue;
+          seen.add(nk);
+          q.push(nk);
+        }
+      }
+      return seen.size === set.size;
+    };
+
+    /**
+     * 在 w×h 的盒子里「长」出 target 格：从走廊出发 BFS 扩张。
+     * 扩张天然连通，所以不需要事后修补；遇到「补满 2×2」的格子按 50% 概率跳过，
+     * 于是骨架里自然散着 1×2 / 2×2 的镶嵌槽，而不是一块实心砖。
+     * 盒子装不下就返回 null，交给外层换大一号的盒子。
+     */
+    const growIn = (w, h) => {
+      const offY = Math.max(0, Math.floor((h - ch) / 2));
+      const placed = corridor.map((c) => ({ x: c.x, y: c.y + offY }));
+      if (placed.some((c) => c.x >= w || c.y >= h)) return null;
+      const set = new Set(placed.map(skKey));
+      const cells = placed.slice();
+      const q = placed.slice();
+      const r = skRng(seed ^ (w * 131 + h));
+      let guard = 0;
+      while (cells.length < target && q.length && guard++ < 20000) {
+        const cur = q.shift();
+        for (const [dx, dy] of SK_ORTH) {
+          if (cells.length >= target) break;
+          const nx = cur.x + dx;
+          const ny = cur.y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const k = nx + ',' + ny;
+          if (set.has(k)) continue;
+          let square = false;
+          for (const [ax, ay] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+            const c1 = (nx + ax) + ',' + ny;
+            const c2 = nx + ',' + (ny + ay);
+            const c3 = (nx + ax) + ',' + (ny + ay);
+            if (set.has(c1) && set.has(c2) && set.has(c3)) { square = true; break; }
+          }
+          if (square && r() < 0.5) continue;
+          set.add(k);
+          cells.push({ x: nx, y: ny });
+          q.push({ x: nx, y: ny });
+        }
+      }
+      if (cells.length < target) return null;
+      return { alive: set, placed, w, h };
+    };
+
+    const boxes = [];
+    for (let w = 3; w <= 11; w += 1) {
+      for (let h = 2; h <= 7; h += 1) {
+        if (w < cw || h < ch) continue;
+        const area = w * h;
+        if (area < target) continue;
+        boxes.push({ w, h, slack: area - target });
+      }
+    }
+    boxes.sort((a, b) => a.slack - b.slack || a.w * a.h - b.w * b.h);
+
+    let carved = null;
+    for (const b of boxes) {
+      carved = growIn(b.w, b.h);
+      if (carved) break;
+    }
+    if (!carved) return null;
+
+    const list = [...carved.alive].map((k) => {
+      const [x, y] = k.split(',').map(Number);
+      return { x, y };
+    });
+    const minX = Math.min(...list.map((c) => c.x));
+    const minY = Math.min(...list.map((c) => c.y));
+    list.forEach((c) => { c.x -= minX; c.y -= minY; });
+    const set = new Set(list.map(skKey));
+
+    const corridorRel = carved.placed.map((c) => ({ x: c.x - minX, y: c.y - minY }));
+    const entry = corridorRel[0];
+    const exit = corridorRel[corridorRel.length - 1];
+
+    const veins = {};
+    list.forEach((c) => { veins[skKey(c)] = ['E']; });
+    for (let i = 0; i < corridorRel.length; i += 1) {
+      const from = corridorRel[i];
+      const to = corridorRel[i + 1];
+      const d = to ? skDirOf(from, to) : null;
+      veins[skKey(from)] = [d || skDirOf(corridorRel[corridorRel.length - 2], from) || 'E'];
+    }
+    /* 入口刻线朝外：走廊从入口出发的方向反过来就是「外面」。
+       写错这一步（朝了走廊内部）会让布线器在入口格只能往死路走，整块膜永远不通。 */
+    veins[skKey(entry)] = [SK_OPP[skDirOf(corridorRel[0], corridorRel[1]) || 'E']];
+    veins[skKey(exit)] = [skDirOf(corridorRel[corridorRel.length - 2], corridorRel[corridorRel.length - 1]) || 'E'];
+
+    return {
+      cells: list.map((c) => [c.x, c.y]),
+      veins,
+      entry: [entry.x, entry.y],
+      exits: [[exit.x, exit.y]],
+      io: {
+        clock: { cell: [entry.x, entry.y], dir: veins[skKey(entry)][0] },
+        main: { cell: [exit.x, exit.y], dir: veins[skKey(exit)][0] },
+      },
+      box: { w: carved.w, h: carved.h },
+    };
+  }
+
+  /* 按稀有度重排 80 门：几何与负荷一起换，文字/招式/等级一概不动 */
+  (function reshapeSkeletons() {
+    const byRarity = {};
+    Object.values(MANUSCRIPTS).forEach((m) => {
+      const r = Math.min(7, Math.max(1, m.rarity || 1));
+      (byRarity[r] ||= []).push(m);
+    });
+    Object.keys(byRarity).forEach((key) => {
+      const r = Number(key);
+      const ladder = SKELETON_LADDER[r];
+      if (!ladder) return;
+      const list = byRarity[key].sort((a, b) => (a.id < b.id ? -1 : 1));
+      const [lo, hi] = ladder.sizes;
+      list.forEach((m, i) => {
+        /* 一档只有一门时（R6/R7），用稀有度自己在 6~7 之间的位置当进度：44 / 54 */
+        const t = list.length > 1 ? i / (list.length - 1) : Math.min(1, Math.max(0, r - 6));
+        const target = Math.round(lo + (hi - lo) * t);
+        const loadRange = Array.isArray(ladder.load) ? ladder.load : [ladder.load, ladder.load];
+        const load = Math.round(loadRange[0] + (loadRange[1] - loadRange[0]) * t);
+        const seed = skHash(m.id);
+        const shape = skeletalMatrix(target, seed, seed % SKELETON_CORRIDORS.length);
+        m.cells = shape.cells;
+        m.veins = shape.veins;
+        m.entry = shape.entry;
+        m.exits = shape.exits;
+        m.io = shape.io;
+        m.load = load;
+        m.targetCells = target;
+      });
+    });
+  })();
+
+
+  /* ------------------------------ 四大构筑轴 ------------------------------ */
+  /* 80 门功法按「它想让对手怎样」分成四轴。轴决定三件事，不重复写 80 遍：
+     ① tags（流派标签，也是连携用的 tag）　② passive（被动，一条）　③ 第二/第三个招式长什么样。
+
+       灼烧 burn     低耗铺火，重招引爆。剩余灼烧一次性倒出来 ×1.25
+       腐蚀 poison   普攻命中就多跳一跳（快攻/多段流）；corrode 是它的重击面：削防 + 压垮
+       流血 bleed    罚动作：对手一起手引导、一换位就被撕一次；对流血目标暴击更高
+       护盾 ward     构盾 → 盾击；疗愈 → 给别的门减冷却。攻守循环的接口
+
+     轴是**玩法意图**，不是阵营。一门功法可以被玩家当别的用，但它的第二招永远朝自己那一轴靠。
+     世界观上说得通：功法是「沿固定路径反复共振」的方案，方向律决定它只能往一个方向刻深。 */
+  /* 标签直接用**机制词**，不用抽象轴名（2026-11-15 统一）：
+     玩家要记的是「这门打灼烧还是流血」，不是「灼烧还是流血」。
+     轴名仍然留在代码里（burn/poison/corrode/bleed/ward），那是实现，不是台词。 */
+  const ETCH_AXES = {
+    burn:    { tag: '灼烧', dot: 'burn',    label: '灼烧 · 引爆' },
+    poison:  { tag: '中毒', dot: 'poison',  label: '中毒 · 淬刃' },
+    corrode: { tag: '腐蚀', dot: 'corrode', label: '腐蚀 · 破甲' },
+    bleed:   { tag: '流血', dot: 'bleed',   label: '流血 · 追击' },
+    ward:    { tag: '护盾', dot: null,      label: '护盾 · 疗愈' },
+  };
+
+  /* 逐门归属。名字和现有招式都保留，这里只回答一个问题：这门想怎么弄死对面。 */
+  const AXIS_OF = {
+    /* 灼烧 */
+    spark: 'burn', wick: 'burn', cinder: 'burn', fieldLamp: 'burn', ember12: 'burn',
+    copperWick: 'burn', tinderMesh: 'burn', coalSeam: 'burn', furnaceEye: 'burn',
+    mawValve: 'burn', slagHook: 'burn', slagLance: 'burn', kilnMantle: 'burn',
+    shutter: 'burn', coilSpring: 'burn', bellows: 'burn', anneal: 'burn', furnaceTong: 'burn',
+    /* 中毒（快攻面） */
+    awlPoint: 'poison', needle: 'poison', fileTooth: 'poison', torrent: 'poison',
+    flurry: 'poison', turbine: 'poison', pulse: 'poison', capstan: 'poison',
+    /* 腐蚀（重击面） */
+    awl: 'corrode', coreDrill: 'corrode', millStone: 'corrode', surveyLens: 'corrode',
+    lodestone: 'corrode', sunder: 'corrode', echo: 'corrode',
+    /* 流血 */
+    corridor5: 'bleed', razor: 'bleed', pursuit: 'bleed', houndClamp: 'bleed',
+    ribRake: 'bleed', ironJaw: 'bleed', jawSpring: 'bleed', quarrySaw: 'bleed',
+    splitNeedle: 'bleed', bloodrush: 'bleed', chalkLine: 'bleed', pikeHead: 'bleed',
+    beltBuckle: 'bleed', jointHammer: 'bleed', oarlock: 'bleed', shrapnel: 'bleed',
+    /* 护盾 */
+    bulwark: 'ward', wide14: 'ward', quench: 'ward', leadSeal: 'ward', rivet: 'ward',
+    shellScale: 'ward', splitAnvil: 'ward', bronzeGong: 'ward', sentinel: 'ward',
+    crucible: 'ward', blackBloom: 'ward', ward: 'ward', ripple: 'ward', suture: 'ward',
+    tide: 'ward', dryDock: 'ward', silverTap: 'ward', boneFlute: 'ward', brineWrap: 'ward',
+    marrowPin: 'ward', sump: 'ward', tinChime: 'ward', tinThread: 'ward', rushMat: 'ward',
+    saltCradle: 'ward', veilStitch: 'ward', glassBell: 'ward', waxTablet: 'ward',
+    soundingLine: 'ward',
+    /* 双流按「左攻右守」自带两条标签，不归单一轴 */
+    twinflow: 'ward',
+    inverse: 'corrode',
+  };
+
+  /** 被动：一门功法带一条，四门叠加。数值随阶位抬，但都是**加法**，不乘算。
+      一律取三位小数——0.06 + 6×0.025 在浮点里会变成 0.21000000000000002，
+      那个数会原样进界面和存档，看着像 bug。 */
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const AXIS_PASSIVE = {
+    burn: (r) => ({ dotMult: r3(0.06 + r * 0.02) }),
+    poison: (r) => ({ poisonOnBasic: r3(0.03 + r * 0.015) }),
+    corrode: (r) => ({ dotMult: r3(0.05 + r * 0.015) }),
+    bleed: (r) => ({ bleedCritBonus: r3(0.03 + r * 0.02) }),
+    ward: (r) => ({ shieldGainMult: r3(0.06 + r * 0.025) }),
+  };
+
+  /* 第二/第三个招式。参数随阶位小幅上抬，但形状（触发条件 + 打什么）由轴固定：
+     这样玩家看「这是灼烧的」就能猜到第二招要引爆，不用背 80 条。 */
+  const AXIS_SKILLS = {
+    burn: {
+      combo: (r) => ({
+        name: '复燃', cost: r >= 4 ? 6 : 4, castTime: 0.5, cooldown: r >= 4 ? 6 : 5,
+        cond: { targetHasDot: 'burn' }, target: 'frontFoe',
+        effect: { mult: r >= 4 ? 1.6 : 1.4, detonateDot: 'burn' },
+      }),
+      deep: () => ({
+        name: '回炉引火', cost: 4, castTime: 0.65, cooldown: 5, cond: { minTier: 2 },
+        target: 'frontFoe',
+        effect: { mult: 1.7, detonateDot: 'all', dot: { k: 'burn', dmgMult: 0.3, hits: 3 } },
+      }),
+    },
+    poison: {
+      combo: (r) => ({
+        name: '追淬', cost: 4, castTime: 0.45, cooldown: 4.5,
+        cond: { targetHasDot: 'poison' }, target: 'lowestHpFoe',
+        effect: {
+          mult: 1.3 + (r >= 4 ? 0.15 : 0),
+          bonusIfDot: { k: 'poison', mult: 1.25 },
+          dot: { k: 'poison', dmgMult: 0.18, hits: 3 },
+        },
+      }),
+      deep: () => ({
+        name: '淬深', cost: 4, castTime: 0.5, cooldown: 4.5, cond: { minTier: 2 },
+        target: 'frontFoe',
+        effect: { mult: 1.45, hits: 2, dot: { k: 'poison', dmgMult: 0.2, hits: 4 } },
+      }),
+    },
+    corrode: {
+      combo: (r) => ({
+        name: '剥锈', cost: 5, castTime: 0.55, cooldown: 5,
+        cond: { targetHasDot: 'corrode' }, target: 'frontFoe',
+        effect: {
+          mult: 1.55 + (r >= 4 ? 0.2 : 0),
+          bonusIfDot: { k: 'corrode', mult: 1.3 },
+          dot: { k: 'corrode', dmgMult: 0.16, hits: 3 },
+        },
+      }),
+      deep: () => ({
+        name: '酸底', cost: 4, castTime: 0.6, cooldown: 5, cond: { minTier: 2 },
+        target: 'frontFoe',
+        effect: { mult: 1.5, splash: 0.45, dot: { k: 'corrode', dmgMult: 0.22, hits: 4 } },
+      }),
+    },
+    bleed: {
+      combo: (r) => ({
+        name: '续裂', cost: 4, castTime: 0.45, cooldown: 4.5,
+        cond: { targetHasDot: 'bleed' }, target: 'frontFoe',
+        effect: {
+          mult: 1.4 + (r >= 4 ? 0.2 : 0),
+          bonusIfDot: { k: 'bleed', mult: 1.2 },
+          dot: { k: 'bleed', dmgMult: 0.22, hits: 3 },
+        },
+      }),
+      deep: () => ({
+        name: '割喉', cost: 4, castTime: 0.6, cooldown: 5, cond: { minTier: 2 },
+        target: 'lowestHpFoe',
+        effect: { mult: 1.9, bonusIfDot: { k: 'bleed', mult: 1.35 }, dot: { k: 'bleed', dmgMult: 0.26, hits: 2 } },
+      }),
+    },
+    ward: {
+      /* 已经会打的门补「疗愈 + 冷却互馈」，已经会疗的门补「盾击」，攻守互换 */
+      combo: (m) => ((m.skills || []).some((s) => s.effect && s.effect.heal)
+        ? {
+          name: '盾击', cost: 5, castTime: 0.5, cooldown: 5,
+          cond: { selfHasShield: true }, target: 'frontFoe',
+          effect: { mult: 1.15 + m.rarity * 0.06, shieldScale: 0.6 },
+        }
+        : {
+          name: '续息', cost: 4, castTime: 0.5, cooldown: 5,
+          cond: { alliesHurt: 1 }, target: 'ally',
+          effect: { heal: 0.85, cdrOther: 1 },
+        }),
+      deep: () => ({
+        name: '回锋', cost: 4, castTime: 0.55, cooldown: 5, cond: { minTier: 2 },
+        target: 'frontFoe',
+        effect: { mult: 1.4, shieldScale: 0.8, shield: 0.12 },
+      }),
+    },
+  };
+
+  (function wireAxes() {
+    Object.values(MANUSCRIPTS).forEach((m) => {
+      const axisKey = AXIS_OF[m.id];
+      if (!axisKey) return;
+      const axis = ETCH_AXES[axisKey];
+      m.axis = axisKey;
+      m.tags = [...new Set([axis.tag, ...(m.tags || [])])];
+      m.passive = AXIS_PASSIVE[axisKey](m.rarity);
+
+      /* ① 已有招式：打上 tag（连携判定用），并把异常类型改成自己那一轴 */
+      (m.skills || []).forEach((sk) => {
+        sk.tag = sk.tag || axis.tag;
+        if (sk.effect && sk.effect.dot && !sk.effect.dot.k) sk.effect.dot.k = axis.dot || 'burn';
+      });
+
+      /* ② spark 是唯一没有招式的门：补一个低耗高频起手，让它成为火系的入门组件 */
+      if (m.id === 'spark' && !(m.skills || []).length) {
+        m.skills = [{
+          id: 'spark-1', name: '迸火', cost: 3, castTime: 0.35, cooldown: 3,
+          cond: { attackCount: 3 }, target: 'frontFoe',
+          effect: { mult: 0.9, dot: { k: 'burn', hits: 2, dmgMult: 0.25 } },
+          tag: axis.tag,
+        }];
+      }
+
+      /* ③ 2–3 阶：补一个异常/连携追击招。条件永远是「目标身上已经有我这一轴的异常」 */
+      if (m.rarity >= 2 && m.rarity <= 3) {
+        const tpl = AXIS_SKILLS[axisKey].combo(m);
+        m.skills.push({ id: `${m.id}-c2`, tag: axis.tag, ...tpl });
+      }
+
+      /* ④ 4–5 阶：第二招要两个条件同时满足——共鸣阶拼到位，**而且**刚刚放过同轴的招。
+         「拼图 + 接续」两条都做到才给完整招式组，这是高阶门唯一的门槛设计。 */
+      if (m.rarity >= 4 && m.rarity <= 5 && (m.skills || []).length < 2) {
+        const tpl = AXIS_SKILLS[axisKey].deep(m);
+        tpl.cond = { ...tpl.cond, afterTag: axis.tag };
+        m.skills.push({ id: `${m.id}-c2`, tag: axis.tag, ...tpl });
+      }
+
+      /* ⑤ 带连携条件的门，被动里补一条「接续返还余裕」——不然接上了却付不起余裕 */
+      if ((m.skills || []).some((sk) => sk.cond && sk.cond.afterTag)) m.passive.comboCdr = 1;
+    });
+
+    /* ⑤ 双流：左流挂流血、右流挂护盾，合流要求「刚放完左流」——一门之内也能连携 */
+    const twin = MANUSCRIPTS.twinflow;
+    twin.tags = ['灼烧', '流血', '护盾'];
+    twin.skills.forEach((sk) => {
+      if (sk.effect && sk.effect.heal) { sk.tag = '护盾'; }
+      else { sk.tag = '流血'; sk.effect = { ...sk.effect, dot: { k: 'bleed', dmgMult: 0.24, hits: 3 } }; }
+    });
+    twin.skills.push({
+      id: 'twinflow-c3', name: '合流', tag: '流血',
+      cost: 12, castTime: 0.85, cooldown: 8,
+      cond: { minTier: 2, afterTag: '流血' }, target: 'frontFoe',
+      effect: { mult: 2.0, pierce: 2, detonateDot: 'all', shield: 0.15, stressDelta: -10 },
+    });
+    /* 合流也吃「接续返还余裕」：它的门槛同样是 afterTag */
+    twin.passive.comboCdr = 1;
+
+    /* ⑥ 高压流：灼烧与流血的 3–5 阶各补一门「压线重击」。
+       这两轴本来就是「先把自己逼紧再打」的路子，但此前 142 个招式里只有 1 个 stressAbove，
+       等于高压打法没有牌可打。八门新招共同的三条设计：
+         · 门槛 50 或 70——50 是「已经吃到第一档红利」，70 是「快到悬崖」；
+         · 倍率/贯穿都比同阶常规招高一档，但**每发都回压 6~12 点**，
+           所以它不是让你一直压在 100，而是让你在 80–99 之间走钢丝；
+         · 全部是第三招（slot 3），不挤掉原有的核心招与连携招。 */
+    const PRESSURE_SKILLS = {
+      /* 灼烧 */
+      ember12: { name: '焚身', cost: 5, castTime: 0.55, cooldown: 5, stress: 60,
+        effect: { mult: 1.9, bonusIfDot: { k: 'burn', mult: 1.3 }, stressDelta: -8 } },
+      copperWick: { name: '滴穿', cost: 4, castTime: 0.5, cooldown: 4.5, stress: 50,
+        effect: { mult: 1.6, pierce: 2, stressDelta: -6 } },
+      tinderMesh: { name: '筛落', cost: 5, castTime: 0.6, cooldown: 5, stress: 50,
+        effect: { mult: 1.5, splash: 0.5, dot: { k: 'burn', dmgMult: 0.24, hits: 2 }, stressDelta: -8 } },
+      coalSeam: { name: '压层', cost: 5, castTime: 0.65, cooldown: 5, stress: 60,
+        effect: { mult: 2.1, detonateDot: 'burn', stressDelta: -10 } },
+      /* 流血 */
+      razor: { name: '开膛', cost: 5, castTime: 0.55, cooldown: 5, stress: 50,
+        effect: { mult: 1.8, bonusIfDot: { k: 'bleed', mult: 1.35 }, stressDelta: -8 } },
+      bloodrush: { name: '再注', cost: 5, castTime: 0.6, cooldown: 5, stress: 60,
+        effect: { mult: 2.0, dot: { k: 'bleed', dmgMult: 0.26, hits: 3 }, stressDelta: -12 } },
+      ironJaw: { name: '咬死', cost: 4, castTime: 0.5, cooldown: 4.5, stress: 50,
+        effect: { mult: 1.55, shieldScale: 0.5, stressDelta: -6 } },
+      quarrySaw: { name: '锯回', cost: 5, castTime: 0.6, cooldown: 5, stress: 60,
+        effect: { mult: 1.9, pierce: 3, stressDelta: -10 } },
+    };
+    Object.entries(PRESSURE_SKILLS).forEach(([id, spec]) => {
+      const m = MANUSCRIPTS[id];
+      if (!m) return;
+      const axis = ETCH_AXES[m.axis];
+      m.skills.push({
+        id: `${id}-c3`, name: spec.name, tag: axis.tag,
+        cost: spec.cost, castTime: spec.castTime, cooldown: spec.cooldown,
+        cond: { stressAbove: spec.stress }, target: 'frontFoe', effect: spec.effect,
+      });
+      m.tags = [...new Set([...m.tags, '高压'])];
+      /* 多一门招式就要多一份余裕供给，否则第三招只是把主招的份额抢走。
+         实测：煤层三招 7/5/5、回裕 1.0，主招被她自己的追打挤到 0.22 次/场。
+         规则：拿到第三招的门回裕 +0.25，不动主招价格（价格是这门功法的气质）。
+
+         **必须先克隆再改**：变体（ETCHING_VARIANTS）是浅拷贝出来的，
+         `coalSeam.energy` 和 `spark.energy` 是同一个对象，直接 `m.energy.regen = …`
+         会顺手改掉 base 和所有同 base 的门（实测把 corridor5 的 1.0 也改成了 1.25）。 */
+      m.energy = { ...m.energy, regen: r3(m.energy.regen + 0.25) };
+    });
+
+    /* ⑥ 逆脉：三招递进——挂腐蚀、高压反制、三阶引爆 */
+    const inv = MANUSCRIPTS.inverse;
+    const base = inv.skills[0];
+    base.name = '逆冲';
+    /* 三招同池之后，主招 10 点（最贵的一门）会在 6 点与 9 点的两个追打之间永远排不上队：
+       实测高压队里场均 0.14 次，等于这门功法的招牌没出过手。压到 8 点。 */
+    base.cost = 8;
+    base.effect = { ...base.effect, dot: { k: 'corrode', dmgMult: 0.28, hits: 3 } };
+    base.tag = '腐蚀';
+    inv.skills.push({
+      id: 'inverse-c2', name: '倒灌', tag: '护盾',
+      cost: 6, castTime: 0.5, cooldown: 6,
+      cond: { stressAbove: 50 }, target: 'frontFoe',
+      effect: { mult: 1.2, shield: 0.22, stressDelta: -12 },
+    });
+    inv.skills.push({
+      id: 'inverse-c3', name: '无回', tag: '腐蚀',
+      cost: 9, castTime: 0.9, cooldown: 7,
+      cond: { minTier: 3 }, target: 'frontFoe',
+      effect: { mult: 2.6, pierce: 3, detonateDot: 'all' },
+    });
+  })();
+
+  /* 共鸣阶名统一成「共鸣一阶 · 后缀」（2026-11-15）：
+     80 门原来各写各的「一阶 · 起手 / 二阶 · 顺手」，玩家得自己换算这是第几阶。
+     这里按数组顺序归一，后缀（风味）一律保留；重复跑也只会得到同一个结果。 */
+  const TIER_CN = ['一', '二', '三', '四', '五'];
+  Object.values(MANUSCRIPTS).forEach((m) => {
+    (m.tiers || []).forEach((t, i) => {
+      const suffix = String(t.name || '')
+        .replace(/^共鸣/, '')
+        .replace(/^[一二三四五]阶\s*·?\s*/, '')
+        .trim();
+      t.name = `共鸣${TIER_CN[i] || String(i + 1)}阶${suffix ? ` · ${suffix}` : ''}`;
+    });
+  });
+
   function manuscript(id) { return Object.hasOwn(MANUSCRIPTS, id) ? MANUSCRIPTS[id] : null; }
 
-  /** 同深度优先发现新练法，全部发现后才重复。@param {object} st @param {number} depth @returns {object|null} */
+  /** 同深度优先发现新蚀刻法，全部发现后才重复。@param {object} st @param {number} depth @returns {object|null} */
   function manuscriptReward(st, depth) {
     const copies = new Map();
     for (const m of [...(st.manuscriptVault || []), ...st.roster.flatMap(V.State.manuscriptsOf)]) {
@@ -1147,7 +1895,7 @@
   const BLESSINGS = {
     edge: { id: 'edge', name: '锐利', desc: '普通攻击伤害 +15%。', effect: { mainDmg: 0.15 } },
     guard: { id: 'guard', name: '厚重', desc: '全队受到的伤害 -10%。', effect: { dmgTaken: -0.10 } },
-    flow: { id: 'flow', name: '导通', desc: '每场战斗开始时直接获得 2 余裕。', effect: { startEnergy: 2 } },
+    flow: { id: 'flow', name: '起势', desc: '每场战斗开始时直接获得 2 余裕。', effect: { startEnergy: 2 } },
     scavenger: { id: 'scavenger', name: '拾荒', desc: '金币收获 +20%。', effect: { gold: 0.2 } },
     mend: { id: 'mend', name: '缝补', desc: '每层结束时全队恢复 12% 生命。', effect: { floorHeal: 0.12 } },
     pact: { id: 'pact', name: '禁忌契约', desc: '普通攻击伤害 +25%，压力获取 +25%。', effect: { mainDmg: 0.25, stress: 0.25 } },
@@ -1262,11 +2010,11 @@
       text: '摊后没有人。账页自己翻，笔尖悬在纸上，等一个名字。',
       choices: [
         {
-          id: 'sign', label: '签上名字', hint: '60 金币，换一门战利谱',
+          id: 'sign', label: '签上名字', hint: '60 金币，换一门蚀刻法',
           need: { gold: 60, noFieldManuscript: true },
           effects: { gold: -60, manuscript: 'event' },
           then: 'ledgerPage',
-          text: '笔尖落下去，纸面吸走了墨。柜台上多出一卷还没凉透的拓片。',
+          text: '笔尖落下去，纸面吸走了墨。柜台上多出一卷还没凉透的蚀刻法。',
         },
         {
           id: 'read', label: '翻几页', hint: '得到金币，压力上升',
@@ -1328,10 +2076,10 @@
       text: '它把工具一件件摊开，手势比说话清楚：它可以拿出你们需要的东西，只要一点「材料」。',
       choices: [
         {
-          id: 'deal', label: '交出一点生命', hint: '本趟全队生命上限 -15%，换一门战利谱',
+          id: 'deal', label: '交出一点生命', hint: '本趟全队生命上限 -15%，换一门蚀刻法',
           need: { noFieldManuscript: true },
           effects: { maxHpPct: -0.15, manuscript: 'event' },
-          text: '它的刀很薄，几乎不疼。你们各自少了一点什么，柜台上的拓片慢慢显出来。',
+          text: '它的刀很薄，几乎不疼。你们各自少了一点什么，柜台上的蚀刻法慢慢显出来。',
         },
         {
           id: 'ask', label: '问它用什么换', hint: '压力上升',
@@ -1405,22 +2153,124 @@
   }
 
   /* ------------------------------ 招募外观 ------------------------------ */
-  const SKINS = [
-    { id: 'blade', name: '铁鸦', portrait: 'portrait.blade' },
-    { id: 'warden', name: '磐石', portrait: 'portrait.warden' },
-    { id: 'ranger', name: '灰烬', portrait: 'portrait.ranger' },
-    { id: 'warlock', name: '低语', portrait: 'portrait.warlock' },
-    { id: 'cleric', name: '烛火', portrait: 'portrait.cleric' },
-    { id: 'rogue', name: '暗巷', portrait: 'portrait.rogue' },
-    ...['断齿', '冷炉', '旧钉', '褪色', '长夜', '哑钟', '霜线', '赤砾', '雾灯', '缄书', '乌隼', '苔衣', '铅月', '余烬', '白棘'].map((name, portraitCell) => ({
+  /* 每位来客自带一块专属生命金属（形态 + 独立 seed）。
+     形态只有 14 种，但 seed 逐人不同，所以全营 21 块金属互不重复。 */
+  /* 十四位传奇，一人一型：金属形态缩到 14 之后，传奇数量同步缩到 14。
+     一型只有一个人，所以「每个人的生命金属都不同」是事实，不需要靠 seed 去撞。
+     后八位沿用 wanderer0..7 的 id 与图集格序——立绘资源按这个顺序切的，别动。
+
+     出身按《世界观总纲》三、七节落：两块大陆，各三个国家。
+     **苍梧（东洲）三国都走功法，属东；奥伦（西洲）三国都走炼金术，属西。**
+     所以「族属」不是玩家能选的阵营，是地理——他生在哪块大陆，就用那边的词叫同一块铁。
+     六国各有各的做派，营地不是「东方人／西方人」两堆，是六堆混在一起：
+
+       钧天   功法产业链制度化到极致（修行者=特殊公务员，宗门=教育部+研究院+企业）
+               → 制式功法、统一教材、档案编号。**注意：发的不是铁，是蚀刻法。**
+                 那块金属是娘胎里带的（总纲 §4.4：总量从生到死不变，外部补不了、也造不出），
+                 所以谁也发不了、换不了、配不了。钧天能发的只有三样：
+                 你练哪一门（统一教材）、怎么练（教学大纲）、认哪一版（拓版母本）；
+                 再给你的铁建一份档案、发一个登记号——它值多少保费、能领多少例钱，全看这个号。
+                 讽刺的是，这事跟大洋对岸的圣髑院一模一样：都在给一块天生长出来的铁编号，
+                 一个叫「档案」，一个叫「登记册」。两边政府都没能造出一块铁，只造出了一套纸。
+       琉光   西南高原，器物修行，矿脉新贵正在挑旧血统 → 矿业、采空、塌陷。
+       朔方   北方草原，血脉觉醒不修功法，萨满=政治领袖，与诺德海姆有亲缘。
+               → 「不修功法」在这里是字面意思：朔方人连那套发下来的东西都没有。
+       格雷沙姆 奥伦霸主，符文阵列派，把炼金术当编程，自认「炼金术的罗马」。
+               → 圣髑院就在这里：挂王室敕许的结社，管《圣铁登记册》，
+                 实际是「国际炼金术标准委员会」的执行机构。罗马的合法性来自圣髑。
+       沃尔芬 北方工业强国，材料共振派，企业即宗门，专利替代师承。
+               → 炼金术在这里是专利：可买卖、可授权、可继承，就是不能白学。
+       碎片地带 东南沿海+岛屿链，前殖民地小邦群，跨体系融合与灰色实验场。
+
+     一句话把三层分清楚（改名时别搞混，见 backlog B4）：
+     **金属天生（改不了）→ 功法/炼金术可发可传（发的是这个）→ 纹刻不出来（学得会，刻不出）。**
+
+     origin 是他具体的来处（哪个衙门、哪条产线、哪座塔），立绘照这个定服饰和光。
+     culture 由 home 推出来，不单独写——写了就会有人把「琉光的人」标成西边。 */
+  const HOME_SIDE = {
+    钧天: 'east', 琉光: 'east', 朔方: 'east',
+    格雷沙姆: 'west', 沃尔芬: 'west', 碎片地带: 'west',
+  };
+
+  const SKIN_LIST = [
+    /* 象笏（竖贯）：竖贯是他天生的形状，不是谁发的。总局发的是腰牌上的登记号，
+       以及他练的那一门制式功法——他押的谱箱里装的就是全国统一的那一版。 */
+    { id: 'blade', name: '铁鸦', portrait: 'portrait.blade', metal: 'agile', home: '钧天', origin: '修行管理总局 · 铁路押运组' },
+    /* 悬针（盾）：北塔的守卫，帝国衰落了还在按旧规值夜。 */
+    { id: 'warden', name: '磐石', portrait: 'portrait.warden', metal: 'aegis', home: '格雷沙姆', origin: '圣髑院 · 北塔' },
+    /* 玄璜（半璧礼北方）：朔方的萨满学徒，血脉唤不醒，只唤出一把灰。 */
+    { id: 'ranger', name: '灰烬', portrait: 'portrait.ranger', metal: 'arc', home: '朔方', origin: '萨满帐 · 唤血不成' },
+    /* 鉴燧之齐（金锡各半）：给器物做频率检定的人，一辈子在照别人的纹。 */
+    { id: 'warlock', name: '低语', portrait: 'portrait.warlock', metal: 'throat', home: '格雷沙姆', origin: '圣髑院 · 下厅检定台' },
+    /* 并蒂（一茎两花）：碎片地带的作品，两套体系长在一块金属上。 */
+    { id: 'cleric', name: '烛火', portrait: 'portrait.cleric', metal: 'twin', home: '碎片地带', origin: '双烛堂 · 东式器物接西式符文' },
+    /* 轮牙（齿轮的牙）：被大厂专利卡死的小厂技师。 */
+    { id: 'rogue', name: '暗巷', portrait: 'portrait.rogue', metal: 'ratchet', home: '沃尔芬', origin: '军工企业 · 外包车间' },
+    ...['断齿', '冷炉', '旧钉', '褪色', '长夜', '哑钟', '霜线', '赤砾'].map((name, portraitCell) => ({
       id: 'wanderer' + portraitCell, name, portraitCell,
+      /* 依次是：地不满东南 / 浑沌未凿 / 栉比 / 溯洄从之 / 凿户牖 / 四达之衢 / 九层之台 / 楚腰 */
+      metal: ['corner', 'sturdy', 'spine', 'ripple', 'conduit', 'crucible', 'terrace', 'waist'][portraitCell],
+      /* 依次是：琉光 钧天 沃尔芬 钧天 格雷沙姆 碎片地带 朔方 琉光
+         —— 七东七西，六个国家都有，不按强弱分：琉光那个缺着角，格雷沙姆那个凿了窗。 */
+      home: ['琉光', '钧天', '沃尔芬', '钧天', '格雷沙姆', '碎片地带', '朔方', '琉光'][portraitCell],
+      /* 依次是：采空区 / 拓版铸坊 / 船厂铆接线 / 被大纲刷掉的旁支 /
+         圣髑院地库 / 路口钟楼 / 极北针叶林 / 一条快采空的富脉 */
+      origin: ['采空区 · 东南缘塌陷带', '拓版铸坊', '船厂 · 铆接流水线', '被教学大纲刷下的旁支',
+        '圣髑院 · 地库方厅', '路口 · 一座不响的钟楼', '极北针叶林 · 垒台体修', '矿产新贵 · 只剩一条细脉'][portraitCell],
     })),
   ];
+
+  /* culture 只在这里算一次：写在 home 上就够，写两遍迟早对不上 */
+  const SKINS = SKIN_LIST.map((s) => ({ ...s, culture: HOME_SIDE[s.home] || 'east' }));
 
   const NAMES = ['铁鸦', '磐石', '灰烬', '低语', '烛火', '暗巷', '断齿', '冷炉', '旧钉', '褪色', '长夜', '哑钟'];
 
   /* ------------------------------ 查表工具 ------------------------------ */
   function body(id) { return BODIES[id] || BODIES.sturdy; }
+
+  /** 底盘长成哪一相。这一相有两套正名，默认给东土《铁相录》那套。
+      culture='west' 时返回圣髑院登记册上的形制名（塔盾、圣物匣），因为那人信那一套。
+      同一块铁在营地里被两边的人用两种叫法喊，不是翻译问题，是学派问题。 */
+  function bodyStyle(id, culture) {
+    const arch = V.PlateGen && V.PlateGen.ARCHETYPES[body(id).archetype];
+    if (!arch) return '';
+    if (culture === 'west' && arch.west) return arch.west.zh;
+    return arch.name;
+  }
+
+  /** 某位传奇用哪一套叫法。查不到就当东土，别让界面空着。 */
+  function cultureOf(skinId) {
+    const s = SKINS.find((x) => x.id === skinId);
+    return (s && s.culture) || 'east';
+  }
+
+  /** 他生在哪一国（钧天/琉光/朔方/格雷沙姆/沃尔芬/碎片地带）。
+      界面拿它写出身，立绘拿它定服饰——「东边的人」太粗，六国才是能画的单位。 */
+  function homeOf(skinId) {
+    const s = SKINS.find((x) => x.id === skinId);
+    return (s && s.home) || '';
+  }
+
+  /** 出身一句话：国家 · 具体来处。查不到就留空，不编。 */
+  function originOf(skinId) {
+    const s = SKINS.find((x) => x.id === skinId);
+    if (!s) return '';
+    return s.origin ? `${s.home} · ${s.origin}` : s.home;
+  }
+
+  /** 相名的出处（哪本书、哪句话）。界面拿它做悬停提示——
+      正名是从旧书里摘的词，不标出处，玩家只会觉得「这名字古里古怪」。 */
+  function bodySource(id) {
+    const arch = V.PlateGen && V.PlateGen.ARCHETYPES[body(id).archetype];
+    return arch ? arch.source || '' : '';
+  }
+
+  /** 西方圣髑院《圣铁登记册》给同一相起的名字。两套名字并存不是冗余：
+      东方问「它像什么」，西方问「它该归入哪一类」——两种文明的正名。 */
+  function bodyWest(id) {
+    const arch = V.PlateGen && V.PlateGen.ARCHETYPES[body(id).archetype];
+    return (arch && arch.west) || { name: '', zh: '', form: '' };
+  }
   function weapon(id) { return WEAPONS[id] || WEAPONS.shortBlade; }
   function template(id) { return TEMPLATES[id] || TEMPLATES.straight; }
   function enemy(id) { return ENEMIES[id] || ENEMIES.bone; }
@@ -1451,6 +2301,7 @@
     MANUSCRIPTS, MANUSCRIPT_ORDER, manuscript, manuscriptReward,
     NODE_TYPES, BLESSINGS, BLESSING_ORDER, EVENTS, EVENT_ORDER, eventPool,
     SKINS, NAMES,
-    body, weapon, template, enemy, nodeType, blessing, event,
+    body, bodyStyle, bodySource, bodyWest, cultureOf, homeOf, originOf, HOME_SIDE,
+    weapon, template, enemy, nodeType, blessing, event,
   };
 })(globalThis.Ashen ||= {});

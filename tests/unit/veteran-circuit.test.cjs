@@ -129,8 +129,8 @@ test('越界 / 屏蔽格 / 重叠 / 超负荷都给出具体原因', () => {
   assert.ok(!rOv.ok);
   assert.ok(rOv.errors.some((m) => m.includes('重叠')), JSON.stringify(rOv.errors));
 
-  const cap = D.BODIES.sturdy.loadCap;
-  D.BODIES.sturdy.loadCap = 2;
+  const perCell = D.DESIGN.capPerCell;
+  D.DESIGN.capPerCell = 0.05;
   try {
     const sturdy = st.roster.find((u) => u.bodyPreset === 'sturdy');
     const heavy = mk(st, [
@@ -142,7 +142,7 @@ test('越界 / 屏蔽格 / 重叠 / 超负荷都给出具体原因', () => {
     assert.equal(rLoad.ok, true, JSON.stringify(rLoad.errors));
     assert.ok(rLoad.overload > 0, `超载量应大于 0（load ${rLoad.load} / cap ${rLoad.cap}）`);
   } finally {
-    D.BODIES.sturdy.loadCap = cap;
+    D.DESIGN.capPerCell = perCell;
   }
 });
 
