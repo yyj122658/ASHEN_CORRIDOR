@@ -55,12 +55,16 @@ function sandbox(seed, build, templates) {
 
 /* ---------------- ① 拓扑编译 ---------------- */
 
-test('直导系：路径每格直导出招间隔 −3%（上限 −20%）', () => {
+test('直导系：每格直导缩间隔（上限 −20%），每次转角反向延迟 +4%（上限 +24%）', () => {
   const straightOnly = sandbox(701, true, ['straight', 'rivet']);
   const p = straightOnly.ally.pulse;
   assert.ok(p.straight > 0, `夹具应有直导格（straight=${p.straight}）`);
   /* 板面是 L 形，直导件会被转着摆，路径仍可能拐一次 —— 这里只守公式 */
-  const expect = Math.max(0.5, 1 - Math.min(straightOnly.V.Circuit.PULSE.straight.cap, p.straight * straightOnly.V.Circuit.PULSE.straight.interval));
+  /* 九标：弯折要吃传输时间 —— intervalScale = 1 − 直导缩短 + 转角延迟（只数弯折件上的转向） */
+  const P0 = straightOnly.V.Circuit.PULSE;
+  assert.ok(p.elbowTurns <= p.turns, '弯折转向是总转向的子集');
+  const expect = Math.max(0.5,
+    1 - Math.min(P0.straight.cap, p.straight * P0.straight.interval) + Math.min(P0.turnDelayCap, p.elbowTurns * P0.turnDelay));
   assert.ok(Math.abs(p.intervalScale - expect) < 1e-9, `间隔系数应是 ${expect}，实际 ${p.intervalScale}`);
   assert.ok(p.intervalScale < 1, '直导应该让出招更快');
   /* 战斗态的 attackInterval 必须真的乘上这一项 */
@@ -140,8 +144,14 @@ test('完整度 = 25 + 占格×1.15 + min(闭环,3)×6，阻抗 = 覆盖率×20 
   const panel = V.Circuit.compile(st, unit.id).value.panel;
   const used = new Set(pv.occupied.map((c) => c[0] + ',' + c[1])).size;
   assert.equal(panel.usedCells, used, '占格数应与预览一致');
+  /* 九标：完整度 = 25 + (纹路占格 + 蚀刻法有效格)×1.15 + min(闭环,3)×6，
+     蚀刻法单门的有效格封顶 34（大卷的自承重部分不计）。 */
   const P = V.Circuit.PULSE;
-  assert.equal(panel.maxHp, 25 + Math.round(used * P.hpPerCell) + Math.min(panel.loops, P.loopHpCap) * P.hpPerLoop);
+  assert.ok(panel.manuscriptCells > 0, '面板应带上蚀刻法骨架格数');
+  assert.ok(panel.manuscriptEffectiveCells <= P.manuscriptCellCap * 2, '单门有效格不该超过上限');
+  const eff = used + panel.manuscriptEffectiveCells;
+  assert.equal(panel.effectiveCells, eff, '有效占格 = 纹路 + 蚀刻法有效格');
+  assert.equal(panel.maxHp, 25 + Math.round(eff * P.hpPerCell) + Math.min(panel.loops, P.loopHpCap) * P.hpPerLoop);
   assert.equal(panel.atk, 10, '幅值基座恒为 10');
   assert.equal(ally.maxHp >= 25, true);
   assert.ok(panel.def >= Math.round((panel.coverage / 100) * 20), '阻抗至少吃到覆盖率那一份');

@@ -693,7 +693,9 @@
          「6.7 次/回合」几乎是同一个数（实测两列相差不到 9%），
          真正把 A 和 B 分开的是**单发尺寸**（12 对 60）——
          所以护膜必须按尺寸筛，而不是按次数摊，否则这条对位是假咬合。 */
-      membrane: { layers: 5, reduce: 0.90, minHit: 16, name: '相位护膜' },
+      /* 九标：5 层/−90% 对谁都是墙（实测四家全 0%），改成 3 层/−75%、每回合只补 2 层。
+         高频多段的 A 能在一回合内把膜剥穿（~80%），慢速单发的 B 依然一轮只剥掉几层（~30%）。 */
+      membrane: { layers: 3, reduce: 0.75, minHit: 16, regrow: 2, name: '相位护膜' },
     },
     memoryEater: {
       id: 'memoryEater', name: '噬忆者', enemyType: 'memoryEater', boss: true,
@@ -711,11 +713,13 @@
          八标：每次行动抽前排 2 人各 3 点余裕、全家 +10 压力。
          靠余裕循环维持招式的阵容会被一路抽到「枯竭停机」；
          C 流派的余烬把压力当燃料（每点压力 +0.5% 幅值），被抽反而变强。 */
-      onAction: { drainEnergy: 5, drainTarget: 'front2', stressAll: 10, stripShield: true, name: '抽忆' },
+      /* 九标：只抽前排 1 人 3 点、剥 8 点缓冲、全家 +8 压。
+         高热（≥50）单位免疫抽能并换成一记 +25% 过载反冲 —— 这是 C 流派的专属腿。 */
+      onAction: { drainEnergy: 3, drainTarget: 'front', stressAll: 8, stripShield: 8, name: '抽忆' },
     },
     furnaceHeart: {
       id: 'furnaceHeart', name: '炉心俑', enemyType: 'furnaceHeart', boss: true, sprite: 'hulk',
-      hp: 259, atk: 29, def: 30, spd: 16, hits: 0.94,
+      hp: 285, atk: 29, def: 30, spd: 16, hits: 0.94,
       skills: [
         { id: 'furnacePulse', name: '炉脉', mult: 1.25, target: 'allFoe', dot: { k: 'burn', v: 5, hits: 2 }, cd: 2, pierce: 0.60 },
         /* 重铸：一局最多三次。8%+16% 每 4 秒是「时间站在它那边」，但没有上限时

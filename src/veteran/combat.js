@@ -62,6 +62,14 @@
     return !!u && u.side === 'ally' && (u.stress || 0) >= overloadConfig().heatThreshold;
   }
 
+  /** 九标：直导通路的「动能缓冲」上限（独立于储能系，硬封顶 18 点）。 */
+  function kineticCapOf(pulse) {
+    const P = V.Circuit.PULSE;
+    const straight = ((pulse || {}).straight) || 0;
+    return Math.min(P.kineticCapHard == null ? 18 : P.kineticCapHard,
+      Math.floor(straight * (P.kineticCapCells == null ? 2 : P.kineticCapCells)));
+  }
+
   function energyRegen(u) {
     /* 超载罚项是**动态**的：u.regen 是建战时算好的账面值（含罚项），
        但压力在战斗里会涨会落，所以每帧要重新判一次「够不够热」。
@@ -511,8 +519,11 @@
       atk: stats.atk,
       def: stats.def,
       spd: stats.spd,
-      /* 电容缓冲上限：没有储能纹路就是 0 */
-      shieldCap: stats.shieldCap || 0,
+      /* 电容缓冲上限：没有储能纹路就是 0。
+         九标：直导通路的「动能缓冲」叠在同一个 shield 池上（每 2 格直导 +1 点/次命中），
+         它的上限独立且额外，封顶 min(18, 直导格 × 2)。 */
+      shieldCap: (stats.shieldCap || 0) + kineticCapOf(pulse),
+      kineticGain: Math.floor((((pulse || {}).straight) || 0) * (V.Circuit.PULSE.kineticPerTwoCells == null ? 1 : V.Circuit.PULSE.kineticPerTwoCells) / 2),
       /* 闸系：压力 ≥50 或有缓冲时放大脉冲 */
       gateRune: !!pulse.gate,
       /* 余烬：每次脉冲吸压、按压力换幅值 */
@@ -1264,6 +1275,11 @@
       /* 压力换幅值封顶 +30%：不封顶的话 100 压就是 ×2.5，再乘下面那不是共振是秒杀 */
       amp *= 1 + Math.min(P.emberAmpCap, P.emberPerStress * (actor.stress || 0));
     }
+    /* 九标：噬忆者的抽能被高热回路烧成了反冲 —— 下一击 +25% 过载脉冲 */
+    if (actor.heatRebound > 0) {
+      ampAdd += actor.heatRebound;
+      actor.heatRebound = 0;
+    }
     /* 两极共振：高热时脉冲更猛（与闸门加算） */
     if (actor.innate === 'waist' && (actor.stress || 0) >= 50) ampAdd += 0.45;
     amp *= 1 + ampAdd;
@@ -1289,6 +1305,15 @@
       type: crit ? 'crit' : 'hit', actorId: actor.id, targetId: tgt.id, amount: res.dealt,
       text: `${actor.name} ${o.label || '攻击'} ${tgt.name}${crit ? '（暴击）' : ''} -${res.dealt}`,
     });
+    /* 九标 · A 流派防御轴：直导通路的每次命中都给一层薄盾（每 2 格直导 +1 点）。
+       它靠出手次数吃饭，所以「打得快」本身就把盾续上来了 —— 上限由 kineticCap 单独封顶。 */
+    if (res.dealt > 0 && actor.kineticGain > 0 && actor.side === 'ally') {
+      const got = addShield(actor, actor.kineticGain);
+      if (got > 0 && b.logs.length < 400) {
+        log(b, { type: 'shield', actorId: actor.id, targetId: actor.id, amount: got,
+          text: `${actor.name} 的直导脉冲折成 ${got} 点动能缓冲` });
+      }
+    }
     /* 中毒：被普通攻击命中就立刻多跳一次，快攻/多段流因此能靠出手次数堆毒 */
     if (res.dealt > 0) poisonOnHit(b, actor, tgt);
     /* 腐蚀被动：对已中毒的目标，普攻附带一段按攻击力折算的附加伤 */
@@ -1682,23 +1707,32 @@
   }
 
   /**
-   * 七标：噬忆者的行动光环 —— 每次行动抽前排余裕、给全队加压力。
-   * 八标：抽「前排 2 人」各 3 点。只抽 1 人的话，把吃抽的人换到后排就全额免疫了；
-   * 抽 2 人才逼出「谁去挡」的取舍 —— 站位第一次真正变成防线。
-   * 压力是给全队的：C 流派把压力当燃料，别的流派得拿余裕去安抚。
+   * 噬忆者的行动光环：抽前排余裕、剥缓冲、给全队加压力。
+   * 九标：**高热反制** —— 压力 ≥50 的单位免疫抽能，并把这次压力转成下一击 +25% 的过载反冲。
+   * 这条是「C 克噬忆者」的唯一腿：余烬流本来就要把自己烧到高热区，
+   * 而常规续航流（A/B）在第 50 压之前就会被一路抽到停机。
    */
+  const HEAT_REFUSE = 50;
+
   function applyEnemyActionAura(b, e) {
     const cfg = e.onAction || {};
-    /* 八标：抽忆从「抽最前排 1 人」扩到「抽前排 2 人」。
-       只抽一个的话，把吃抽的人换到后排就全额免疫了；抽两个才逼出「谁去挡」的取舍。 */
     const foes = alive(b.allies).sort((a, c) => a.slot - c.slot);
     const fronts = cfg.drainTarget === 'front2' ? foes.slice(0, 2) : foes.slice(0, 1);
     if (cfg.drainEnergy) {
       fronts.forEach((front) => {
+        /* 九标：高热免抽 —— 余烬流派把「被抽」变成「被充能」 */
+        if ((front.stress || 0) >= HEAT_REFUSE) {
+          front.heatRebound = Math.max(front.heatRebound || 0, 0.25);
+          log(b, {
+            type: 'blocked', actorId: e.id, targetId: front.id,
+            text: `${e.name} 的${cfg.name || '抽忆'}抽不动 ${front.name}：高热回路把抽能烧成了反冲`,
+          });
+          return;
+        }
         const drained = Math.min(front.energy || 0, cfg.drainEnergy);
         front.energy = Math.max(0, (front.energy || 0) - cfg.drainEnergy);
-        /* 八标：抽走的不只是余裕，还有「回上来的能力」——1.5s 内回裕只剩 15%。
-           否则 3 点余裕只要 4 tick 就自然回满，抽忆等于没抽（实测被抽后 1~2 tick 回满）。 */
+        /* 抽走的不只是余裕，还有「回上来的能力」——1s 内回裕只剩 40%。
+           否则 3 点余裕只要 4 tick 就自然回满，抽忆等于没抽。 */
         front.energyLock = Math.max(front.energyLock || 0, 1.0);
         log(b, {
           type: 'disrupt', actorId: e.id, targetId: front.id, amount: Math.round(drained * 100) / 100,
@@ -1709,11 +1743,13 @@
     /* 八标：噬忆者顺手剥掉前排身上的缓冲。
        储能流的整套引擎都建在「护盾 → 满溢放电」上（满仓一发 ×1.85），
        剥盾是唯一只打 B 不打 A/C 的开关 —— A 与 C 的 shieldCap 本来就是 0。 */
+    /* 剥缓冲：固定 8 点，不再整条剥光（九标下调，给储能流留活路） */
     if (cfg.stripShield) {
-      fronts.concat(alive(b.allies).filter((a) => !fronts.includes(a))).forEach((a) => {
+      const n = typeof cfg.stripShield === 'number' ? cfg.stripShield : 8;
+      alive(b.allies).forEach((a) => {
         if (!(a.shield > 0)) return;
-        const lost = a.shield;
-        a.shield = 0;
+        const lost = Math.min(a.shield, n);
+        a.shield = Math.max(0, a.shield - n);
         log(b, { type: 'strip', actorId: e.id, targetId: a.id, amount: lost,
           text: `${e.name} 的${cfg.name || '抽忆'}化掉 ${a.name} ${lost} 点缓冲` });
       });
@@ -1903,7 +1939,12 @@
       /* 相位护膜每回合补满：层数/回合是「频次检验」的计价单位 ——
          打不到那么多次的阵容，永远有一半脉冲是撞在膜上的。 */
       b.enemies.forEach((e) => {
-        if (e.alive !== false && e.membrane) e.membrane.left = e.membrane.layers;
+        /* 九标：护膜不再每回合补满，只补 2 层（上限仍是 layers）。
+           补满 5 层等于「只要还活着就永远有膜」，高频流剥层的努力全被抹掉。 */
+        if (e.alive !== false && e.membrane) {
+          const regrow = e.membrane.regrow == null ? 2 : e.membrane.regrow;
+          e.membrane.left = Math.min(e.membrane.layers, (e.membrane.left || 0) + regrow);
+        }
       });
       /* 八标 · 首领软狂暴时钟：第 10 回合之后每回合 +12% 脉冲幅值、+1 速度。
          没有这条时钟，劣势流派可以把首领「磨」到 27 回合还赢 ——

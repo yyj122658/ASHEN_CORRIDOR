@@ -252,8 +252,15 @@
       built.push({ itemId: item.id, templateId: item.templateId, tpl, x: p.x, y: p.y, rotation: p.rotation || 0, mirrorY: !!p.mirrorY, cells, ports, relief });
     });
 
-    /* 蚀刻法也吃负荷：多修一套就少放纹路，这是唯一的平衡阀 */
-    for (const ms of etchings) load += Number(ms.load) || 0;
+    /* 蚀刻法也吃负荷：多修一套就少放纹路，这是唯一的平衡阀。
+       九标：单门超过 34 格的部分按比例免负荷（自承重），否则大卷「占满板面还收全额学费」。 */
+    for (const ms of etchings) {
+      const l = Number(ms.load) || 0;
+      const n = V.State.manuscriptCells(ms).length;
+      load += n > PULSE.manuscriptCellCap
+        ? Math.max(1, Math.round((l * PULSE.manuscriptCellCap) / n))
+        : l;
+    }
     /* 异形板面格数多，负荷上限单独给；经典模式沿用老值 */
     const cap = loadCap(unit);
     /* 超载不再阻止装配：超出部分转成开局压力与回裕惩罚，玩家自己决定值不值 */
@@ -510,7 +517,7 @@
     straightDodge: 0.015,                        // 每格直导额外 +1.5% 闪避
     straightDodgeCap: 0.12,                      // 上限 +12%
     emberPerStress: 0.005,                       // 余烬：每点压力转 +0.5% 幅值
-    emberAmpCap:  0.30,                          // 余烬的压力增幅封顶 +30%
+    emberAmpCap:  0.55,                          // 余烬的压力增幅封顶（九标：转角延迟同时拖慢了 C，用增幅补回来）
     /* 八标：余烬单位带着炉温入场。
        起手余裕砍到 1/5、普攻节奏拉到 1.1s 之后，一场只有 ~7 次脉冲，
        `+6/次` 最快也要第 11 次命中才进 65 压的死区 —— 余烬的整条温控
@@ -527,6 +534,19 @@
     loopHpCap:  3,                               // 完整度只认前 3 个闭环
     loopAmp:    0.04,                            // 每个闭环 +4% 脉冲幅值
     loopAmpCap: 4,                               // 最多计 4 环 → +16%
+    /* 九标 · A 流派的防御出口：直导通路每 2 格给 1 点「动能缓冲」，上限独立于储能系。
+       直导是靠出手次数吃饭的流派，本身没有储能纹路 → shieldCap 恒为 0，
+       在高强度层域里是纯玻璃炮。让它把「打得快」换成一层自维持的薄盾。 */
+    kineticPerTwoCells: 1,                       // 每 2 格直导 +1 动能缓冲
+    kineticCapCells: 2,                          // 上限 = 直导格 × 2
+    kineticCapHard: 18,                          // 硬上限 18 点
+    /* 九标 · B 流派的代价：信号过 90° 弯折要吃传输时间。
+       每 1 次转角 +4% 出手间隔（上限 +24%）。24 转角的线圈炮从 0.86s 拉到 ~1.05s，
+       单发爆发不动，持续 DPS 掉 20%~25%。 */
+    turnDelay: 0.04,
+    turnDelayCap: 0.24,
+    /* 九标 · 大卷自承重：单门蚀刻法参与完整度/负荷计算的有效占格封顶 34 格。 */
+    manuscriptCellCap: 34,
     defCoverage: 20,                             // 满覆盖 → 阻抗 +20
     /* 八标：软底 30 → 70 且拦截率硬封顶 45%。
        30 的曲线上，def 55 能拦 65%，叠上「先乘一次、结算再乘一次」的两次口径，
@@ -581,6 +601,7 @@
     let gate = false;
     let ember = false;
     let hairpin = false;
+    let elbowTurns = 0;
     let prevDir = null;
 
     path.forEach((k, i) => {
@@ -596,12 +617,20 @@
         const [x, y] = k.split(',').map(Number);
         const [px, py] = path[i - 1].split(',').map(Number);
         const dir = (x - px) + ',' + (y - py);
-        if (prevDir !== null && dir !== prevDir) turns += 1;
+        if (prevDir !== null && dir !== prevDir) {
+          turns += 1;
+          /* 九标：只有**弯折件**上的转向才是「物理延时的来源」。
+             余烬/闸系/直导件上的折角是同一枚元件内的走向，不该额外罚。
+             这样 24 转角的线圈炮吃满延迟，9 转角的余烬流不会被连带拖死。 */
+          if (fam === 'elbow') elbowTurns += 1;
+        }
         prevDir = dir;
       }
     });
 
-    const intervalScale = 1 - Math.min(PULSE.straight.cap, straight * PULSE.straight.interval);
+    /* 九标：直导缩间隔、弯折算延迟 —— 两个方向都写进同一个 intervalScale */
+    const turnDelay = Math.min(PULSE.turnDelayCap, elbowTurns * PULSE.turnDelay);
+    const intervalScale = 1 - Math.min(PULSE.straight.cap, straight * PULSE.straight.interval) + turnDelay;
     /* 八标：闭环的拓扑价值从「堆血」搬回「进攻」。
        完整度那边只认 3 个闭环（见 panelOf），这里把多出来的环路兑现成幅值：
        每环 +4%，最多计 4 环（+16%）。与弯折、分流各自独立乘区，互不冲抵。 */
@@ -618,6 +647,7 @@
       path,
       straight,
       turns,
+      elbowTurns,
       hairpin,
       split,
       looped: !!(rt && rt.looped),
@@ -678,7 +708,15 @@
     /* 八标：完整度只认前 3 个闭环（+18 封顶）。
        旧口径 13 环能堆出 270 完整度，四名 A 流派合计 1140，而 F49 敌方三人只有 443 ——
        敌人还没轮到第二次脉动就被清完，靠「敌人出手」成立的熔断与打断全部空转。 */
-    const maxHp = 25 + Math.round(used * PULSE.hpPerCell)
+    /* 九标：蚀刻法骨架的「有效占格」计入完整度，但单门封顶 34 格。
+       R5~R7 的大卷占 32~54 格、负荷 11~12 点，却一格完整度都不给 —— 这是它们
+       在后期章节压不出面板的直接原因（manuscript-growth 只剩第 1、4 章能赢）。
+       超出 34 格的部分当作「自承重超导框架」：不再增加完整度，也不再按格计费。 */
+    const etchings = V.State.manuscriptsOf(unit);
+    const msCells = etchings.reduce((a, m) => a + V.State.manuscriptCells(m).length, 0);
+    const msEff = etchings.reduce((a, m) => a + Math.min(V.State.manuscriptCells(m).length, PULSE.manuscriptCellCap), 0);
+    const effectiveCells = used + msEff;
+    const maxHp = 25 + Math.round(effectiveCells * PULSE.hpPerCell)
       + Math.min(loops, PULSE.loopHpCap) * PULSE.hpPerLoop;
     /* 八标：缓冲池双封顶 —— 每格 5 点，且不超过完整度的 45%。
        单靠「每格 6 点」时 B 流派能攒出 108 点盾，受击还现充 30%，
@@ -693,6 +731,9 @@
       spd: ch.spd,
       loops,
       usedCells: used,
+      manuscriptCells: msCells,
+      manuscriptEffectiveCells: msEff,
+      effectiveCells,
       coverage,
       caps,
       gates,
