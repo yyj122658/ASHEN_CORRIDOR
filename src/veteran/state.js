@@ -132,21 +132,30 @@
     return V.Circuit.plateOf(unit).cellsList.filter(cell => !occupied.has(cell.join(',')));
   }
 
-  function canPlaceManuscript(unit, id, pose) {
-    const spec = D().manuscript(id);
+  function canPlaceManuscript(unit, id, pose, specOverride) {
+    const spec = specOverride || D().manuscript(id);
     if (!spec || !pose || !isInt(pose.x) || !isInt(pose.y)
       || ![0, 1, 2, 3].includes(pose.rotation ?? 0)) return false;
     const shape = V.Manuscript.orient(V.Manuscript.normalize(spec), pose.rotation, !!pose.mirrorY);
     return V.Manuscript.fits(shape, freeManuscriptCells(unit, id), pose.x, pose.y);
   }
 
-  function bestManuscriptPose(st, unit, spec, cells, placements) {
+  /**
+   * 找一个落点。`lock` 用来「只换位置、不动朝向」：
+   *   lock.rotation 指定时只试这个转向；lock.mirrorY 同理。都不给才全向搜索。
+   * 「四达并存」要求板上有横有纵，玩家手动把一门转成纵向时必须能保住这个朝向，
+   * 否则每次移动/重摆都被自动选向掰回横向，那一相就永远摆不出来。
+   */
+  function bestManuscriptPose(st, unit, spec, cells, placements, lock) {
     const base = V.Manuscript.normalize(spec);
     const idx = V.Manuscript.pieceIndex(V.Circuit.layout(st, placements || unit.board.placements));
+    const o = lock || {};
+    const rotations = o.rotation != null ? [o.rotation] : [0, 1, 2, 3];
+    const mirrors = o.mirrorY != null ? [!!o.mirrorY] : [false, true];
     let best = null;
     let bestScore = -1;
-    for (const mirrorY of [false, true]) {
-      for (let rotation = 0; rotation < 4; rotation++) {
+    for (const mirrorY of mirrors) {
+      for (const rotation of rotations) {
         const oriented = V.Manuscript.orient(base, rotation, mirrorY);
         for (const [x, y] of V.Manuscript.placements(oriented, cells)) {
           const score = V.Manuscript.coverage(oriented, x, y, idx).aligned;
@@ -177,6 +186,101 @@
     unit.extraManuscripts = list.slice(1);
   }
 
+  function migrateMetalGeometry(st) {
+    const run = st.run;
+    const locations = itemLocations(st);
+    if (Object.values(locations).some(owners => owners.length > 1)) throw new Error('重复物品归属');
+    const returned = new Set();
+    for (const unit of st.roster) {
+      const skin = D().SKINS.find(s => s.id === unit.skinId);
+      if (skin && unit.name === skin.alias) {
+        unit.name = skin.name;
+        if (!unit.plateOverride) unit.bodyPreset = skin.metal;
+      }
+      const plate = V.Circuit.plateOf(unit);
+      const old = manuscriptsOf(unit);
+      const seen = new Set();
+      setManuscripts(unit, []);
+      for (const saved of old) {
+        const spec = D().manuscript(saved.id);
+        if (!spec || seen.has(saved.id)) throw new Error('旧蚀刻法非法');
+        seen.add(saved.id);
+        const pose = canPlaceManuscript(unit, spec.id, saved, spec)
+          ? {x:saved.x, y:saved.y, rotation:saved.rotation || 0, mirrorY:!!saved.mirrorY}
+          : bestManuscriptPose(st, unit, spec, freeManuscriptCells(unit, spec.id));
+        if (pose) setManuscripts(unit, [...manuscriptsOf(unit), {...spec, ...pose}]);
+        else (st.manuscriptVault ||= []).push(spec);
+      }
+
+      const occupied = new Set();
+      const place = (p, keepPosition) => {
+        const item = st.itemsById[p.itemId];
+        if (item?.kind !== 'circuit' || !isInt(p.x) || !isInt(p.y) ||
+          ![0,1,2,3].includes(p.rotation ?? 0)) throw new Error('旧纹路记录非法');
+        const {cells} = V.Circuit.transformTemplate(D().template(item.templateId), p.rotation || 0, !!p.mirrorY);
+        const spots = keepPosition ? [[p.x, p.y]] : plate.cellsList.slice().sort(([ax, ay], [bx, by]) =>
+          Math.abs(ax - p.x) + Math.abs(ay - p.y) - Math.abs(bx - p.x) - Math.abs(by - p.y));
+        for (const [x,y] of spots) {
+          const keys = cells.map(c => `${x + c.x},${y + c.y}`);
+          if (keys.some(k => !plate.cells.has(k) || occupied.has(k))) continue;
+          keys.forEach(k => occupied.add(k));
+          return {...p, x, y};
+        }
+        return null;
+      };
+      const initial = unit.board.placements;
+      const kept = initial.map(p => place(p, true));
+      unit.board.placements = initial.flatMap((p,i) => {
+        const fitted = kept[i] || place(p, false);
+        if (fitted) return [fitted];
+        st.stash.push(p.itemId);
+        return [];
+      });
+      const scars = new Set();
+      for (const scar of unit.scars || []) {
+        const key = `${scar.x},${scar.y}`;
+        if (plate.cells.has(key) && !scars.has(key)) scars.add(key);
+        else {
+          const cell = plate.cellsList.find(c => !scars.has(c.join(',')));
+          if (!cell) throw new Error('没有足够的瘢痕落点');
+          [scar.x, scar.y] = cell;
+          scars.add(cell.join(','));
+        }
+      }
+      if (run?.startLoadouts?.[unit.id]) {
+        run.startLoadouts[unit.id].board = clone(unit.board);
+        run.startLoadouts[unit.id].manuscriptIds = manuscriptsOf(unit).map(m => m.id);
+      }
+      if (run?.fieldLayouts?.[unit.id]) {
+        const bindings = run.provisionalBindings.filter(b => b.unitId === unit.id);
+        const layout = unit.board.placements.slice();
+        for (const binding of bindings) {
+          const saved = run.fieldLayouts[unit.id].find(p => p.itemId === binding.itemId) || binding.placement;
+          const fitted = saved && (place(saved, true) || place(saved, false));
+          if (fitted) {
+            binding.placement = fitted;
+            layout.push(fitted);
+          } else {
+            returned.add(binding.itemId);
+            run.bag.push(binding.itemId);
+          }
+        }
+        run.fieldLayouts[unit.id] = layout;
+      }
+    }
+    if (returned.size) {
+      run.provisionalBindings = run.provisionalBindings.filter(b => !returned.has(b.itemId));
+      for (const token of V.Expedition.packOverflow(st)) {
+        if (token.startsWith('part:') && returned.has(token.slice(5))) (run.packReserve ||= {})[token] = 1;
+      }
+    }
+    st.manuscriptVault = (st.manuscriptVault || []).map(m => D().manuscript(m?.id) || m);
+    for (const offer of st.shop || []) {
+      const skin = D().SKINS.find(s => s.id === offer.skinId);
+      if (skin && offer.name === skin.alias) offer.name = skin.name;
+    }
+  }
+
   /** 玩家装配事务：板面与负荷全通过才提交，并且只扣新增的那一份。 */
   function placeManuscript(st, unit, id, pose, placements) {
     const spec = D().manuscript(id);
@@ -184,10 +288,30 @@
     const index = equipped.findIndex(m => m.id === id);
     const stock = (st.manuscriptVault || []).findIndex(m => m.id === id);
     if (!spec || (index < 0 && stock < 0)) return { ok: false, reason: '尚未获得这门蚀刻法' };
-    const target = pose || bestManuscriptPose(st, unit, spec, freeManuscriptCells(unit, id), placements);
-    if (!canPlaceManuscript(unit, id, target)) return { ok: false, reason: '拓片需要一块形状相合的空地' };
-    const owned = index < 0 ? st.manuscriptVault[stock] : equipped[index];
-    const next = { ...spec, ...owned, x: target.x, y: target.y, rotation: target.rotation || 0, mirrorY: !!target.mirrorY };
+    /* 门数是硬上限：同时维持的路线太多，方向律会让每条都刻不深。
+       换位、改朝向不算新增，不受此限。
+       （用词：这里写「蚀刻法」而不是理论层的「功法」，等 backlog B4 裁决后统一。） */
+    const slots = D().DESIGN.manuscriptSlots;
+    if (index < 0 && equipped.length >= slots) {
+      return { ok: false, reason: `这块金属最多同时维持 ${slots} 门蚀刻法，先卸下一门` };
+    }
+    /* 姿态分三种情况：
+       ① 给了坐标（拖到某个格）→ 原样尊重，朝向缺省按 0；
+       ② 只给了朝向（工坊里点了旋转/镜像，或调用方只想「转一下再找位」）→ 在该朝向下找位置；
+       ③ 什么也没给（首次从库存自动铺入）→ 全向搜索最优覆盖。 */
+    const hasOrient = !!pose && (pose.rotation != null || pose.mirrorY != null);
+    const hasSpot = !!pose && isInt(pose.x) && isInt(pose.y);
+    const target = hasSpot
+      ? { x: pose.x, y: pose.y, rotation: pose.rotation ?? 0, mirrorY: !!pose.mirrorY }
+      : bestManuscriptPose(st, unit, spec, freeManuscriptCells(unit, id), placements,
+        hasOrient ? { rotation: pose.rotation, mirrorY: pose.mirrorY } : null);
+    if (!canPlaceManuscript(unit, id, target, spec)) {
+      const shapeFits = V.Manuscript.hasPlacement(V.Manuscript.normalize(spec), V.Circuit.plateOf(unit).cellsList);
+      return { ok: false, reason: shapeFits
+        ? `当前落点无法完整装配「${spec.name}」，请检查朝向和空位`
+        : `轮廓不兼容，无法完整装配「${spec.name}」` };
+    }
+    const next = { ...spec, x: target.x, y: target.y, rotation: target.rotation || 0, mirrorY: !!target.mirrorY };
     if (index < 0) equipped.push(next);
     else equipped[index] = next;
     const candidate = { ...unit };
@@ -228,6 +352,12 @@
     return h >>> 0;
   }
 
+  /** 某位来客注定长在哪块金属上：同一 skinId 在任何档里都一样。
+      招募卡与招入后的单位都调这一个函数，预览与实物不会对不上。 */
+  function plateSeedFor(skinId) {
+    return hashSeed('metal:' + skinId);
+  }
+
   function classicPlateOf(body) {
     const blocked = new Set((body.blocked || []).map((b) => b[0] + ',' + b[1]));
     const cells = [];
@@ -236,20 +366,23 @@
         if (!blocked.has(x + ',' + y)) cells.push([x, y]);
       }
     }
-    return { cells, terminals: D().TERMINALS };
+    return { cells };
   }
 
   function makeUnit(st, spec) {
-    const body = D().body(spec.bodyPreset);
+    const skin = D().SKINS.find(s => s.id === spec.skinId);
+    const body = D().body(spec.bodyPreset || (skin && skin.metal));
     const unitId = takeId(st, 'u');
     const unit = {
       id: unitId,
-      name: spec.name,
+      name: spec.name || skin?.name,
       skinId: spec.skinId,
       bodyPreset: body.id,
       /* 板面 seed 由 id 稳定派生，不消耗玩法随机序列：
          否则改一次板面规则就会打乱整局的随机，存档也对不上 */
-      plateSeed: spec.plateSeed != null ? (spec.plateSeed >>> 0) : hashSeed('plate:' + unitId),
+      /* 金属由长相决定：同一位传奇在任何一个档里都是同一块铁，
+         seed 从 skinId 派生，所以 21 位传奇的板面互不重复且永远稳定 */
+      plateSeed: spec.plateSeed != null ? (spec.plateSeed >>> 0) : plateSeedFor(spec.skinId || unitId),
       stress: 0,
       affliction: null,
       scars: [],
@@ -336,17 +469,56 @@
       savedAt: 0,
     };
 
-    /* 同一生命基数，三门练法带来不同打法。 */
-    const setup = [
-      /* 顺序即身位；可在营地调整。 */
-      { skinId: 'blade', bodyPreset: 'sturdy', name: '铁鸦' },
-      { skinId: 'ranger', bodyPreset: 'agile', name: '灰烬' },
-    ];
+    const setup = st.plateMode === 'classic'
+      ? [{ skinId: 'blade', bodyPreset: 'sturdy' }, { skinId: 'ranger', bodyPreset: 'agile' }]
+      : [{ skinId: 'blade' }, { skinId: 'ranger' }];
 
     setup.forEach((spec, index) => {
       const unit = makeUnit(st, spec);
       equipPreset(st, unit, 'basic');
-      if (st.plateMode === 'plate') equipManuscript(st, unit, ['spark', 'needle'][index]);
+      if (st.plateMode === 'plate') {
+        equipManuscript(st, unit, ['spark', 'needle'][index]);
+        /* 六标之后骨架有 6~54 格，`basic` 那套固定坐标必然盖不住、也接不通。
+           开局必须让玩家看到一条**已经通电**的通路：不通就把预设件退回仓库，改铺起手通路。 */
+        if (unit.manuscript && V.Circuit && !V.Circuit.manuscriptState(st, unit.id).routed) {
+          (unit.board?.placements || []).forEach((p) => st.stash.push(p.itemId));
+          unit.board.placements = [];
+          const loadout = V.Circuit.autoLoadout(st, unit);
+          if (loadout) unit.board.placements = loadout;
+          /* 通路之外再补两三件「余裕件」：开局板上只有一条光秃秃的通路太素，
+             而且玩家需要看到「纹路也可以刻在膜外」这件事（瘢痕/镶嵌都靠它）。 */
+          const plate = V.Circuit.plateOf(unit);
+          const used = new Set(unit.board.placements.map((p) => {
+            const it = st.itemsById[p.itemId];
+            const tf = V.Circuit.transformTemplate(D().template(it.templateId), p.rotation || 0, !!p.mirrorY);
+            return tf.cells.map((c) => (c.x + p.x) + ',' + (c.y + p.y));
+          }).flat());
+          const msCells = new Set(V.State.manuscriptCells(unit.manuscript).map((c) => c.join(',')));
+          let budget = V.Circuit.loadCap(unit) - unit.board.placements.reduce(
+            (n, p) => n + (D().template(st.itemsById[p.itemId].templateId).load || 1), 0,
+          ) - (Number(unit.manuscript.load) || 0);
+          ['rivet', 'straight', 'capacitor'].forEach((id) => {
+            const tpl = D().template(id);
+            if (!tpl || budget < (tpl.load || 1)) return;
+            for (let rot = 0; rot < 4; rot += 1) {
+              for (const mir of [false, true]) {
+                const tf = V.Circuit.transformTemplate(tpl, rot, mir);
+                for (const [ox, oy] of plate.cellsList) {
+                  const keys = tf.cells.map((c) => (c.x + ox) + ',' + (c.y + oy));
+                  if (!keys.every((k) => plate.cells.has(k))) continue;
+                  if (keys.some((k) => used.has(k) || msCells.has(k))) continue;
+                  keys.forEach((k) => used.add(k));
+                  const part = makePart(st, { kind: 'circuit', templateId: id });
+                  st.itemsById[part.id] = part;
+                  unit.board.placements.push({ itemId: part.id, x: ox, y: oy, rotation: rot, mirrorY: mir });
+                  budget -= tpl.load || 1;
+                  return;
+                }
+              }
+            }
+          });
+        }
+      }
       st.roster.push(unit);
       st.team[index] = unit.id;
     });
@@ -358,7 +530,7 @@
       st.stash.push(part.id);
     });
 
-    /* 短拓片适合起手合修，长拓片留给愿意调整板面的玩家。 */
+    /* 短蚀刻法适合起手辅修，长蚀刻法留给愿意调整板面的玩家。 */
     for (const id of ['corridor5', 'rivet']) {
       const starter = D().manuscript(id);
       if (starter) st.manuscriptVault.push(clone(starter));
@@ -475,7 +647,7 @@
       if (!u) return;
       if (u.extraManuscripts !== undefined && (!Array.isArray(u.extraManuscripts)
         || u.extraManuscripts.some(m => !m) || (u.extraManuscripts.length && !u.manuscript))) {
-        err(`${u.id} 的合修记录非法`);
+        err(`${u.id} 的辅修记录非法`);
       }
       const ids = new Set();
       for (const m of manuscriptsOf(u)) {
@@ -555,7 +727,7 @@
       (u.board && u.board.placements || []).forEach((p) => {
         const it = st.itemsById[p.itemId];
         if (!it) return err(`${u.id} 的板面引用了不存在的纹路 ${p.itemId}`);
-        if (it.kind !== 'circuit') err(`${u.id} 的板面放了非回路纹路 ${p.itemId}`);
+        if (it.kind !== 'circuit') err(`${u.id} 的板面放了非纹路 ${p.itemId}`);
         if (!isInt(p.x) || !isInt(p.y) || p.x < 0 || p.y < 0 || p.x > maxCoord || p.y > maxCoord) {
           err(`${u.id} 的纹路 ${p.itemId} 坐标越界`);
         }
@@ -563,7 +735,7 @@
       });
     });
 
-    /* 蚀刻法藏品：只认已知谱目，避免坏档塞进任意对象 */
+    /* 蚀刻法藏品：只认已知蚀刻法，避免坏档塞进任意对象 */
     (st.manuscriptVault || []).forEach((m) => {
       if (!m || !D().manuscript(m.id)) err(`蚀刻法藏品里有未知条目：${m && m.id}`);
     });
@@ -587,6 +759,8 @@
       (r.party || []).forEach((p, i) => {
         if (!ids.has(p.uid)) err(`party[${i}] 指向不存在的角色 ${p.uid}`);
         if (!isInt(p.slot) || p.slot < 0 || p.slot > 3) err(`party[${i}] slot 越界`);
+        const P = V.Positions;
+        if (p.deployment != null && P.deploymentProblem(r.party, p.uid, p.deployment)) err(`party[${i}] 落点无效`);
       });
       if (r.party) {
         const slots = new Set(r.party.map((p) => p.slot));
@@ -604,12 +778,12 @@
       }
       if (r.encounter && r.encounter.checkpoint && r.encounter.checkpoint.run) {
         const cpRun = r.encounter.checkpoint.run;
-        if ((cpRun.fieldManuscript ?? null) !== (r.fieldManuscript ?? null)) err('遭遇检查点的战利谱不一致');
+        if ((cpRun.fieldManuscript ?? null) !== (r.fieldManuscript ?? null)) err('遭遇检查点的蚀刻法不一致');
         if (cpRun.encounter && cpRun.encounter.checkpoint) err('checkpoint 出现自嵌套');
       }
       if (r.fieldManuscript != null) {
         const spec = typeof r.fieldManuscript === 'string' && D().manuscript(r.fieldManuscript);
-        if (!spec?.fieldSource || spec.fieldDepth > r.floor) err('携带的战利谱来源或层数非法');
+        if (!spec?.fieldSource || spec.fieldDepth > r.floor) err('携带的蚀刻法来源或层数非法');
       }
       // 旧版未决宝箱需先核对原物归属，读取器随后将两件移入待拾区。
       if (r.chestChoices !== undefined) {
@@ -627,10 +801,10 @@
 
   V.State = {
     VERSION, RULESET, SAVE_KEY, DEFAULT_SEED, MAX_FLOOR, equipManuscript,
-    manuscriptsOf, manuscriptCells, freeManuscriptCells, canPlaceManuscript, placeManuscript, removeManuscript, promoteManuscript,
+    manuscriptsOf, manuscriptCells, freeManuscriptCells, canPlaceManuscript, placeManuscript, removeManuscript, promoteManuscript, migrateMetalGeometry,
     clone, ok, fail, takeId, addLog,
     create, makeUnit, makePart, equipPreset, partCells, partLoad,
     validate, itemLocations, itemLocation, ownItemIds, itemById, unitById,
-    isInt,
+    plateSeedFor, isInt,
   };
 })(globalThis.Ashen ||= {});

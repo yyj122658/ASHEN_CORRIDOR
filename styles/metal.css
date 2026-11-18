@@ -1,12 +1,5 @@
 /* 生命金属内景：环境保持像素风，信息层采用克制、清楚的排版。 */
-:root {
-  --bg: #101413; --surface: #181e1c; --surface-raised: #212925; --surface-hi: #2c3530;
-  --border: #465047; --border-soft: #303a34; --text: #e4e6dc; --text-muted: #a8b1a5;
-  --text-dim: #929e91; --accent: #cfaf7b; --accent-bright: #ead3a9; --accent-dim: #88734f;
-  --success: #9ebcac; --danger: #e49b8b; --ember: #dca27b; --ice: #a1bdb9;
-  --radius: 5px;
-}
-body.vet { background: radial-gradient(ellipse at 70% 0, #26312955, transparent 55%), var(--bg); }
+body.vet { background: var(--bg); font-variant-numeric: tabular-nums; }
 #app { max-width: 1480px; padding: 0 48px 48px; }
 #hud { min-height: 84px; padding: 18px 0; margin: 0; border: 0; border-radius: 0; border-bottom: 1px solid var(--border-soft); box-shadow: none; background: none; gap: 22px; }
 .hud-brand { color: var(--text); font-size: 21px; letter-spacing: .14em; line-height: 1.4; margin-right: 28px; text-shadow: none; }
@@ -72,13 +65,22 @@ button:focus-visible, [tabindex]:focus-visible, summary:focus-visible, a:focus-v
 .plate-metal-slab { stroke: #726e63; stroke-width: 2.3; filter: drop-shadow(0 5px 8px #11100ea8); }
 .plate-metal-bevel { stroke: #c3b49b70; transform: translate(.1px,.7px); }
 .plate-cell-bed { fill: #55514c16; stroke: #c5b59e32; stroke-width: .6; }
+.board .plate-node { --node-ink: #f2bf69; }
+.board .plate-node.core { --node-ink: #82e6e9; }
+.board .plate-node-rim { fill: #20232e; stroke: var(--node-ink); stroke-width: 1.5; }
+.board .plate-node-mark { fill: var(--node-ink); }
+.board .plate-node.active .plate-node-rim,
+.board .plate-node:focus-visible .plate-node-rim { stroke: #fff3cf; stroke-width: 2.5; }
 .plate-edge-rim { stroke: #c1ae9155; stroke-width: .65; }
 .metal-surface-texture { filter: grayscale(.9) sepia(.25) brightness(1.75); }
 .workshop-guide { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; padding: 12px 0 20px; font-size: 11px; color: var(--text-muted); }
 .workshop-guide b { color: var(--accent); font-family: var(--font-mono); margin-right: 7px; font-weight: 400; }.workshop-guide i { color: #607161; font-style: normal; }
 .ms-live-benefit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 0; color: var(--text-muted); font-size: 11px; }.ms-live-benefit b { font-family: var(--font-mono); color: var(--success); font-size: 21px; font-weight: 400; }.ms-live-benefit span:last-child { width: 100%; }
 .technique-details { margin-top: 15px; border-top: 1px solid var(--border-soft); padding-top: 14px; }.technique-details > p { color: var(--text-muted); font-size: 11px; line-height: 1.85; }
-.technique-facts { display: flex; flex-wrap: wrap; gap: 7px 14px; font-size: 10px; color: var(--text-muted); margin: 12px 0; }.technique-facts b { color: var(--text); font-weight: 400; font-family: var(--font-mono); }.technique-skill { padding-top: 11px; margin-top: 11px; border-top: 1px solid var(--border-soft); font-size: 12px; }.technique-skill b { font-weight: 500; color: var(--accent-bright); }.technique-skill .tiny { line-height: 1.9; }
+.technique-facts { display: flex; flex-wrap: wrap; gap: 7px 14px; font-size: 10px; color: var(--text-muted); margin: 12px 0; }.technique-facts b { color: var(--text); font-weight: 400; font-family: var(--font-mono); }
+/* 风味句在前、数值行在后：两段分开排，改数值不会动到文案 */
+.technique-details .technique-flavor { color: var(--text); font-size: 12px; line-height: 1.85; }
+.technique-tiers { display: grid; gap: 4px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-soft); line-height: 1.6; }.technique-skill { padding-top: 11px; margin-top: 11px; border-top: 1px solid var(--border-soft); font-size: 12px; }.technique-skill b { font-weight: 500; color: var(--accent-bright); }.technique-skill .tiny { line-height: 1.9; }
 .manuscript-index { font-size: 11px; margin-top: 16px; }.manuscript-index summary { min-height: 32px; color: var(--text-muted); cursor: pointer; }.codex-line { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); }
 .next-goal { display: flex; flex-direction: column; gap: 5px; margin-top: 18px; padding-left: 12px; border-left: 2px solid #7f8559; }.next-goal b { color: var(--accent-bright); font-size: 13px; font-weight: 500; }
 .floor-track { list-style: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin: 28px 0; }.floor-track li { position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px 16px; border-top: 2px solid #364239; color: #849480; }.floor-track b { font-size: 20px; font-weight: 400; font-family: var(--font-mono); }.floor-track span { font-size: 11px; }.floor-track .done { border-color: #70856c; color: #b8c7ad; }.floor-track .current { border-color: var(--accent); background: #c3a9700d; color: var(--accent-bright); }
@@ -143,17 +145,8 @@ button.codex-line:hover { color: var(--accent-bright); }
 .film-switch { display:inline-flex; gap:8px; align-items:center; border:1px solid #416563; padding:5px 9px; border-radius:3px; background:#1e302e; color:#b2e5d5; cursor:pointer; }
 .film-switch i { width:10px; height:10px; background:#448978; border:1px solid #b2e5d5; }
 .scar-key { color:#e9b69c; font-size:12px; }
-.board .ms-field { fill:#44988c; fill-opacity:.4; }
-.board .ms-incision.aligned .ms-field { fill:#84c5b2; fill-opacity:.53; }
-.board .etch-lip { stroke:#b5e7ce; stroke-width:3.5; }
-.board .ms-incision.aligned .etch-lip { stroke:#d9f5d1; }
-.board .ms-contour { stroke:#73b9aa; stroke-width:2.7; stroke-dasharray:none; }
-.board .ms-contour.focused { stroke:#bce7ce; stroke-width:3.4; }
 .board .scar-enamel { fill:#442b28; stroke:#d99d80; stroke-width:1.3; }
 .board .scar-cell.active .scar-enamel { fill:#783e31; stroke:#ffd3a3; }
 .board .scar-mark { stroke:#eba78c; stroke-width:2.4; }
 .board .scar-mark.active { stroke:#ffe0aa; filter:none; }
 .film-view .layer-runes { opacity:.16; }
-.film-view .board .ms-field { fill-opacity:.75; }
-.film-view .board .ms-incision.aligned .ms-field { fill-opacity:.85; }
-.film-view .board .etch-lip { stroke-width:4; }

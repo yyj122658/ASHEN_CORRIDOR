@@ -33,7 +33,7 @@
     wsMsSpotIdx: 0,
     wsMsOx: null,
     wsMsOy: null,
-    prepSlot: null,
+    prepUnit: null,
     replaceFor: null,
     histUnit: null,
     shopMsg: '',
@@ -119,7 +119,8 @@
     }
   }
 
-  function filterCatalogue(book, limit = 8) {
+  /** 图鉴筛选：条数上限可由容器声明，长图鉴页一次列全，短的仍分页。 */
+  function filterCatalogue(book, limit = Number(book.dataset.catalogueLimit) || 8) {
     const query = book.querySelector('[data-catalogue-query]').value.trim().toLowerCase();
     const filter = book.querySelector('[data-catalogue-filter]').value;
     let matches = 0;
@@ -173,6 +174,7 @@
     clearScarHint();
     clearTimeout(groundScanTimer);
     if (ui.screen !== 'loot') ui.groundSurvey = null;
+    if (ui.screen !== 'prebattle') ui.prepUnit = null;
     const hudEl = document.getElementById('hud');
     const navEl = document.getElementById('nav');
     const stageEl = document.getElementById('stage');
@@ -198,12 +200,15 @@
       if (ui.screen === 'loot') updateGroundScan();
       const book = stageEl.querySelector('[data-catalogue]');
       if (book) {
-        if (old && old.dataset.catalogue === book.dataset.catalogue) {
+        const sameBook = old && old.dataset.catalogue === book.dataset.catalogue;
+        if (sameBook) {
           book.querySelector('[data-catalogue-query]').value = old.querySelector('[data-catalogue-query]').value;
           book.querySelector('[data-catalogue-filter]').value = old.querySelector('[data-catalogue-filter]').value;
           if (book.tagName === 'DETAILS') book.open = old.open;
         }
-        filterCatalogue(book, Number(old?.dataset?.limit) || 8);
+        /* 沿用上一次的条数上限，否则按容器自己声明的默认值；都没有才用 8 条分页。 */
+        const prevLimit = sameBook ? Number(old.dataset.limit) : 0;
+        filterCatalogue(book, prevLimit || Number(book.dataset.catalogueLimit) || 8);
       }
     }
     renderModal();
@@ -602,8 +607,12 @@
           if (firstVisit.ok) { state = firstVisit.state; persistSoon(); }
         }
         if (action.v === 'history') ui.histUnit = ui.histUnit || state.roster[0].id;
-        if (action.v === 'team') ui.teamUnit = ui.teamUnit || state.roster[0].id;
+        if (action.v === 'team') {
+          ui.teamUnit = ui.teamUnit || state.roster[0].id;
+          ui.teamPickSlot = action.slot == null ? null : Number(action.slot);
+        }
         render();
+        if (action.v === 'team' && action.slot != null) document.querySelector('.formation-layout .picker button')?.focus();
         return;
 
       case 'setDifficulty': {
@@ -815,6 +824,15 @@
         ui.wsPalette = action.id === 'runes' ? 'runes' : 'etchings';
         render();
         return;
+      case 'wsCodex':
+        ui.wsCodex = !ui.wsCodex;
+        render();
+        return;
+      case 'wsMsVault':
+        ui.wsVaultOpen = !ui.wsVaultOpen;
+        render();
+        document.querySelector('[data-act="wsMsVault"]')?.focus({preventScroll: true});
+        return;
       case 'wsUnit':
         if (ui.wsMode === 'inscribe') return;
         openWorkshop(action.id);
@@ -930,27 +948,6 @@
         return;
       }
 
-      case 'wsAutoConnect': {
-        const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
-        if (!unit) return;
-        const plate = V.Circuit.plateOf(unit);
-        const cap = V.Circuit.loadCap(unit) - V.State.manuscriptsOf(unit).reduce((sum, m) => sum + (m.load || 0), 0);
-        const stashCircuits = state.stash.filter((id) => state.itemsById[id] && state.itemsById[id].kind === 'circuit');
-        const allIds = [...new Set([...(ui.wsDraft || []).map((p) => p.itemId), ...stashCircuits])];
-        const found = findSmartConnectLayout({ ...state, roster: [unit] }, unit, plate, allIds, cap);
-        if (!found) {
-          toast('现有可用纹路在当前负荷/板面下暂无法直接连通输出');
-          return;
-        }
-        pushHistory();
-        ui.wsDraft = found;
-        ui.wsPick = null;
-        ui.wsErrors = [];
-        render();
-        toast('已用现有纹路自动接通输出');
-        return;
-      }
-
       case 'wsRemove': {
         const placed = ui.wsDraft.find((p) => p.itemId === action.id);
         if (!placed) return;
@@ -1028,9 +1025,11 @@
         const unit = next.roster.find((u) => u.id === ui.wsUnit);
         Object.assign(unit, V.UI.workshopUnit(unit, ui));
         const plate = V.Circuit.plateOf(unit);
-        const ms = V.UI.resolveManuscript(unit, plate, ui, V.Circuit.layout(next, ui.wsDraft, plate.terminals));
+        const ms = V.UI.resolveManuscript(unit, plate, ui, V.Circuit.layout(next, ui.wsDraft));
+        /* 玩家把蚀刻法拖到某个格：坐标一给，朝向就按他手上那个来（rotation 缺省才是 0）。
+           以前这里写 `|| 0`，会把「没指定朝向」也压成 0，等于替玩家做了决定。 */
         const pose = action.type === 'wsMsEquipAt'
-          ? { x: action.ox, y: action.oy, rotation: action.rotation || 0, mirrorY: !!action.mirrorY }
+          ? { x: action.ox, y: action.oy, rotation: action.rotation ?? 0, mirrorY: !!action.mirrorY }
           : ms && ms.fits ? { x: ms.ox, y: ms.oy, rotation: ms.rot, mirrorY: ms.mir } : undefined;
         const result = action.type === 'wsMsUnequip'
           ? V.State.removeManuscript(next, unit, id)
@@ -1038,7 +1037,7 @@
           : V.State.placeManuscript(next, unit, id, pose, ui.wsDraft);
         if (!result.ok) { ui.wsErrors = [result.reason]; render(); toast(result.reason); return; }
         saveWorkshop(next, action.type === 'wsMsUnequip' ? unit.manuscript?.id : id,
-          action.type === 'wsMsUnequip' ? '蚀刻法已卸下，装配已保存' : action.type === 'wsMsPromote' ? '主修已保存' : '蚀刻法已装上，装配已保存');
+          action.type === 'wsMsUnequip' ? '蚀刻法已卸下，原件回到库存' : action.type === 'wsMsPromote' ? '主修已保存' : '蚀刻法已装上，装配已保存');
         return;
       }
 
@@ -1051,7 +1050,7 @@
         const id = action.id || ui.wsMsId;
         const ms = V.State.manuscriptsOf(unit).find((m) => m.id === id);
         const plate = V.Circuit.plateOf(unit);
-        const layout = V.Circuit.layout(state, ui.wsDraft, plate.terminals);
+        const layout = V.Circuit.layout(state, ui.wsDraft);
         const candidate = { ...ui, wsMsId: id };
         if (action.type === 'wsMsMove') {
           Object.assign(candidate, { wsMsOx: action.ox, wsMsOy: action.oy, wsMsRot: action.rotation ?? ui.wsMsRot, wsMsMir: action.mirrorY ?? ui.wsMsMir });
@@ -1077,6 +1076,8 @@
       case 'wsMsPick': {
         const unit = V.UI.workshopUnit(state.roster.find((u) => u.id === ui.wsUnit), ui);
         selectWorkshopManuscript(action.id, V.State.manuscriptsOf(unit).find((m) => m.id === action.id));
+        if (!V.State.manuscriptsOf(unit).some(m => m.id === action.id) && state.manuscriptVault.some(m => m.id === action.id)) ui.wsVaultOpen = true;
+        ui.wsCodex = false;
         render();
         return;
       }
@@ -1133,7 +1134,7 @@
         const unit = state.roster.find((u) => u.id === action.id);
         if (!unit || !V.Expedition.inscribable(state, unit.id).ok) return;
         const bagCircuits = state.run.bag.filter(id => state.itemsById[id]?.kind === 'circuit' && state.itemsById[id].acquiredRunId === state.run.id);
-        if (!bagCircuits.length) { toast('背包里没有本局获得的回路纹路'); return; }
+        if (!bagCircuits.length) { toast('背包里没有本局获得的纹路'); return; }
         openWorkshop(unit.id);
         ui.wsMode = 'inscribe';
         ui.wsUnit = unit.id;
@@ -1250,6 +1251,13 @@
         return;
       }
 
+      case 'selectTopologyUnit':
+        if (!['map', 'battle', 'review'].includes(ui.screen) || !state.run?.party.some(p => p.uid === action.id)) return;
+        ui.topologyUnit = action.id;
+        render();
+        document.querySelector('.topology-crew-card[aria-pressed="true"]')?.focus({preventScroll: true});
+        return;
+
       case 'chooseNode': {
         const r = run(() => V.Expedition.chooseNode(state, action.id));
         if (r && r.ok) render();
@@ -1265,43 +1273,25 @@
       }
 
       /* ---------- 战前 ---------- */
-      case 'prepPick':
-        ui.prepSlot = Number(action.id);
+      case 'prepPick': {
+        const uid = action.id;
+        if (ui.screen !== 'prebattle' || !state.run.party.some(p => p.uid === uid)) return;
+        ui.prepUnit = ui.prepUnit === uid ? null : uid;
         render();
-        return;
-
-      case 'prepSwap': {
-        const a = Number(action.a);
-        const uid = action.uid;
-        const formation = state.run.encounter.preparation.formation.slice();
-        const b = formation.indexOf(uid);
-        if (b < 0) return;
-        const tmp = formation[a];
-        formation[a] = formation[b];
-        formation[b] = tmp;
-        const r = V.Encounter.editPreparation(state, { formation });
-        if (!r.ok) { toast(r.error.message); return; }
-        state = r.state;
-        persistSoon();
-        ui.prepSlot = null;
-        render();
+        document.querySelector(`[data-prep-unit="${CSS.escape(uid)}"]`)?.focus({ preventScroll: true });
         return;
       }
 
       case 'prepMove': {
-        const from = Number(action.from);
-        const to = Number(action.to);
-        const formation = state.run.encounter.preparation.formation.slice();
-        if (from < 0 || from > 3 || to < 0 || to > 3 || from === to) return;
-        const tmp = formation[from];
-        formation[from] = formation[to];
-        formation[to] = tmp;
-        const r = V.Encounter.editPreparation(state, { formation });
+        if (ui.screen !== 'prebattle') return;
+        const { uid, x, y } = action;
+        const r = V.Encounter.editPreparation(state, { move: { uid, x, y } });
         if (!r.ok) { toast(r.error.message); return; }
         state = r.state;
-        persistSoon();
-        ui.prepSlot = null;
+        persist();
+        ui.prepUnit = action.keyboard ? uid : null;
         render();
+        document.querySelector(`[data-prep-unit="${CSS.escape(uid)}"]`)?.focus({ preventScroll: true });
         return;
       }
 
@@ -1337,7 +1327,7 @@
             ? `紧急撤退？\n\n保留 ${p.keepParts.length} 件新纹路，丢弃 ${p.lostParts.length} 件。\n金币 +${p.gold}，遗物 +${p.shards}，压力 +${p.stress}。\n本次不算合格撤离。`
             : `确认败退？\n\n本局新收获全失，原有装备与板面纹路保留，压力 +${p.stress}。`;
           const field = D().manuscript(state.run.fieldManuscript);
-          if (!window.confirm(msg + (field ? `\n将遗失随行拓本「${field.name}」。` : ''))) return;
+          if (!window.confirm(msg + (field ? `\n将遗失随行蚀刻法「${field.name}」。` : ''))) return;
         }
         const r = run(() => V.Expedition.retreat(state, mode));
         if (r && r.ok) { ui.screen = 'settlement'; render(); }
@@ -1565,6 +1555,8 @@
     const unit = state.roster.find((u) => u.id === unitId) || state.roster[0];
     ui.wsMode = 'workshop';
     ui.wsPalette = 'etchings';
+    ui.wsCodex = false;
+    ui.wsVaultOpen = false;
     ui.wsUnit = unit.id;
     ui.wsDraft = V.State.clone(unit.board.placements);
     ui.wsPick = null;
@@ -1611,6 +1603,24 @@
     ui.wsRedo = [];
   }
 
+  /**
+   * 自动布局用的虚拟边界极：接线模型已从玩法里删除，这里只是给寻路一个起终点方向，
+   * 不参与任何结算，也不写回 state。按板面最左/最右/最上/最下格推导。
+   */
+  function plateEdgeTerms(plate) {
+    const cells = plate && plate.cellsList ? plate.cellsList : [];
+    if (!cells.length) return [];
+    const pick = (cmp) => cells.slice().sort(cmp)[0];
+    const byX = (a, b) => (a[0] - b[0]) || (a[1] - b[1]);
+    const byY = (a, b) => (a[1] - b[1]) || (a[0] - b[0]);
+    return [
+      { role: 'in', dir: 'W', cell: pick(byX) },
+      { role: 'in', dir: 'S', cell: pick((a, b) => (b[1] - a[1]) || (b[0] - a[0])) },
+      { role: 'out', dir: 'E', cell: pick((a, b) => (b[0] - a[0]) || (b[1] - a[1])) },
+      { role: 'out', dir: 'N', cell: pick(byY) },
+    ];
+  }
+
   const DIR_DELTA = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
   const DIR_OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
 
@@ -1619,7 +1629,7 @@
     const o = opts || {};
     const packAll = o.packAll !== false;
     const maxLoad = o.maxLoad != null ? o.maxLoad : Infinity;
-    const terms = Object.values(plate.terminals || {});
+    const terms = plateEdgeTerms(plate);
     const inTerms = terms.filter((t) => t.role === 'in');
     const outTerms = terms.filter((t) => t.role === 'out');
     const candsByItem = itemIds.map((id) => {
@@ -1723,7 +1733,7 @@
       }
     }
 
-    /* 退化路径：没有蚀刻法（或蚀刻法只给两个能量点）时凑不出一条从入口到出口的链，
+    /* 退化路径：没有蚀刻法（或蚀刻法只给两个余裕点）时凑不出一条从入口到出口的链，
        但仍然应该给玩家一个「几何合法」的推荐布局，而不是直接拒绝。 */
     const fallback = (() => {
       const chosen = [];
@@ -1758,7 +1768,7 @@
     return null;
   }
 
-  /** 工坊手动试铺与双击共用当前预览的拓片和草稿。 */
+  /** 工坊手动试铺与双击共用当前预览的蚀刻法和草稿。 */
   function findQuickPlaceSpot(itemId, prefRot, prefMir) {
     const unit = V.UI.workshopUnit(state.roster.find(u => u.id === ui.wsUnit), ui);
     if (!unit) return null;
@@ -1925,7 +1935,7 @@
     const blocked = new Set(plate && !plate.generated && body && body.blocked ? body.blocked.map(([x, y]) => x + ',' + y) : []);
     const replacingFieldRune = ui.wsMode === 'inscribe' && state.run?.bag.includes(d.id);
     const others = (ui.wsDraft || []).filter(p => p.itemId !== d.id && !(replacingFieldRune && p.itemId === ui.inscribeItem));
-    const L = V.Circuit.layout(state, others, plate && plate.terminals);
+    const L = V.Circuit.layout(state, others);
     const used = new Set(L.cells.map((c) => c.x + ',' + c.y));
     const isMs = d.kind === 'ms' || d.kind === 'msNew';
     if (isMs) {
@@ -1964,8 +1974,58 @@
     return { ok: conflicts.size === 0, conflicts, reason };
   }
 
+  function dragPortContext(id) {
+    const layout = V.Circuit.layout(state, ui.wsDraft);
+    const replacing = ui.wsMode === 'inscribe' && state.run?.bag.includes(id);
+    const stays = ({ itemId }) => itemId !== id && !(replacing && itemId === ui.inscribeItem);
+    const occupied = new Set(layout.cells.filter(stays).map((c) => c.x + ',' + c.y));
+    const openings = new Set(layout.ports.filter(stays).map((p) => p.cell.join(',') + '/' + p.dir));
+    const terminals = new Set();
+    const original = state.roster.find((u) => u.id === ui.wsUnit) || state.roster[0];
+    const unit = V.UI.workshopUnit(original, ui);
+    const plate = V.Circuit.plateOf(unit);
+    const selected = V.UI.resolveManuscript(unit, plate, ui, layout);
+    const membranes = V.State.manuscriptsOf(unit).filter((m) => m.id !== selected?.id).map((m) =>
+      V.UI.resolveManuscript(unit, plate, { wsMsId: m.id, wsMsOx: m.x, wsMsOy: m.y, wsMsRot: m.rotation, wsMsMir: m.mirrorY }, layout));
+    for (const ms of [...membranes, selected]) {
+      if (!ms?.fits) continue;
+      const { oriented, ox, oy } = ms;
+      for (const [x, y] of [oriented.entry, ...oriented.exits]) {
+        for (const dir of oriented.veins[x + ',' + y] || []) terminals.add((x + ox) + ',' + (y + oy) + '/' + dir);
+      }
+      for (const port of [oriented.io.clock, oriented.io.main]) {
+        if (port && oriented.veins[port.cell.join(',')]?.includes(port.dir)) {
+          terminals.add((port.cell[0] + ox) + ',' + (port.cell[1] + oy) + '/' + port.dir);
+        }
+      }
+    }
+    return { occupied, openings, terminals };
+  }
+
+  function dragPortPreview(shape, anchor, grid, context) {
+    return shape.ports.map(({ cell: [px, py], dir }) => {
+      const x = px + anchor.x;
+      const y = py + anchor.y;
+      const [dx, dy] = V.Manuscript.ORTH[dir];
+      const next = (x + dx) + ',' + (y + dy);
+      const runesMeet = context.openings.has(next + '/' + V.Circuit.opposite(dir));
+      const terminal = context.terminals.has(x + ',' + y + '/' + dir);
+      const joined = runesMeet || terminal;
+      if (!joined && !context.occupied.has(next)) return '';
+      const sx = grid.gx + (x + .5 + dx * .5) * grid.cell;
+      const sy = grid.gy + (y + .5 + dy * .5) * grid.cell;
+      const span = grid.cell * .15;
+      const bridge = joined ? `<line class="drag-port-bridge" x1="${sx - dx * span}" y1="${sy - dy * span}"
+        x2="${sx + dx * span}" y2="${sy + dy * span}"/>` : '';
+      const kind = joined ? 'lock' : 'blocked';
+      const target = terminal && !runesMeet ? 'manuscript' : 'rune';
+      return `<g class="drag-port-lock ${kind}" data-cell="${x},${y}" data-dir="${dir}" data-kind="${kind}" data-target="${target}">
+        ${bridge}${V.RuneArt.conduitOverlay(kind, sx, sy, grid.cell * .4)}</g>`;
+    }).join('');
+  }
+
   /** 吸附预览：在板面上按纹路真实形状与端口朝向画出半透明虚影，并区分合法/冲突格。 */
-  function showDropGhost(svg, shape, anchor, valid) {
+  function showDropGhost(svg, shape, anchor, valid, portContext) {
     if (!svg) return;
     let g = svg.querySelector('.drop-ghost');
     if (!shape || !anchor) {
@@ -1990,7 +2050,8 @@
       return `<rect class="drop-ghost-cell ${bad ? 'bad' : 'ok'}" x="${x + 2}" y="${y + 2}"
         width="${grid.cell - 4}" height="${grid.cell - 4}" rx="1"/>`;
     }).join('');
-    const html = cellsHtml + `<g transform="translate(${grid.gx + (anchor.x+shape.minX)*grid.cell} ${grid.gy + (anchor.y+shape.minY)*grid.cell})">${previewEngraving(shape, grid.cell)}</g>`;
+    const html = cellsHtml + `<g transform="translate(${grid.gx + (anchor.x+shape.minX)*grid.cell} ${grid.gy + (anchor.y+shape.minY)*grid.cell})">${previewEngraving(shape, grid.cell)}</g>`
+      + (portContext ? dragPortPreview(shape, anchor, grid, portContext) : '');
     if (g.dataset.key !== html) {
       g.innerHTML = html;
       g.dataset.key = html;
@@ -2110,7 +2171,8 @@
         drag.ghost.style.transform = `translate(${clientX + 12}px, ${clientY + 12}px)`;
       }
     }
-    showDropGhost(drag.svg, drag.shape, anchor, valid);
+    const portContext = valid?.ok && drag.shape?.ports?.length ? (drag.portContext ||= dragPortContext(drag.id)) : null;
+    showDropGhost(drag.svg, drag.shape, anchor, valid, portContext);
   }
 
   function isWayOutsideBoard(svg, clientX, clientY) {
@@ -2143,7 +2205,9 @@
   }
 
   function manuscriptDragShape(id, rot, mir) {
-    const membrane = V.Manuscript.orient(V.Manuscript.normalize(D().manuscript(id)), rot, mir);
+    const unit = state.roster.find(u => u.id === ui.wsUnit);
+    const spec = V.State.manuscriptsOf(unit).find(m => m.id === id) || D().manuscript(id);
+    const membrane = V.Manuscript.orient(V.Manuscript.normalize(spec), rot, mir);
     return {
       name: membrane.name, membrane, minX: 0, minY: 0,
       maxX: Math.max(...membrane.cells.map(c => c[0])), maxY: Math.max(...membrane.cells.map(c => c[1])),
@@ -2198,9 +2262,10 @@
       if (!node.isConnected || node !== scarHint) return;
       const tip = document.createElement('div');
       tip.id = 'scar-tooltip';
-      tip.className = 'scar-tooltip';
+      const rune = !!node.dataset.runeTooltip;
+      tip.className = 'scar-tooltip' + (rune ? ' rune-tooltip' : '');
       tip.setAttribute('role', 'tooltip');
-      tip.textContent = node.dataset.scarTooltip;
+      tip.textContent = rune ? node.dataset.runeTooltip : node.dataset.scarTooltip;
       document.body.appendChild(tip);
       node.setAttribute('aria-describedby', tip.id);
       tip.style.left = Math.max(10, Math.min(innerWidth - tip.offsetWidth - 10, x + 14)) + 'px';
@@ -2223,6 +2288,68 @@
   }
 
   function bind() {
+    let prepDrag = null;
+    let skipPrepClick = false;
+    const P = V.Positions;
+    const arena = P.ARENA;
+    function prepPoint(field, clientX, clientY) {
+      const box = field.getBoundingClientRect();
+      const x = (clientX - box.left) * arena.width / box.width;
+      const y = ((clientY - box.top) * arena.height / box.height - arena.ground) / arena.depthScale;
+      return { x, y };
+    }
+    function clearPrepDrag() {
+      if (!prepDrag) return;
+      const { source, pointer, style, moved } = prepDrag;
+      source.style.cssText = style;
+      source.classList.remove('prep-dragging', 'prep-invalid');
+      if (source.hasPointerCapture(pointer)) source.releasePointerCapture(pointer);
+      skipPrepClick = moved;
+      prepDrag = null;
+    }
+    document.addEventListener('dragstart', e => {
+      if (e.target.closest?.('[data-prep-field]')) e.preventDefault();
+    });
+    document.addEventListener('pointerdown', e => {
+      if (ui.screen !== 'prebattle' || ui.modal || e.button !== 0 || !e.isPrimary) return;
+      clearPrepDrag();
+      skipPrepClick = false;
+      const source = e.target.closest?.('[data-prep-unit]');
+      if (!source) return;
+      source.setPointerCapture(e.pointerId);
+      const field = source.closest('[data-prep-field]');
+      const grab = prepPoint(field, e.clientX, e.clientY);
+      prepDrag = { source, field, pointer: e.pointerId, clientX: e.clientX, clientY: e.clientY, grab,
+        style: source.style.cssText, uid: source.dataset.prepUnit, moved: false };
+    });
+    function dragDestination(d, e) {
+      const p = prepPoint(d.field, e.clientX, e.clientY);
+      return { x: Math.round(Number(d.source.dataset.fieldX) + p.x - d.grab.x),
+        y: Math.round(Number(d.source.dataset.fieldY) + p.y - d.grab.y) };
+    }
+    document.addEventListener('pointermove', e => {
+      if (prepDrag?.pointer !== e.pointerId) return;
+      const d = prepDrag;
+      if (!d.source.isConnected || ui.modal) { clearPrepDrag(); return; }
+      if (!d.moved && Math.hypot(e.clientX - d.clientX, e.clientY - d.clientY) < 6) return;
+      d.moved = true;
+      const p = dragDestination(d, e);
+      d.source.classList.add('prep-dragging');
+      d.source.classList.toggle('prep-invalid', !!P.deploymentProblem(state.run.party, d.uid, p));
+      d.source.style.left = `${p.x / arena.width * 100}%`;
+      d.source.style.top = `${P.projectY(p.y) / arena.height * 100}%`;
+    });
+    document.addEventListener('pointerup', e => {
+      if (prepDrag?.pointer !== e.pointerId) return;
+      const d = prepDrag;
+      const point = d.moved && d.source.isConnected && dragDestination(d, e);
+      clearPrepDrag();
+      if (point) dispatch({ type: 'prepMove', uid: d.uid, ...point });
+    });
+    document.addEventListener('pointercancel', e => {
+      if (prepDrag?.pointer === e.pointerId) clearPrepDrag();
+    });
+
     let lootDrag = null;
     let skipLootClick = false;
     function clearLootTargets() {
@@ -2269,11 +2396,12 @@
         ghost.style.setProperty('--item-turn',d.turn*90+'deg');
         ghost.setAttribute('aria-hidden', 'true');
         for (const cell of d.cells) ghost.appendChild(document.createElement('i'));
-        if (d.art) {
+        if (d.runeId || d.art) {
           const face = document.createElement('span');
           face.className = 'ground-face';
           Object.assign(face.style, { left: '0', top: '0', width: '100%', height: '100%' });
-          face.appendChild(d.art.cloneNode(true));
+          if (d.runeId) face.innerHTML = V.RuneArt.footprint(d.runeId,d.turn);
+          else face.appendChild(d.art.cloneNode(true));
           ghost.appendChild(face);
         }
         document.body.appendChild(ghost);
@@ -2399,8 +2527,9 @@
         grabY = Math.floor(from / 6) - Math.floor(indices[0] / 6);
       }
       const artRoot = fromGround ? source.querySelector('.ground-face') : overflow ? source : source.closest('.pack-grid').querySelector('[data-pack-art="' + CSS.escape(token) + '"]');
+      const runeId = token.startsWith('part:') && state.itemsById[token.slice(5)]?.templateId;
       lootDrag = { source, token, turn, cells, fromGround, overflow, from, grabX, grabY, x: e.clientX, y: e.clientY,
-        pointer: e.pointerId, moved: false, art: artRoot?.querySelector('.rune-thumb, .catalogue-icon') };
+        pointer: e.pointerId, moved: false, runeId, art: artRoot?.querySelector('.catalogue-icon') };
     });
     document.addEventListener('pointermove', e => {
       if (!lootDrag || lootDrag.pointer !== e.pointerId) return;
@@ -2434,7 +2563,7 @@
         d.turn = (d.turn+1)%4;
         d.cells = E.packShape(state,d.token,d.turn);
         const face = d.ghost.querySelector('.ground-face');
-        if (face && d.token.startsWith('part:')) face.innerHTML = V.RuneArt.thumb(state.itemsById[d.token.slice(5)].templateId,null,d.turn);
+        if (face && d.runeId) face.innerHTML = V.RuneArt.footprint(d.runeId,d.turn);
         d.ghost.style.setProperty('--item-turn',d.turn*90+'deg');
         moveLootDrag(d.lastX,d.lastY);
       } else if (!d && (ui.screen === 'loot' || ui.modal === 'pack')) {
@@ -2456,6 +2585,10 @@
       document.addEventListener(event, e => {
         const art = packArt(slotAt(e));
         if (art) art.classList.toggle('is-pointed', active);
+        const row = e.target.closest?.('[data-watch-rune]');
+        if (!row || e.relatedTarget instanceof Node && row.contains(e.relatedTarget)) return;
+        const piece = document.querySelector(`.ws-board [data-act="wsGrab"][data-id="${CSS.escape(row.dataset.watchRune)}"]`);
+        piece?.classList.toggle(event.startsWith('focus') ? 'is-row-focused' : 'is-row-hovered', active);
       });
     }
     function clearPackTarget() {
@@ -2543,12 +2676,14 @@
     document.addEventListener('pointermove', (e) => {
       const svg = e.target.closest && e.target.closest('svg.board');
       const cell = svg && cellFromPointRaw(svg, e.clientX, e.clientY);
-      const node = cell && svg.querySelector(`[data-scar="${cell.x},${cell.y}"]`);
-      queueScarHint(node || null, e.clientX, e.clientY);
+      const node = cell && (svg.querySelector(`[data-scar="${cell.x},${cell.y}"]`)
+        || svg.querySelector(`[data-plate-node="${cell.x},${cell.y}"]`));
+      queueScarHint(node || e.target.closest?.('[data-rune-tooltip]') || null, e.clientX, e.clientY);
     });
     document.addEventListener('focusin', (e) => {
-      const node = e.target.closest && e.target.closest('[data-scar]');
+      const node = e.target.closest?.('[data-scar], [data-rune-tooltip]');
       if (!node) return;
+      if (node.dataset.runeTooltip && scarHint?.dataset.scarTooltip) return;
       const r = node.getBoundingClientRect();
       queueScarHint(node, r.right, r.top, true);
     });
@@ -2557,6 +2692,15 @@
     window.addEventListener('scroll', clearScarHint, true);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') clearScarHint(); });
     document.addEventListener('click', (e) => {
+      const field = e.target.closest?.('[data-prep-field]');
+      if (field) {
+        if (skipPrepClick && e.detail) { skipPrepClick = false; return; }
+        if (ui.prepUnit && !e.target.closest('[data-prep-unit]')) {
+          const p = prepPoint(field, e.clientX, e.clientY);
+          dispatch({ type: 'prepMove', uid: ui.prepUnit, x: Math.round(p.x), y: Math.round(p.y) });
+          return;
+        }
+      }
       /* 只吞掉拖拽落在板面上产生的那一次合成点击；
          否则拖完再点「取消选中」之类的按钮会被白白吃掉一次 */
       if (suppressClick) {
@@ -2881,6 +3025,21 @@
         dispatch({ type: 'cycleSpeed' });
         return;
       }
+      if (ui.screen === 'prebattle') {
+        if (e.code === 'Escape') {
+          clearPrepDrag();
+          if (ui.prepUnit) dispatch({ type: 'prepPick', id: ui.prepUnit });
+          return;
+        }
+        const actor = e.target.closest?.('[data-prep-unit]');
+        const delta = { ArrowLeft: [-8, 0], ArrowRight: [8, 0], ArrowUp: [0, -8], ArrowDown: [0, 8] }[e.key];
+        if (actor && delta) {
+          e.preventDefault();
+          dispatch({ type: 'prepMove', uid: actor.dataset.prepUnit, x: Number(actor.dataset.fieldX) + delta[0],
+            y: Number(actor.dataset.fieldY) + delta[1], keyboard: true });
+          return;
+        }
+      }
       if (e.code === 'Escape' && ui.screen === 'rules') {
         dispatch({ type: 'ruleCancel' });
         return;
@@ -2941,6 +3100,7 @@
   function loop(ts) {
     rafId = requestAnimationFrame(loop);
     const dt = lastTs ? Math.min(160, ts - lastTs) : 16;
+    V.View.renderTopology(state, ts);
     lastTs = ts;
 
     if (ui.screen === 'battle') {

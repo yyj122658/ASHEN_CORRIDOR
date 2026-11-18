@@ -1,5 +1,5 @@
 'use strict';
-/* 生命金属回路：4x4 几何、90 度旋转 / 上下翻转、有向端口图编译、能量路由。
+/* 生命金属回路：4x4 几何、90 度旋转 / 上下翻转、有向端口图编译、余裕贯通。
    全部纯函数；不读 RNG、DOM、时钟。结果可 JSON 序列化。 */
 (function (A) {
   'use strict';
@@ -67,9 +67,10 @@
   }
 
   /**
-   * 一个单位实际能放纹路的板面：{cells:Set<'x,y'>, terminals, size, generated}
-   * - 底盘带 plate 配置 → 用 PlateGen 按 seed 生成异形板面，终端由板面派生；
+   * 一个单位实际能放纹路的板面：{cells:Set<'x,y'>, size, generated}
+   * - 底盘带金属相 → 用 PlateGen 读取固定板面、心核与锚点；
    * - 否则退回旧的 4x4 网格（老存档 / 测试用）。
+   * 板面只管「哪一格能放」。接线模型（输入极 / 输出极 / 脉冲）已删除，这里不再派生端子。
    * 这是唯一决定「哪一格能放」的地方，别处不要再写死 4。
    */
   function plateOf(unit) {
@@ -79,50 +80,27 @@
       const cells = new Set(unit.plateOverride.cells.map((c) => c[0] + ',' + c[1]));
       return {
         cells,
-        terminals: unit.plateOverride.terminals || D().TERMINALS,
         cellsList: unit.plateOverride.cells,
         size: D().DESIGN.gridSize,
         generated: false,
+        clockCore: [],
+        innateNodes: [],
       };
     }
-    const conf = body && body.plate;
-    if (conf && V.PlateGen) {
+    /* 形态挂在底盘上（14 种）；格数统一 77，由 PlateGen 的 PLATE_TARGET 决定 */
+    const archetype = body && body.archetype;
+    if (archetype && V.PlateGen) {
       const gen = V.PlateGen.generate({
-        seed: unit.plateSeed == null ? 1 : unit.plateSeed,
-        archetype: conf.archetype,
-        target: conf.target,
-      });
-      /* 能量经济住在蚀刻法里：四个具名点由装备的蚀刻法给，板面不再决定。
-         没有蚀刻法 → 没有终端 → 板面只是一块带槽位的金属。 */
-      const terminals = {};
-      V.State.manuscriptsOf(unit).forEach((ms, index) => {
-        const oriented = V.Manuscript.orient(
-          V.Manuscript.normalize(ms), ms.rotation || 0, !!ms.mirrorY,
-        );
-        const ox = ms.x || 0;
-        const oy = ms.y || 0;
-        const LABEL = { clock: '入口', damage: '回响', main: '出口', support: '护持' };
-        Object.keys((oriented && oriented.io) || {}).forEach((id) => {
-          const p = oriented.io[id];
-          const isIn = id === 'clock' || id === 'damage';
-          const key = index ? ms.id + ':' + id : id;
-          terminals[key] = {
-            id: key, channel: id, manuscriptId: ms.id,
-            cell: [p.cell[0] + ox, p.cell[1] + oy],
-            dir: p.dir,
-            role: isIn ? 'in' : 'out',
-            kind: isIn ? 'input' : 'output',
-            name: LABEL[id] || id,
-            fromManuscript: true,
-          };
-        });
+        archetype,
       });
       return {
         cells: new Set(gen.cells.map((c) => c[0] + ',' + c[1])),
-        terminals,
         cellsList: gen.cells,
         size: V.PlateGen.SIZE,
         generated: true,
+        archetype: gen.archetype,
+        clockCore: gen.clockCore || [],
+        innateNodes: gen.innateNodes || [],
         manuscript: !!unit.manuscript,
       };
     }
@@ -136,19 +114,48 @@
     }
     return {
       cells, cellsList: [...cells].map((k) => k.split(',').map(Number)),
-      terminals: D().TERMINALS, size, generated: false,
+      size, generated: false, clockCore: [], innateNodes: [],
     };
   }
 
   /**
-   * preview(st, unitId, placements) -> {ok, errors, occupied, load, graph, reachableOutputs}
+   * preview(st, unitId, placements) -> {ok, errors, occupied, load, overload, cap}
    * 同一函数供 UI 预览与真实保存使用；非法时 state 不变（本函数不写 state）。
    */
-  /** 装配上限统一取板面配置，经典板保留原值。@param {object} unit @returns {number} */
+  /** 装配上限由板面格数派生：格子越多，能压的东西越多。
+      两套板面两套系数——经典 4×4 夹具沿用 0.57（14 格 → 8 点），
+      异形生成板面用 generatedCapPerCell（77 格 → 20 点）。理由见 data.js 的 DESIGN 注释。
+      @param {object} unit @returns {number} */
   function loadCap(unit) {
     const plate = plateOf(unit);
-    const body = D().body(unit.bodyPreset);
-    return plate.generated ? body.plate.loadCap : body.loadCap;
+    const perCell = plate.generated
+      ? (D().DESIGN.generatedCapPerCell == null ? 0.72 : D().DESIGN.generatedCapPerCell)
+      : D().DESIGN.capPerCell;
+    const base = V.Derive.loadCap(plate.cells.size, perCell);
+    if (plate.archetype === 'hundun') return base + 12;
+    return !plate.generated && D().body(unit?.bodyPreset)?.innate?.id === 'sturdy' ? Math.round(base * 1.35) : base;
+  }
+
+  /**
+   * 瘢痕减免：长进活金属里的纹不需要「维持」。
+   * 一件纹路压住几处**激活**瘢痕，就从它的负荷里扣几点（扣到 0 为止）。
+   *
+   * 粒度对得上数据：`Expedition.inscriptionScar` 每次营火烙印只留 **1 处**瘢痕
+   * （取该件纹路第一个未被占用的格），所以「一处 = 1 点」，不会出现一格减两点、
+   * 也不会出现一件纹路凭空多减。减免只挂在纹路上，不挂在蚀刻法上——
+   * 蚀刻法是蚀刻法，本来就不参与「肉身之纹」这本账。
+   *
+   * @param {{x:number,y:number}[]} cells 已摆放纹路的绝对格坐标
+   * @param {Set<string>} scarCells
+   * @param {number} cap 这件纹路本身的负荷（减免不超过它，避免负负荷）
+   * @returns {number} 该件纹路能扣掉的点数
+   */
+  function scarRelief(cells, scarCells, cap) {
+    if (!scarCells || !scarCells.size) return 0;
+    let hit = 0;
+    for (const c of cells) if (scarCells.has(c.x + ',' + c.y)) hit += 1;
+    const limit = Number.isFinite(cap) ? cap : hit;
+    return Math.max(0, Math.min(hit, limit));
   }
 
   /** 瘢痕不随拆装消失，只由真实占格决定激活。@param {object} st @param {object} unit @param {object[]} [placements] @returns {object[]} */
@@ -169,40 +176,53 @@
   function preview(st, unitId, placements) {
     const errors = [];
     const unit = st.roster.find((u) => u.id === unitId);
-    if (!unit) return { ok: false, errors: ['找不到角色'], occupied: [], load: 0, reachableOutputs: [] };
+    if (!unit) return { ok: false, errors: ['找不到角色'], occupied: [], load: 0, overload: 0, cap: 0 };
     const body = D().body(unit.bodyPreset);
     const plate = plateOf(unit);
 
-    /* 蚀刻法是拓片：必须落在金属上，纹路可在同格填入纹路。 */
+    /* 蚀刻法是蚀刻法：必须落在金属上，纹路可在同格填入纹路。 */
     const etchings = V.State.manuscriptsOf(unit);
     const stencilCells = new Set();
     for (const ms of etchings) {
       const cells = V.State.manuscriptCells(ms).map(cell => cell.join(','));
       if (!cells.length || cells.some(cell => !plate.cells.has(cell))) errors.push(`蚀刻法「${ms.name}」没有完整落在板面上`);
-      if (cells.some(cell => stencilCells.has(cell))) errors.push(`蚀刻法「${ms.name}」与另一张拓片重叠`);
+      if (cells.some(cell => stencilCells.has(cell))) errors.push(`蚀刻法「${ms.name}」与另一门蚀刻法重叠`);
       cells.forEach(cell => stencilCells.add(cell));
     }
 
-    const list = placements || [];
+    /* 不传 placements 时回落到「场上布局 → 板面布局」，和 manuscriptState 同口径。
+       传 [] 仍然是「空板面」（那是明确意图），所以只在 undefined 时回落。 */
+    const list = placements
+      || (st.run && st.run.fieldLayouts && st.run.fieldLayouts[unitId])
+      || unit.board.placements
+      || [];
     const seenItems = new Set();
     const occupied = [];
     const cellOwner = new Map(); // 'x,y' -> itemId
     const built = [];
     let load = 0;
+    let scarSaved = 0;
     let bagError = null;
+
+    /* 已长进肉里的瘢痕：这些格子上的纹路不必再「维持」，按处减免负荷 */
+    const scarCells = new Set((unit.scars || []).map((s) => s.x + ',' + s.y));
 
     list.forEach((p) => {
       const item = st.itemsById[p.itemId];
       if (!item) { errors.push(`纹路不存在：${p.itemId}`); return; }
-      if (item.kind !== 'circuit') { errors.push(`不是回路纹路：${p.itemId}`); return; }
+      if (item.kind !== 'circuit') { errors.push(`不是纹路：${p.itemId}`); return; }
       if (seenItems.has(p.itemId)) { errors.push(`同一纹路被放置两次：${p.itemId}`); return; }
       seenItems.add(p.itemId);
 
       const tpl = D().template(item.templateId);
       const tf = transformTemplate(tpl, p.rotation || 0, !!p.mirrorY);
-      load += tpl.load;
 
       const cells = tf.cells.map((c) => ({ x: c.x + p.x, y: c.y + p.y }));
+      /* 瘢痕减免：压住几处激活瘢痕就扣几点，扣到 0 为止（不会变成负负荷） */
+      const relief = scarRelief(cells, scarCells, tpl.load);
+      scarSaved += relief;
+      load += Math.max(0, tpl.load - relief);
+
       const ports = tf.ports.map((pt) => ({
         id: pt.id, role: pt.role, dir: pt.dir,
         cell: [pt.cell[0] + p.x, pt.cell[1] + p.y],
@@ -231,196 +251,38 @@
       });
 
       /* 回路片必须在仓库或板面里，不能是随身背包里的东西（背包只在本局可用） */
-      built.push({ itemId: item.id, templateId: item.templateId, tpl, x: p.x, y: p.y, rotation: p.rotation || 0, mirrorY: !!p.mirrorY, cells, ports });
+      built.push({ itemId: item.id, templateId: item.templateId, tpl, x: p.x, y: p.y, rotation: p.rotation || 0, mirrorY: !!p.mirrorY, cells, ports, relief });
     });
 
-    /* 蚀刻法也吃负荷：多修一套就少放纹路，这是唯一的平衡阀 */
-    for (const ms of etchings) load += Number(ms.load) || 0;
+    /* 蚀刻法也吃负荷：多修一套就少放纹路，这是唯一的平衡阀。
+       九标：单门超过 34 格的部分按比例免负荷（自承重），否则大卷「占满板面还收全额学费」。 */
+    for (const ms of etchings) {
+      const l = Number(ms.load) || 0;
+      const n = V.State.manuscriptCells(ms).length;
+      load += n > PULSE.manuscriptCellCap
+        ? Math.max(1, Math.round((l * PULSE.manuscriptCellCap) / n))
+        : l;
+    }
     /* 异形板面格数多，负荷上限单独给；经典模式沿用老值 */
     const cap = loadCap(unit);
-    if (load > cap) errors.push(`负荷 ${load} 超过 ${body.name} 上限 ${cap}`);
+    /* 超载不再阻止装配：超出部分转成开局压力与回裕惩罚，玩家自己决定值不值 */
+    const overload = Math.max(0, load - cap);
 
     if (errors.length) {
-      return { ok: false, errors, occupied, load, reachableOutputs: [], graph: null };
+      return { ok: false, errors, occupied, load, overload, cap, scarSaved };
     }
 
-    const graph = buildGraph(st, built, plate.terminals);
-    if (!graph.ok) {
-      return { ok: false, errors: graph.errors, occupied, load, reachableOutputs: [], graph: null };
-    }
-
-    const reachableOutputs = graph.value.reachableOutputs;
-    return {
-      ok: true, errors: [], occupied, load, reachableOutputs,
-      graph: graph.value, bagError,
-    };
-  }
-
-  /* ------------------------------ 端口图 ------------------------------ */
-
-  function portKey(itemId, portId) { return itemId + ':' + portId; }
-
-  /**
-   * 构造有向图：极 → 纹路入口 → 内部 links → 出口 → 相邻纹路入口 … → 输出极。
-   * 节点使用 placementId(即 itemId)+portId，保证可序列化与稳定排序。
-   */
-  function buildGraph(st, built, terminalSet) {
-    const errors = [];
-    const nodes = new Map(); // key -> {key, kind, itemId, portId?, dir, cell, role}
-    const edges = []; // {from, to}
-
-    const terminals = terminalSet || D().TERMINALS;
-
-    Object.values(terminals).forEach((t) => {
-      nodes.set('T:' + t.id, {
-        key: 'T:' + t.id, kind: 'terminal', terminal: t.channel || t.id,
-        dir: t.dir, cell: t.cell.slice(), role: t.role,
-      });
-    });
-
-    built.forEach((b) => {
-      b.ports.forEach((pt) => {
-        nodes.set(portKey(b.itemId, pt.id), {
-          key: portKey(b.itemId, pt.id), kind: 'port', itemId: b.itemId, portId: pt.id,
-          dir: pt.dir, cell: pt.cell.slice(), role: pt.role, templateId: b.templateId,
-        });
-      });
-      /* 内部连通：in → out（有向） */
-      b.tpl.links.forEach(([from, to]) => {
-        edges.push({ from: portKey(b.itemId, from), to: portKey(b.itemId, to) });
-      });
-    });
-
-    /* 入口端口 ← 相邻纹路出口，或 ← 输入极 */
-    built.forEach((b) => {
-      b.ports.filter((p) => p.role === 'in').forEach((pt) => {
-        const key = portKey(b.itemId, pt.id);
-        const [dx, dy] = DIRS[pt.dir];
-        const srcCell = [pt.cell[0] + dx, pt.cell[1] + dy];
-        let matched = false;
-
-        Object.values(terminals).forEach((t) => {
-          if (t.role !== 'in') return;
-          if (t.cell[0] === pt.cell[0] && t.cell[1] === pt.cell[1] && t.dir === pt.dir) {
-            edges.push({ from: 'T:' + t.id, to: key });
-            matched = true;
-          }
-        });
-
-        built.forEach((other) => {
-          if (other.itemId === b.itemId) return;
-          other.ports.filter((o) => o.role === 'out').forEach((op) => {
-            if (op.cell[0] !== srcCell[0] || op.cell[1] !== srcCell[1]) return;
-            if (op.dir !== opposite(pt.dir)) return;
-            edges.push({ from: portKey(other.itemId, op.id), to: key });
-            matched = true;
-          });
-        });
-        void matched;
-      });
-
-      /* 出口端口 → 相邻纹路入口，或 → 输出极 */
-      b.ports.filter((p) => p.role === 'out').forEach((pt) => {
-        const key = portKey(b.itemId, pt.id);
-        const [dx, dy] = DIRS[pt.dir];
-        const dstCell = [pt.cell[0] + dx, pt.cell[1] + dy];
-
-        Object.values(terminals).forEach((t) => {
-          if (t.role !== 'out') return;
-          if (t.cell[0] === pt.cell[0] && t.cell[1] === pt.cell[1] && t.dir === pt.dir) {
-            edges.push({ from: key, to: 'T:' + t.id });
-          }
-        });
-
-        built.forEach((other) => {
-          if (other.itemId === b.itemId) return;
-          other.ports.filter((o) => o.role === 'in').forEach((ip) => {
-            if (ip.cell[0] !== dstCell[0] || ip.cell[1] !== dstCell[1]) return;
-            if (ip.dir !== opposite(pt.dir)) return;
-            edges.push({ from: key, to: portKey(other.itemId, ip.id) });
-          });
-        });
-      });
-    });
-
-    /* 去重（同一对端口可能被两条路径重复登记） */
-    const seenEdge = new Set();
-    const uniqEdges = [];
-    edges.forEach((e) => {
-      if (!nodes.has(e.from) || !nodes.has(e.to)) return;
-      const k = e.from + '->' + e.to;
-      if (seenEdge.has(k)) return;
-      seenEdge.add(k);
-      uniqEdges.push(e);
-    });
-
-    /* Kahn 拓扑排序 + 环检测 */
-    const indeg = new Map();
-    const outAdj = new Map();
-    nodes.forEach((n) => { indeg.set(n.key, 0); outAdj.set(n.key, []); });
-    uniqEdges.forEach((e) => {
-      indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
-      (outAdj.get(e.from) || []).push(e.to);
-      if (!outAdj.has(e.from)) outAdj.set(e.from, []);
-    });
-
-    const queue = [];
-    nodes.forEach((n) => { if ((indeg.get(n.key) || 0) === 0) queue.push(n.key); });
-    queue.sort();
-    const order = [];
-    while (queue.length) {
-      const k = queue.shift();
-      order.push(k);
-      (outAdj.get(k) || []).slice().sort().forEach((to) => {
-        indeg.set(to, (indeg.get(to) || 1) - 1);
-        if (indeg.get(to) === 0) { queue.push(to); queue.sort(); }
-      });
-    }
-
-    const withEdges = new Set();
-    uniqEdges.forEach((e) => { withEdges.add(e.from); withEdges.add(e.to); });
-    const stuck = [...withEdges].filter((k) => !order.includes(k));
-    if (stuck.length) {
-      errors.push(`回路存在有向闭环（${stuck.slice(0, 3).join('、')}），能量会无限循环`);
-    }
-
-    if (errors.length) return { ok: false, errors };
-
-    /* 可达输出：从输入极出发能走到的输出极 */
-    const reach = new Set();
-    const stack = [...order].filter((k) => k.startsWith('T:') && nodes.get(k).role === 'in');
-    while (stack.length) {
-      const k = stack.pop();
-      if (reach.has(k)) continue;
-      reach.add(k);
-      (outAdj.get(k) || []).forEach((to) => { if (!reach.has(to)) stack.push(to); });
-    }
-    const reachableOutputs = ['main', 'support'].filter(id => Object.values(terminals)
-      .some(t => (t.channel || t.id) === id && reach.has('T:' + t.id)));
-
-    return {
-      ok: true,
-      value: {
-        nodes: [...nodes.values()].map((n) => ({ ...n })),
-        edges: uniqEdges,
-        order,
-        reachableOutputs,
-        reach: [...reach].sort(),
-        loadedItems: built.map((b) => b.itemId),
-        cells: built.reduce((acc, b) => acc.concat(b.cells.map((c) => [c.x, c.y])), []),
-      },
-    };
+    return { ok: true, errors: [], occupied, load, overload, cap, scarSaved, bagError };
   }
 
   /**
-   * layout(st, placements)：容错版布局，供 UI 画格子/端口/连线。
+   * layout(st, placements)：容错版布局，供 UI 画格子/端口/纹路间的相邻连线。
    * 不做合法性判断（非法摆放也照画），权威校验仍走 preview。
    */
-  function layout(st, placements, terminalsIn) {
+  function layout(st, placements) {
     const cells = [];
     const ports = [];
     const edges = [];
-    const terminals = terminalsIn || D().TERMINALS;
     const built = [];
 
     (placements || []).forEach((p) => {
@@ -446,12 +308,6 @@
       b.aps.filter((p) => p.role === 'in').forEach((pt) => {
         const [dx, dy] = DIRS[pt.dir];
         const src = [pt.cell[0] + dx, pt.cell[1] + dy];
-        Object.values(terminals).forEach((t) => {
-          if (t.role !== 'in') return;
-          if (t.cell[0] === pt.cell[0] && t.cell[1] === pt.cell[1] && t.dir === pt.dir) {
-            edges.push({ from: 'T:' + t.id, to: b.item.id + ':' + pt.id, terminal: true });
-          }
-        });
         built.forEach((o) => {
           if (o.item.id === b.item.id) return;
           o.aps.filter((q) => q.role === 'out').forEach((q) => {
@@ -465,12 +321,6 @@
       b.aps.filter((p) => p.role === 'out').forEach((pt) => {
         const [dx, dy] = DIRS[pt.dir];
         const dst = [pt.cell[0] + dx, pt.cell[1] + dy];
-        Object.values(terminals).forEach((t) => {
-          if (t.role !== 'out') return;
-          if (t.cell[0] === pt.cell[0] && t.cell[1] === pt.cell[1] && t.dir === pt.dir) {
-            edges.push({ from: b.item.id + ':' + pt.id, to: 'T:' + t.id, terminal: true });
-          }
-        });
         built.forEach((o) => {
           if (o.item.id === b.item.id) return;
           o.aps.filter((q) => q.role === 'in').forEach((q) => {
@@ -485,23 +335,151 @@
     return { cells, ports, edges, built };
   }
 
+  /* ---------------------------- 起手通路 ---------------------------- */
+
+  /**
+   * 给一门蚀刻法铺一条**接通的起手通路**。
+   *
+   * 为什么要有它：骨架从 2~14 格扩到 6~54 格之后，`PRESETS.basic` 那种
+   * 「固定坐标摆几件」的起手板面必然接不通 —— 玩家开局第一眼看到的是「有板面但没有脉冲」。
+   * 这里沿蚀刻法自己的格走一条从 entry 到 exit 的最短路，每格放一件**单格双向**纹路
+   * （rivet / jack / flint / pinValve），按「来向的反面 + 出向 + 起终点刻线」挑姿态。
+   *
+   * 只做单格件，不串联 `long / elbow` 这类多格中继 —— 那是模拟器布线器（更重）的活。
+   * @returns {Array|null} placements，失败返回 null
+   */
+  function autoLoadout(st, unit) {
+    if (!V.Manuscript) return null;
+    const plate = plateOf(unit);
+    for (const ms of V.State.manuscriptsOf(unit)) {
+      const oriented = V.Manuscript.orient(V.Manuscript.normalize(ms), ms.rotation || 0, !!ms.mirrorY);
+      const ox = ms.x || 0;
+      const oy = ms.y || 0;
+      if (!oriented || !V.Manuscript.fits(oriented, plate.cellsList, ox, oy)) continue;
+      const cells = new Set(oriented.cells.map(([x, y]) => `${x + ox},${y + oy}`));
+      const plan = startingRoute(oriented, ox, oy, cells);
+      if (!plan) continue;
+      return plan.map(({ id, rot, mir, x, y }) => {
+        const part = V.State.makePart(st, { kind: 'circuit', templateId: id });
+        st.itemsById[part.id] = part;
+        return { itemId: part.id, x, y, rotation: rot, mirrorY: mir };
+      });
+    }
+    return null;
+  }
+
+  function startingRoute(oriented, ox, oy, cells) {
+    const key = (x, y) => x + ',' + y;
+    const entry = key(oriented.entry[0] + ox, oriented.entry[1] + oy);
+    const exits = new Set(oriented.exits.map((c) => key(c[0] + ox, c[1] + oy)));
+    if (!cells.has(entry) || exits.has(entry)) return null;
+    const veinsOf = (k) => {
+      const [x, y] = k.split(',').map(Number);
+      return oriented.veins[key(x - ox, y - oy)] || [];
+    };
+
+    /* ① 从 entry 到最近 exit 的最短路（只在膜内走） */
+    const ORTH = V.Manuscript.ORTH;
+    const parent = new Map([[entry, null]]);
+    const queue = [entry];
+    let hit = null;
+    while (queue.length && !hit) {
+      const cur = queue.shift();
+      if (exits.has(cur) && cur !== entry) { hit = cur; break; }
+      const [x, y] = cur.split(',').map(Number);
+      Object.keys(ORTH).forEach((d) => {
+        const nk = key(x + ORTH[d][0], y + ORTH[d][1]);
+        if (!cells.has(nk) || parent.has(nk)) return;
+        parent.set(nk, cur);
+        queue.push(nk);
+      });
+    }
+    if (!hit) return null;
+    const path = [];
+    for (let cur = hit; cur != null; cur = parent.get(cur)) path.push(cur);
+    path.reverse();
+    if (path[0] !== entry || path.length < 2) return null;
+
+    /* ② 逐格挑件：必需方向 = 来向的反面 + 出向 +（起终点）刻线 */
+    const OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
+    const dirOf = (from, to) => {
+      const [x1, y1] = from.split(',').map(Number);
+      const [x2, y2] = to.split(',').map(Number);
+      return Object.keys(ORTH).find((d) => x1 + ORTH[d][0] === x2 && y1 + ORTH[d][1] === y2);
+    };
+    const TILES = ['rivet', 'jack', 'flint', 'pinValve'];
+    const placements = [];
+
+    for (let i = 0; i < path.length; i += 1) {
+      const cur = path[i];
+      const [cx, cy] = cur.split(',').map(Number);
+      const need = new Set();
+      if (path[i - 1]) need.add(OPP[dirOf(path[i - 1], cur)]);
+      if (path[i + 1]) need.add(dirOf(cur, path[i + 1]));
+      if (i === 0 || i === path.length - 1) veinsOf(cur).forEach((d) => need.add(d));
+
+      let chosen = null;
+      for (const id of TILES) {
+        const tpl = D().template(id);
+        if (!tpl) continue;
+        for (let rot = 0; rot < 4 && !chosen; rot += 1) {
+          for (const mir of [false, true]) {
+            const tf = transformTemplate(tpl, rot, mir);
+            if (tf.cells.length !== 1) continue;
+            const dirs = new Set(tf.ports
+              .filter((pt) => pt.cell[0] === 0 && pt.cell[1] === 0)
+              .map((pt) => pt.dir));
+            if (![...need].every((d) => dirs.has(d))) continue;
+            chosen = { id, rot, mir };
+            break;
+          }
+        }
+        if (chosen) break;
+      }
+      if (!chosen) return null;
+      placements.push({ ...chosen, x: cx, y: cy });
+    }
+    return placements;
+  }
+
   /* ------------------------------ 编译 ------------------------------ */
 
-  /** 返回可直接保存 / 参与路由的 CompiledCircuit。 */
+  /**
+   * 返回可直接保存 / 参与贯通的 CompiledCircuit。
+   *
+   * v4.0 起它不只是几何编译，而是**战斗面板的唯一来源**：
+   *   value.panel  结构完整度 / 脉冲幅值 / 回路阻抗 / 电容缓冲 / 心核节拍
+   *   value.pulse  每门已装配蚀刻法的路径拓扑特征（直导格数、转弯数、分流、闭环…）
+   * 上层（roster / combat / ui）一律读这两个，不再自己拍面板。
+   */
   function compile(st, unitId, placements) {
     const p = preview(st, unitId, placements);
     if (!p.ok) return { ok: false, errors: p.errors };
     const unit = st.roster.find((u) => u.id === unitId);
+    const list = placements || st.run?.fieldLayouts?.[unitId] || unit.board.placements || [];
+    const lay = layout(st, list);
+    const plate = plateOf(unit);
+    const states = V.State.manuscriptsOf(unit).map((m) => manuscriptState(st, unitId, list, m.id));
+    const panel = panelOf(st, unit, list, p, { plate, lay, states });
+    const pulse = Object.fromEntries(states.filter((state) => state.ok).map((state) => [state.spec.id, state.pulse]));
+    const anchors = new Set(plate.innateNodes.map(String));
+    const protectedNodes = plate.archetype === 'zhibi'
+      ? lay.built.filter((b) => b.abs.some(({x, y}) => anchors.has(`${x},${y}`))).map((b) => b.item.id)
+      : [];
     return {
       ok: true,
       value: {
         unitId,
         bodyPreset: unit.bodyPreset,
         load: p.load,
+        overload: p.overload || 0,
+        cap: p.cap,
+        scarSaved: p.scarSaved || 0,
         occupied: p.occupied,
-        reachableOutputs: p.reachableOutputs,
-        graph: p.graph,
-        placements: (placements || []).map((x) => ({
+        panel,
+        pulse,
+        protectedNodes,
+        placements: list.map((x) => ({
           itemId: x.itemId, x: x.x, y: x.y, rotation: x.rotation || 0, mirrorY: !!x.mirrorY,
         })),
       },
@@ -521,20 +499,372 @@
     u2.board.placements = (placements || []).map((x) => ({
       itemId: x.itemId, x: x.x, y: x.y, rotation: x.rotation || 0, mirrorY: !!x.mirrorY,
     }));
-    return { ok: true, state: next, events: [], load: p.load, reachableOutputs: p.reachableOutputs };
+    return { ok: true, state: next, events: [], load: p.load, overload: p.overload, cap: p.cap };
+  }
+
+  /* 纹路贯通时蚀刻法额外乘算。工坊的「共鸣增幅」也读这个数，避免展示与结算各写一份。 */
+  const ROUTE_MULT = 1.15;
+
+  /* ------------------------------ 拓扑脉冲编译（v4.0） ------------------------------ */
+
+  /* 六族纹路对脉冲的作用。数值集中在这里，改平衡只动这一块。
+     之所以按「家族」而不是按模板 id 写：30 种纹路是 6 种电路元件的变体，
+     直导系多一格少一格，不该改公式，只该改它有几格。 */
+  const PULSE = {
+    straight:   { interval: 0.03, cap: 0.20 },  // 每格直导：出招间隔 −3%，上限 −20%
+    turn:       0.12,                            // 每次 90° 转折：幅值 +12%
+    /* 六标：骨架扩到 6~54 格之后，通路能到二十几格，转角跟着涨到二十几次 ——
+       直导有 −20% 的封顶、转角却没有，于是「弯折流」的幅值能到 ×5.4。
+       补一个对称的封顶：最多计 8 次转折（+96%），回钩另算。
+       七标：8 → 6（+72%）。8 次转折时弯折流在 F1 就能一回合清场，
+       那不是「路线好」而是「倍率溢出」；6 次仍然明显强于直导（+72% vs −20%），
+       但配上储能放电与回钩，它得靠**摆法**而不是靠**格子数**取胜。 */
+    turnCap:    6,
+    hairpin:    0.20,                            // 回钩 180° 折返：再 +20%
+    split:      0.65,                            // 分流：单股拆多路，按 0.65 摊
+    resonant:   1.45,                            // 下游重新汇合出闭环：谐振干涉
+    capToShield: 0.20,                           // 储能：截留 20% 充进缓冲（八标：30% 让「有储能就免疫」）
+    overload:   1.85,                            // 缓冲满溢后的过载放电（2.5 → 1.85：满仓一发太碾压）
+    gate:       1.45,                            // 闸门：高热或有缓冲时放大（1.65 → 1.45）
+    emberStress: 3,                              // 余烬：高压时泄 3 点压力
+    emberCharge: 6,                              // 余烬：低压时反而蓄 6 点压力（八标：+3 进不了高热区）
+    emberHot:   65,                              // 温控分界：低于它积蓄
+    emberVent:  85,                              // 高于它泄压
+    straightDodge: 0.015,                        // 每格直导额外 +1.5% 闪避
+    straightDodgeCap: 0.12,                      // 上限 +12%
+    emberPerStress: 0.005,                       // 余烬：每点压力转 +0.5% 幅值
+    emberAmpCap:  0.55,                          // 余烬的压力增幅封顶（九标：转角延迟同时拖慢了 C，用增幅补回来）
+    /* 八标：余烬单位带着炉温入场。
+       起手余裕砍到 1/5、普攻节奏拉到 1.1s 之后，一场只有 ~7 次脉冲，
+       `+6/次` 最快也要第 11 次命中才进 65 压的死区 —— 余烬的整条温控
+       （泄压、砺、满压熔毁）实际全是死代码。把「起手压力」当成余烬的第三个参数：
+       F49 高热覆盖 15.3% → 53.6%，而 A/B 没有余烬通路，数值一个字不动。 */
+    emberWarm:   45,                             // 余烬：入场炉温（单位只在通路穿过余烬件时才吃）
+    /* 六标：蚀刻法从 2~14 格扩到 6~54 格，满配占格从 ~20 升到 ~55，
+       每格系数必须同步下调，否则完整度会翻到 200+。1.15 让满铺落在 60~100。 */
+    hpPerCell:  1.15,
+    /* 八标：闭环不再无上限堆血。满板 13 个闭环在旧口径下贡献 156 完整度（占面板 58%），
+       于是「血最厚的那个」永远是最优解，而不是「路线最好的那个」。
+       现在最多只认 3 个主环路：+18 完整度封顶；剩下的拓扑价值转去脉冲乘区（loopAmp）。 */
+    hpPerLoop:  6,
+    loopHpCap:  3,                               // 完整度只认前 3 个闭环
+    loopAmp:    0.04,                            // 每个闭环 +4% 脉冲幅值
+    loopAmpCap: 4,                               // 最多计 4 环 → +16%
+    /* 九标 · A 流派的防御出口：直导通路每 2 格给 1 点「动能缓冲」，上限独立于储能系。
+       直导是靠出手次数吃饭的流派，本身没有储能纹路 → shieldCap 恒为 0，
+       在高强度层域里是纯玻璃炮。让它把「打得快」换成一层自维持的薄盾。 */
+    kineticPerTwoCells: 1,                       // 每 2 格直导 +1 动能缓冲
+    kineticCapCells: 2,                          // 上限 = 直导格 × 2
+    kineticCapHard: 18,                          // 硬上限 18 点
+    /* 九标 · B 流派的代价：信号过 90° 弯折要吃传输时间。
+       每 1 次转角 +4% 出手间隔（上限 +24%）。24 转角的线圈炮从 0.86s 拉到 ~1.05s，
+       单发爆发不动，持续 DPS 掉 20%~25%。 */
+    turnDelay: 0.04,
+    turnDelayCap: 0.24,
+    /* 九标 · 大卷自承重：单门蚀刻法参与完整度/负荷计算的有效占格封顶 34 格。 */
+    manuscriptCellCap: 34,
+    defCoverage: 20,                             // 满覆盖 → 阻抗 +20
+    /* 八标：软底 30 → 70 且拦截率硬封顶 45%。
+       30 的曲线上，def 55 能拦 65%，叠上「先乘一次、结算再乘一次」的两次口径，
+       敌人重击透进来只剩一成 —— 熔断阈值（8% 完整度）永远够不到，保险丝整条是死的。
+       70 + 0.45 封顶之后，透进来的那一发才够踩到 6~9 点的熔断线。 */
+    defBase:    70,                              // 阻抗拦截公式的软底
+    defCap:     0.45,                            // 单次阻抗拦截率上限
+    capShieldPerCell: 5,
+    shieldCapPct: 0.45,                          // 缓冲上限同时不超过完整度的 45%
+    /* 熔断阈值：单次穿透伤害要同时越过「绝对下限」与「完整度的百分比」才烧保险丝。
+       八标第一版只挂 8%，完整度降到 86 之后门槛只有 7 点，敌方每一次普攻都够 ——
+       A 流派一场被烧掉 7 个节点，整块板被自己的保险丝拆光（熔断 7.03/人）。
+       绝对值下限是「这一下到底算不算重击」的判据，百分比负责让它跟着体型放大。 */
+    fuseFloor:  36,                              // 绝对下限：低于它的直击不算重击
+    fusePct:    0.08,                            // 相对下限：完整度的 8%
+    capacitorDef: 2,                             // 储能系每格额外阻抗
+    gateDef: 3,                                  // 闸系每格额外阻抗
+  };
+
+  const PULSE_FAMILY = {};
+  ['straight', 'long', 'rail', 'rivet'].forEach((id) => { PULSE_FAMILY[id] = 'straight'; });
+  ['elbow', 'dogleg', 'hairpin', 'kneejoint', 'crook', 'jack'].forEach((id) => { PULSE_FAMILY[id] = 'elbow'; });
+  ['splitter', 'tee', 'cross', 'clevis', 'spillway', 'wishbone'].forEach((id) => { PULSE_FAMILY[id] = 'splitter'; });
+  ['capacitor', 'bellowsCell', 'coil', 'cistern', 'ampoule'].forEach((id) => { PULSE_FAMILY[id] = 'capacitor'; });
+  ['threshold', 'pinValve', 'sluice', 'reed'].forEach((id) => { PULSE_FAMILY[id] = 'threshold'; });
+  ['ember', 'flint', 'fuse', 'brazier', 'wickbend'].forEach((id) => { PULSE_FAMILY[id] = 'ember'; });
+
+  function familyOf(tpl) {
+    if (!tpl) return 'other';
+    return tpl.family || PULSE_FAMILY[tpl.id] || 'other';
+  }
+
+  const r2 = (v) => Math.round(v * 100) / 100;
+  /* 闪避按 1.5%/格 走，两位小数会把 0.015 抹成 0.02 —— 单独给一个三位口径 */
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+
+  function nodesConnected(starts, terminals, dirs) {
+    const remaining = new Set(terminals);
+    const seen = new Set(starts);
+    const queue = [...seen];
+    for (const cell of queue) {
+      if (remaining.delete(cell)) {
+        if (!remaining.size) return true;
+        continue;
+      }
+      const [x, y] = cell.split(',').map(Number);
+      for (const dir of dirs.get(cell) || []) {
+        const [dx, dy] = DIRS[dir];
+        const next = `${x + dx},${y + dy}`;
+        if (seen.has(next) || !dirs.get(next)?.includes(opposite(dir))) continue;
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 沿一条贯通路径数拓扑特征。
+   * `path` 来自 Manuscript.route 的父指针回溯 —— 是**唯一那条路**，
+   * 不是 visited 集合；用集合数转弯会把岔路的拐角也算进来。
+   */
+  function pulseOf(lay, rt, plate, idx) {
+    const owner = new Map();
+    ((lay && lay.built) || []).forEach((b) => {
+      (b.abs || []).forEach((c) => owner.set(c.x + ',' + c.y, b));
+    });
+    const path = (rt && rt.path) || [];
+    const archetype = plate?.archetype;
+    const anchorKeys = (plate?.innateNodes || []).map(String);
+    const anchors = new Set(anchorKeys);
+    const activeNodes = new Set();
+    let straight = 0;
+    let turns = 0;
+    let capacitors = 0;
+    let split = false;
+    let gate = false;
+    let ember = false;
+    let hairpin = false;
+    let elbowTurns = 0;
+    let straightCapBonus = 0;
+    let anchorTurns = 0;
+    let cleanSplit = false;
+    let gateBonus = 0;
+    let shieldScale = 1;
+    let prevDir = null;
+
+    path.forEach((k, i) => {
+      const tpl = owner.get(k)?.tpl;
+      const fam = familyOf(tpl);
+      if (fam === 'straight') straight += 1;
+      if (fam === 'capacitor') capacitors += 1;
+      if (fam === 'splitter') split = true;
+      if (fam === 'threshold') gate = true;
+      if (fam === 'ember') ember = true;
+      if (tpl && tpl.id === 'hairpin') hairpin = true;
+      if (anchors.has(k)) {
+        if (archetype === 'xianghu' && fam === 'straight') {
+          straightCapBonus = .08;
+          activeNodes.add(k);
+        }
+        if ((archetype === 'zaohuyou' || archetype === 'sida') && fam === 'splitter') {
+          cleanSplit = true;
+          activeNodes.add(k);
+        }
+        if (archetype === 'sida' && fam === 'threshold') {
+          gateBonus = .15;
+          activeNodes.add(k);
+        }
+        if (archetype === 'jiuceng' && fam === 'capacitor') {
+          const [x, y] = k.split(',').map(Number);
+          const across = `${x},${y - 1}`;
+          if ((path[i - 1] === across || path[i + 1] === across) && owner.get(across) === owner.get(k)) {
+            shieldScale = 1.25;
+            activeNodes.add(k);
+          }
+        }
+      }
+      if (i > 0) {
+        const [x, y] = k.split(',').map(Number);
+        const [px, py] = path[i - 1].split(',').map(Number);
+        const dir = (x - px) + ',' + (y - py);
+        if (prevDir !== null && dir !== prevDir) {
+          turns += 1;
+          /* 九标：只有**弯折件**上的转向才是「物理延时的来源」。
+             余烬/闸系/直导件上的折角是同一枚元件内的走向，不该额外罚。
+             这样 24 转角的线圈炮吃满延迟，9 转角的余烬流不会被连带拖死。 */
+          if (fam === 'elbow') elbowTurns += 1;
+          const bend = path[i - 1];
+          if (archetype === 'suhui' && anchors.has(bend) && familyOf(owner.get(bend)?.tpl) === 'elbow') {
+            anchorTurns += 1;
+            activeNodes.add(bend);
+          }
+        }
+        prevDir = dir;
+      }
+    });
+
+    const onPath = anchorKeys.filter((k) => path.includes(k));
+    let wallCells = 0;
+    if (archetype === 'jiansui' && onPath.length) {
+      wallCells = path.filter((cell) => {
+        const [x, y] = cell.split(',').map(Number);
+        return ((y === 3 || y === 8) && x >= 4 && x <= 7)
+          || ((x === 3 || x === 8) && y >= 4 && y <= 7);
+      }).length;
+      if (wallCells) onPath.forEach((k) => activeNodes.add(k));
+    }
+    // 玄璜的两端可通过蚀刻法外的纹路接入同一条贯通线路。
+    const dotStacks = archetype === 'xuanhuang' && anchorKeys.length >= 2 && path.length
+      && nodesConnected(path, anchorKeys, (idx || V.Manuscript.pieceIndex(lay)).dirs) ? 2 : 1;
+    const waistPressure = archetype === 'chuyao' && onPath.length ? 10 : 0;
+    const twinShield = archetype === 'bingdi' && plate.clockCore.length === 2 && onPath.some((k) =>
+      nodesConnected([k], plate.clockCore.map(String), (idx || V.Manuscript.pieceIndex(lay)).dirs)) ? 6 : 0;
+    if (dotStacks > 1) anchorKeys.forEach((k) => activeNodes.add(k));
+    if (waistPressure || twinShield) onPath.forEach((k) => activeNodes.add(k));
+
+    /* 九标：直导缩间隔、弯折算延迟 —— 两个方向都写进同一个 intervalScale */
+    const turnDelay = Math.min(PULSE.turnDelayCap, elbowTurns * PULSE.turnDelay);
+    const intervalScale = 1 - Math.min(PULSE.straight.cap + straightCapBonus, straight * PULSE.straight.interval) + turnDelay;
+    /* 八标：闭环的拓扑价值从「堆血」搬回「进攻」。
+       完整度那边只认 3 个闭环（见 panelOf），这里把多出来的环路兑现成幅值：
+       每环 +4%，最多计 4 环（+16%）。与弯折、分流各自独立乘区，互不冲抵。 */
+    const loopCount = countLoops(lay);
+    const loopAmp = 1 + Math.min(PULSE.loopAmpCap, loopCount) * PULSE.loopAmp;
+    const turnAmp = 1 + Math.min(PULSE.turnCap, turns) * PULSE.turn + (hairpin ? PULSE.hairpin : 0);
+    const splitAmp = split ? (rt?.looped ? PULSE.resonant : PULSE.split) : 1;
+    const anchorAmp = (1 + .10 * anchorTurns / turnAmp) * (1 + .04 * wallCells)
+      * (cleanSplit && !rt?.looped ? 1 / PULSE.split : 1);
+    const ampMult = turnAmp * splitAmp * loopAmp * anchorAmp;
+    /* 直导总线的机动性：每格直导顺带 +2% 闪避（上限 +16%）。
+       这条是给「高频直导」补的生存位 —— 它输出靠出手次数，长线战斗里最缺的就是不挨打。 */
+    const dodgeBonus = Math.min(PULSE.straightDodgeCap, straight * PULSE.straightDodge);
+
+    return {
+      path,
+      straight,
+      turns,
+      elbowTurns,
+      hairpin,
+      split,
+      looped: !!(rt && rt.looped),
+      capacitors,
+      gate,
+      ember,
+      intervalScale: r2(Math.max(0.5, intervalScale)),
+      ampMult: r2(ampMult),
+      dodgeBonus: r3(dodgeBonus),
+      activeNodes: [...activeNodes],
+      anchorAmp,
+      cleanSplit,
+      gateBonus,
+      shieldScale,
+      twinShield,
+      dotStacks,
+      waistPressure,
+    };
+  }
+
+  /** 闭环数：并查集数「接上就成环」的边。整块板的连通图共用一套。 */
+  function countLoops(lay) {
+    const parent = new Map();
+    const find = (x) => {
+      let r = x;
+      while (parent.get(r) != null && parent.get(r) !== r) r = parent.get(r);
+      parent.set(x, r);
+      return r;
+    };
+    let loops = 0;
+    ((lay && lay.edges) || []).forEach((e) => {
+      if (parent.get(e.from) == null) parent.set(e.from, e.from);
+      if (parent.get(e.to) == null) parent.set(e.to, e.to);
+      const a = find(e.from);
+      const b = find(e.to);
+      if (a === b) loops += 1;
+      else parent.set(a, b);
+    });
+    return loops;
+  }
+
+  /**
+   * 战斗面板：从拓扑编译，不读任何「攻防血权重」。
+   * 唯一进入公式的装配事实是：占了几格、成没成环、用了几个储能/闸系元件、主修覆盖多少。
+   */
+  function panelOf(st, unit, placements, p, compiled) {
+    /* 和 preview 同口径：没传就是「场上布局 → 板面布局」，不是空板面 */
+    const list = placements
+      || (st.run && st.run.fieldLayouts && st.run.fieldLayouts[unit.id])
+      || unit.board.placements
+      || [];
+    const lay = compiled?.lay || layout(st, list);
+    const plate = compiled?.plate || plateOf(unit);
+    const occupied = new Set(((p && p.occupied) || []).map(String));
+    const used = occupied.size;
+    const occupiedAnchors = plate.innateNodes.filter((c) => occupied.has(String(c))).length;
+    const edgeAnchors = plate.archetype === 'dibuman' ? occupiedAnchors : 0;
+    const loops = countLoops(lay);
+    let caps = 0;
+    let gates = 0;
+    ((lay && lay.built) || []).forEach((b) => {
+      const fam = familyOf(b.tpl);
+      const n = (b.abs || []).length;
+      if (fam === 'capacitor') caps += n;
+      if (fam === 'threshold') gates += n;
+    });
+    const etchings = V.State.manuscriptsOf(unit);
+    const states = compiled?.states || etchings.map((m) => manuscriptState(st, unit.id, list, m.id));
+    const ms = states[0];
+    const coverage = ms && ms.ok ? ms.pct : 0;
+    const ch = V.Derive.chassis(D().body(unit.bodyPreset));
+    /* 八标：完整度只认前 3 个闭环（+18 封顶）。
+       旧口径 13 环能堆出 270 完整度，四名 A 流派合计 1140，而 F49 敌方三人只有 443 ——
+       敌人还没轮到第二次脉动就被清完，靠「敌人出手」成立的熔断与打断全部空转。 */
+    /* 九标：蚀刻法骨架的「有效占格」计入完整度，但单门封顶 34 格。
+       R5~R7 的大卷占 32~54 格、负荷 11~12 点，却一格完整度都不给 —— 这是它们
+       在后期章节压不出面板的直接原因（manuscript-growth 只剩第 1、4 章能赢）。
+       超出 34 格的部分当作「自承重超导框架」：不再增加完整度，也不再按格计费。 */
+    const msCells = etchings.reduce((a, m) => a + V.State.manuscriptCells(m).length, 0);
+    const msEff = etchings.reduce((a, m) => a + Math.min(V.State.manuscriptCells(m).length, PULSE.manuscriptCellCap), 0);
+    const effectiveCells = used + msEff;
+    const maxHp = 25 + Math.round(effectiveCells * PULSE.hpPerCell)
+      + Math.min(loops, PULSE.loopHpCap) * PULSE.hpPerLoop + edgeAnchors * 3;
+    /* 八标：缓冲池双封顶 —— 每格 5 点，且不超过完整度的 45%。
+       单靠「每格 6 点」时 B 流派能攒出 108 点盾，受击还现充 30%，
+       一场 10 回合的战斗吃满 18 次攻击只掉 13 点完整度。 */
+    const shieldScale = states.some((state) => state.pulse?.shieldScale === 1.25) ? 1.25 : 1;
+    const twinShield = Math.max(0, ...states.map((state) => state.pulse?.twinShield || 0));
+    const shieldCap = Math.round(Math.min(caps * PULSE.capShieldPerCell, Math.round(maxHp * PULSE.shieldCapPct)) * shieldScale)
+      + edgeAnchors * 2 + twinShield;
+    return {
+      maxHp,
+      atk: ch.atk,
+      /* 阻抗 = 覆盖度给的 + 储能/闸系元件给的 */
+      def: Math.round((coverage / 100) * PULSE.defCoverage) + caps * PULSE.capacitorDef + gates * PULSE.gateDef
+        + (plate.archetype === 'xuanzhen' ? occupiedAnchors * 6 : 0),
+      shieldCap,
+      twinShield,
+      spd: ch.spd,
+      loops,
+      usedCells: used,
+      manuscriptCells: msCells,
+      manuscriptEffectiveCells: msEff,
+      effectiveCells,
+      coverage,
+      caps,
+      gates,
+    };
   }
 
   /**
    * 蚀刻法状态：覆盖率台阶 + 是否贯通 → 战斗要用的效果。
-   * 覆盖率给「量」（乘算、起手能量），贯通只给额外乘算，不解锁机制——
-   * 这样「只填满不管流向」也玩得下去，懂路由的人多吃一档。
+   * 覆盖率给「量」（乘算、起手余裕），贯通只给额外乘算，不解锁机制——
+   * 这样「只填满不管流向」也玩得下去，懂贯通的人多吃一档。
    */
   function manuscriptState(st, unitId, placementsIn, msId) {
     const EMPTY = { mainMult: 1, supportMult: 1, startEnergy: 0 };
+    const DEAD_PULSE = { path: [], straight: 0, turns: 0, hairpin: false, split: false, looped: false, capacitors: 0, gate: false, ember: false, intervalScale: 1, ampMult: 1, dodgeBonus: 0 };
+    const DEAD = { ok: false, pct: 0, tierId: null, tierName: '', tierIndex: 0, routed: false, reachLen: 0, pulse: DEAD_PULSE, effects: EMPTY };
     const unit = (st.roster || []).find((u) => u.id === unitId);
     const ms = msId ? V.State.manuscriptsOf(unit).find(m => m.id === msId) : unit?.manuscript;
     if (!ms || !V.Manuscript) {
-      return { ok: false, reason: '没有蚀刻法', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
+      return { ...DEAD, reason: '没有蚀刻法' };
     }
     const plate = plateOf(unit);
     const oriented = V.Manuscript.orient(
@@ -543,15 +873,16 @@
     const ox = ms.x || 0;
     const oy = ms.y || 0;
     if (!V.Manuscript.fits(oriented, plate.cellsList, ox, oy)) {
-      return { ok: false, reason: '蚀刻法没落在板面上', pct: 0, tierId: null, tierName: '', routed: false, effects: EMPTY };
+      return { ...DEAD, reason: '蚀刻法没落在板面上' };
     }
-    const lay = layout(st, placementsIn || unit.board.placements || [], plate.terminals);
+    const lay = layout(st, placementsIn || unit.board.placements || []);
     const idx = V.Manuscript.pieceIndex(lay);
     const cov = V.Manuscript.coverage(oriented, ox, oy, idx);
     const rt = V.Manuscript.route(oriented, ox, oy, idx);
+    const anchors = new Set(plate.innateNodes.map(String));
 
-    /* 纹路增益按「对上的端口比例」结算：一枚纹章蹭一格只拿一份，压满才吃全额。
-       portCells 只数是带开口的格——纹章内部的实心格本来就对不上任何蚀刻法格。 */
+    /* 纹路增益按「对上的端口比例」结算：一枚纹路蹭一格只拿一份，压满才吃全额。
+       portCells 只数是带开口的格——纹路内部的实心格本来就对不上任何蚀刻法格。 */
     const alignedSet = new Set(cov.alignedCells || []);
     const boost = {
       regen: 0, max: 0, skillCostCut: 0, attackMult: 0, skillMult: 0, lowHpRegen: 0,
@@ -564,38 +895,76 @@
       let hit = 0;
       ports.forEach((key) => { if (alignedSet.has(key)) hit += 1; });
       if (!hit) return;
-      const factor = Math.min(1, hit / ports.size);
+      const onTooth = plate.archetype === 'lunya' && b.abs.length <= 2 && b.abs.some((c) => anchors.has(`${c.x},${c.y}`));
+      const factor = Math.min(1, hit / ports.size) * (onTooth ? 2 : 1);
       Object.keys(bo).forEach((k) => {
         if (typeof bo[k] === 'number') boost[k] = (boost[k] || 0) + bo[k] * factor;
       });
     });
 
-    const eff = Object.assign({ mainMult: 1, supportMult: 1, startEnergy: 0 }, (cov.tier && cov.tier.effect) || {});
+    const spec = D().manuscript(ms.id) || ms;
+    /* 虚室生白：凿户牖的板面只吃浅层——共鸣阶封顶在第二档。
+       封顶放在**取档**这一步，而不是事后改 pct：界面显示的覆盖率仍然是真的，
+       只是这一相把「深」换成了「广」（全招式消耗 −1，见 combat.js 的 innateCostCut）。 */
+    const bodyInnate = unit && unit.bodyPreset && D().body(unit.bodyPreset)
+      ? (D().body(unit.bodyPreset).innate || null) : null;
+    const tierList = spec.tiers || [];
+    const rawTierIndex = cov.tier ? tierList.findIndex((t) => t.id === cov.tier.id) : -1;
+    const cappedTier = bodyInnate && bodyInnate.id === 'conduit' && rawTierIndex > 1
+      ? tierList[1] : cov.tier;
+
+    const eff = Object.assign({ mainMult: 1, supportMult: 1, startEnergy: 0 }, (cappedTier && cappedTier.effect) || {});
     eff.boost = boost;
     if (rt.ok) {
-      eff.mainMult = Math.round(eff.mainMult * 1.15 * 100) / 100;
-      eff.supportMult = Math.round(eff.supportMult * 1.15 * 100) / 100;
+      eff.mainMult = Math.round(eff.mainMult * ROUTE_MULT * 100) / 100;
+      eff.supportMult = Math.round(eff.supportMult * ROUTE_MULT * 100) / 100;
     }
+    /* 负荷曾经是「价格」：每点负荷 +3% 主修乘算，等于高阶功法用收益抵掉自己的负荷成本。
+       2026-11-15 删除——那条乘算让负荷越重越划算，收紧上限之后它会变成
+       「装重的不亏，装轻的才亏」，与 §6.4「过用则裂」的整个方向相反。
+       现在负荷是纯代价：深度与维持预算，不返利。字段保留恒为 1，老存档与界面不用改。 */
+    eff.loadBonus = 1;
+    /* 共鸣阶的**档位序号**：minTier 条件看的是这个数（1 = 一阶，2 = 二阶…），
+       不是覆盖百分比——玩家在界面上看到的是「二阶」，那条件就该按二阶判 */
+    const tierIndex = cappedTier ? tierList.findIndex((t) => t.id === cappedTier.id) + 1 : 0;
     return {
       ok: true,
-      spec: D().manuscript(ms.id) || ms,
+      spec,
       pct: cov.pct,
       aligned: cov.aligned,
       total: cov.total,
-      tierId: cov.tier ? cov.tier.id : null,
-      tierName: cov.tier ? cov.tier.name : '',
+      tierId: cappedTier ? cappedTier.id : null,
+      tierName: cappedTier ? cappedTier.name : '',
+      tierIndex,
       routed: rt.ok,
+      /* 贯通路径的格数：周流回环（空腔喉管）按它加主修乘算 */
+      reachLen: rt.ok && rt.reach ? rt.reach.length : 0,
+      /* 拓扑脉冲：直导缩间隔、弯折抬幅值、分流摊开、闭环谐振 —— 全在这 */
+      pulse: pulseOf(lay, rt, plate, idx),
       effects: eff,
     };
   }
 
-  /** 快速试铺一件闲置纹路，优先补齐选中拓片，其他纹路留在原位。 */
+  /** 快速试铺一件闲置纹路，优先补齐选中蚀刻法，其他纹路留在原位。 */
   function suggestPlacement(st, unit, draft, itemId, ms, rotation = 0, mirrorY = false) {
     const item = st.itemsById[itemId];
     if (item?.kind !== 'circuit' || draft.some(p => p.itemId === itemId)) return null;
     const plate = plateOf(unit);
     const used = new Set(layout(st, draft).cells.map(c => c.x + ',' + c.y));
-    const target = ms?.fits ? ms : null;
+    /* target 必须自己摆正：ms 记录上没有 fits 字段，以前这里恒为 null，
+       于是「找位」实际是「取第一个能放下的位置」——板面一放大就彻底压不上蚀刻法。
+       resolveManuscript 给的是 { spec, oriented, ox, oy }，已摆正的就直接用，
+       只有传进裸 spec 时才现场 normalize + orient。 */
+    const oriented = ms
+      ? (ms.oriented
+        || V.Manuscript.orient(
+          V.Manuscript.normalize(ms.spec || ms),
+          ms.rot != null ? ms.rot : (ms.rotation || 0),
+          ms.mir != null ? ms.mir : !!ms.mirrorY))
+      : null;
+    const target = oriented
+      ? { oriented, ox: ms.ox != null ? ms.ox : (ms.x || 0), oy: ms.oy != null ? ms.oy : (ms.y || 0) }
+      : null;
     const previewState = { ...st, roster: [unit] };
     let best = null;
     let bestAligned = -1;
@@ -624,201 +993,10 @@
     return best;
   }
 
-  /* ------------------------------ 能量路由 ------------------------------ */
-
-  function token(tags) { return { tags: (tags || []).slice() }; }
-  function pulse(n, tags) {
-    const out = [];
-    for (let i = 0; i < (n || 0); i++) out.push(token(tags));
-    return out;
-  }
-
-  function emptyRuntime() {
-    return { capacitors: {}, splitCursor: {}, outputs: { main: [], support: [] }, dissipated: 0 };
-  }
-
-  /**
-   * route(compiled, runtime, inputs, context)
-   * inputs = {clock: tokens[], damage: tokens[]}
-   * context = {hpPct: 0..1}
-   * 返回 {runtime, events}；不修改入参。
-   */
-  function route(compiled, runtime, inputs, context) {
-    const g = compiled && compiled.graph;
-    const rt = {
-      capacitors: { ...(runtime && runtime.capacitors || {}) },
-      splitCursor: { ...(runtime && runtime.splitCursor || {}) },
-      outputs: {
-        main: ((runtime && runtime.outputs && runtime.outputs.main) || []).slice(),
-        support: ((runtime && runtime.outputs && runtime.outputs.support) || []).slice(),
-      },
-      dissipated: 0,
-    };
-    const events = [];
-    if (!g) return { runtime: rt, events };
-
-    const nodeMap = new Map(g.nodes.map((n) => [n.key, n]));
-    const adj = new Map();
-    g.edges.forEach((e) => {
-      if (!adj.has(e.from)) adj.set(e.from, []);
-      adj.get(e.from).push(e.to);
-    });
-
-    const tokensAt = new Map();
-    const inject = (key, toks) => {
-      if (!toks || !toks.length) return;
-      if (!tokensAt.has(key)) tokensAt.set(key, []);
-      tokensAt.get(key).push(...toks);
-    };
-
-    Object.entries(inputs || {}).forEach(([id, toks]) => {
-      if (!toks || !toks.length) return;
-      if (!nodeMap.has('T:' + id)) return;
-      inject('T:' + id, toks);
-    });
-
-    const cap = D().DESIGN.chargeCap;
-    const outCap = D().DESIGN.outputCap;
-
-    g.order.forEach((key) => {
-      const node = nodeMap.get(key);
-      if (!node) return;
-      const toks = tokensAt.get(key) || [];
-      if (!toks.length) return;
-
-      /* 输出极：储存，溢出消散 */
-      if (node.kind === 'terminal' && node.role === 'out') {
-        const id = node.terminal;
-        const room = Math.max(0, outCap - rt.outputs[id].length);
-        const keep = toks.slice(0, room);
-        rt.outputs[id].push(...keep);
-        const lost = toks.length - keep.length;
-        if (lost) {
-          rt.dissipated += lost;
-          events.push({ type: 'energyOverflow', outputId: id, amount: lost });
-        }
-        return;
-      }
-
-      if (node.kind === 'terminal') {
-        (adj.get(key) || []).forEach((to) => inject(to, toks));
-        return;
-      }
-
-      const tpl = D().template(node.templateId);
-
-      /* 入口节点的特殊行为 */
-      if (node.role === 'in') {
-        if (tpl.capacitor) {
-          const store = (rt.capacitors[node.itemId] || []).slice();
-          store.push(...toks);
-          let emitted = [];
-          if (store.length >= cap) {
-            emitted = store.slice(0, cap);
-            store.splice(0, cap);
-            /* 发出的 4 单位带 surge */
-            emitted = emitted.map((t) => token([...t.tags.filter((x) => x !== 'surge'), 'surge']));
-            events.push({ type: 'capacitorSurge', itemId: node.itemId, amount: emitted.length });
-          }
-          while (store.length > cap) { store.pop(); rt.dissipated += 1; }
-          rt.capacitors[node.itemId] = store;
-          if (emitted.length) (adj.get(key) || []).forEach((to) => inject(to, emitted));
-          return;
-        }
-
-        if (tpl.gate) {
-          const hpPct = context && typeof context.hpPct === 'number' ? context.hpPct : 1;
-          if (hpPct >= tpl.gate.hpBelow) {
-            rt.dissipated += toks.length;
-            events.push({ type: 'gateBlocked', itemId: node.itemId, amount: toks.length });
-            return;
-          }
-        }
-
-        if (tpl.ember) {
-          toks.forEach((t) => { if (!t.tags.includes('ember')) t.tags.push('ember'); });
-        }
-
-        const outs = (adj.get(key) || []).slice().sort();
-        if (tpl.split) {
-          const ordered = splitTargets(outs, tpl, node.itemId);
-          if (!ordered.length) { rt.dissipated += toks.length; return; }
-          const buckets = ordered.map(() => []);
-          let cursor = (rt.splitCursor[node.itemId] || 0) % ordered.length;
-          for (const t of toks) {
-            buckets[cursor].push(t);
-            cursor = (cursor + 1) % ordered.length;
-          }
-          rt.splitCursor[node.itemId] = cursor;
-          ordered.forEach((target, i) => inject(target, buckets[i]));
-          return;
-        }
-
-        outs.forEach((to) => inject(to, toks));
-        return;
-      }
-
-      /* 出口端口：继续沿外部连线走 */
-      (adj.get(key) || []).forEach((to) => inject(to, toks));
-    });
-
-    return { runtime: rt, events };
-  }
-
-  /** splitter 的两个出口按端口 id（outA/outB）稳定排序，不依赖边的插入顺序。 */
-  function splitTargets(adjList, tpl, itemId) {
-    const wanted = tpl.split.map((pid) => portKey(itemId, pid));
-    const found = wanted.filter((k) => adjList.includes(k));
-    return found;
-  }
-
-  /* ------------------------------ 便捷查询 ------------------------------ */
-
-  function outputTokens(runtime, id) {
-    const arr = (runtime && runtime.outputs && runtime.outputs[id]) || [];
-    return arr;
-  }
-
-  function hasSurge(tokens) {
-    return tokens.some((t) => t.tags.includes('surge'));
-  }
-
-  function hasEmber(tokens) {
-    return tokens.some((t) => t.tags.includes('ember'));
-  }
-
-  /** 消耗指定输出上恰好 cost 个单位；不足则返回 null。 */
-  function consumeOutput(runtime, id, cost) {
-    const arr = outputTokens(runtime, id);
-    if (arr.length < cost) return null;
-    const used = arr.slice(0, cost);
-    const rest = arr.slice(cost);
-    const next = {
-      capacitors: { ...runtime.capacitors },
-      splitCursor: { ...runtime.splitCursor },
-      outputs: { main: runtime.outputs.main.slice(), support: runtime.outputs.support.slice() },
-      dissipated: runtime.dissipated || 0,
-    };
-    next.outputs[id] = rest;
-    return { runtime: next, used };
-  }
-
-  /** 调谐返还：只放回当前输出储存，不产生新脉冲。 */
-  function refund(runtime, id, tags) {
-    const next = {
-      capacitors: { ...runtime.capacitors },
-      splitCursor: { ...runtime.splitCursor },
-      outputs: { main: runtime.outputs.main.slice(), support: runtime.outputs.support.slice() },
-      dissipated: runtime.dissipated || 0,
-    };
-    if (next.outputs[id].length < D().DESIGN.outputCap) next.outputs[id].unshift(token(tags || []));
-    return next;
-  }
-
   V.Circuit = {
-    plateOf, loadCap, scarState, manuscriptState, suggestPlacement,
+    ROUTE_MULT, PULSE, plateOf, loadCap, scarState, scarRelief, manuscriptState, suggestPlacement,
     opposite, rotateDir, flipNS, transformTemplate, preview, compile, saveLoadout, layout,
-    buildGraph, route, emptyRuntime, pulse, token, outputTokens,
-    hasSurge, hasEmber, consumeOutput, refund, portKey,
+    /* v4.0 拓扑编译：家族归属、路径特征、闭环计数、面板 */
+    familyOf, pulseOf, countLoops, panelOf, autoLoadout,
   };
 })(globalThis.Ashen ||= {});

@@ -58,14 +58,38 @@
 .camp-party .metal-card, .hearth-arrivals .metal-card, .formation-layout .vet-slot {
   border: 1px solid #504b49; background: linear-gradient(145deg, #2c2c33, #202025 65%);
 }
-.camp-party .metal-card, .hearth-arrivals .metal-card { display: flex; flex-direction: column; }
-.camp-party .metal-card-top { color: #cec2ae; }
-.camp-party .metal-display, .hearth-arrivals .metal-display {
+.hearth-arrivals .metal-card { display: flex; flex-direction: column; }
+.hearth-arrivals .metal-display {
   margin: 12px 0; height: clamp(150px, 15vw, 230px); border: 1px solid #655c57;
 }
 .camp-party .metal-display::after, .hearth-arrivals .metal-display::after { display: none; }
-.camp-party .metal-card-manuscript { margin: 12px 0; padding-top: 10px; }
-.camp-party .metal-card-actions { margin-top: auto; }
+.camp-party { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.camp-party .metal-card {
+  display: grid; grid-template-columns: clamp(72px, 9vw, 104px) minmax(0, 1fr);
+  gap: clamp(9px, 1.3vw, 18px); padding: 10px;
+}
+.camp-party .metal-display, .camp-seat-socket {
+  height: auto; min-height: 100px; margin: 0; border: 1px solid var(--border-soft);
+}
+.camp-party .metal-display > .legend-portrait:first-child { position: absolute; inset: 0; }
+.camp-party .portrait-img { object-position: center; }
+.camp-party .plate-chip { width: 26px; height: 26px; right: 3px; bottom: 3px; }
+.camp-seat-main { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.camp-seat-socket {
+  display: grid; place-items: center;
+  color: var(--border-soft); font: 26px var(--font-mono); border-style: dashed; background: var(--ink);
+}
+.camp-party .metal-card-top { gap: 8px; flex-wrap: wrap; }
+.camp-party .slot-index {
+  padding: 2px 6px; border: 1px solid var(--border-soft); background: var(--ink); font-size: 11px;
+}
+.camp-seat-role { color: var(--ice); font-size: 11px; }
+.camp-party .metal-card-name { justify-content: flex-start; gap: 4px 9px; flex-wrap: wrap; }
+.camp-party .metal-card h2 { margin: 0; line-height: 1.2; }
+.camp-party .empty h2 { color: var(--text-muted); font-size: 16px; }
+.camp-party .metal-card-manuscript { margin: 0; padding: 0; gap: 0 6px; border: 0; overflow-wrap: anywhere; }
+.camp-party .metal-card-actions { margin-top: auto; justify-content: flex-start; flex-wrap: wrap; gap: 5px; }
+.camp-party .metal-card-actions .btn { flex: 0 0 auto; padding-inline: 9px; }
 .formation-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, 1fr); gap: 18px; align-items: start; }
 .formation-layout .panel { min-width: 0; background: #1d1f25; border-color: #434348; }
 .formation-layout .vet-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -85,13 +109,21 @@
 .hearth-arrivals .page-heading {
   margin-top: 0; padding: 28px; border-left: 2px solid #bd9364;
   background: linear-gradient(90deg, #1c1922f0 12%, #25202cac 65%, #201c24cc),
-    url('../assets/art/v1/scenes/camp.png') center 80% / cover;
+    url('../assets/art/topology-v4/scenes/camp.png') center 80% / cover;
 }
 .hearth-arrivals .page-actions .btn { background: #1e1e26; color: #e4d7c3; border-color: #736454; }
 .hearth-arrivals .recruit-card { padding: 16px; }
 .hearth-arrivals .metal-display { height: clamp(200px, 22vw, 350px); margin-top: 0; }
 .arrival-body { color: #b3bbc1; font-size: 13px; margin: 6px 0 0; }
 .hearth-arrivals .recruit-price { margin-top: 15px; padding-top: 14px; }
+@media (min-width: 1080px) {
+  .camp-seat-main {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: repeat(3, auto);
+    align-content: center; align-items: center; column-gap: 12px;
+  }
+  .camp-seat-main > :not(.metal-card-actions) { grid-column: 1; }
+  .camp-party .metal-card-actions { grid-area: 1 / 2 / span 3; margin: 0; justify-content: flex-end; }
+}
 @media (max-width: 1080px) {
   .formation-layout { grid-template-columns: 1fr; }
   .formation-layout .u-detail .legend-portrait { width: 125px; }
@@ -110,10 +142,7 @@
   .camp-gate .hero-actions { margin-top: 18px; }
   .departure-strip { padding: 12px 20px; gap: 14px; }
   .depth-track i { width: 14px; }
-  .camp-party .metal-card { padding: 10px; }
-  .camp-party .metal-card-top { gap: 6px; flex-wrap: wrap; }
-  .camp-party .metal-display { height: auto; aspect-ratio: 1; margin: 9px 0; }
-  .camp-party .metal-card-actions { flex-wrap: wrap; }
+  .camp-party { grid-template-columns: minmax(0, 1fr); }
   .camp-party .metal-card-actions .btn { min-height: 44px; }
   .formation-layout .vet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .formation-layout .slot-ops .btn { min-height: 44px; }

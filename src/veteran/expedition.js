@@ -671,7 +671,7 @@
     if (need.ingredient != null && runFoodTotal(run) < need.ingredient) return { ok: false, reason: `需要 ${need.ingredient} 份随身食材` };
     if (need.meal != null && Object.values(run.meals || {}).reduce((a, n) => a + n, 0) < need.meal) return { ok: false, reason: `需要 ${need.meal} 份成菜` };
     if (need.part != null && (run.bag || []).length + (run.pendingLoot || []).length < need.part) return { ok: false, reason: `需要 ${need.part} 件纹路` };
-    if (need.noFieldManuscript && run.fieldManuscript) return { ok: false, reason: '拓本匣里已经有一份拓本' };
+    if (need.noFieldManuscript && run.fieldManuscript) return { ok: false, reason: '行囊里已经有一份蚀刻法' };
     if (need.hpAbove != null) {
       const low = (run.party || []).some((p) => {
         const u = st.roster.find((x) => x.id === p.uid);
@@ -987,7 +987,7 @@
 
   /* ------------------------------ 掉落取舍 ------------------------------ */
 
-  /** 战利谱占独立位置；只有活着正常撤离才能进藏品。事件里的拓本是必得的。 */
+  /** 蚀刻法占独立位置；只有活着正常撤离才能进藏品。事件里的蚀刻法是必得的。 */
   function findFieldManuscript(st, source) {
     const run = st.run;
     if (run.fieldManuscript || (source === 'chest' && !rngChance(st, 1 / 3))) return;
@@ -999,7 +999,7 @@
     const candidates = missing.length ? missing : pool;
     const spec = candidates[rngInt(st, 0, candidates.length - 1)];
     run.fieldManuscript = spec.id;
-    ST().addLog(st, { kind: 'loot', text: `发现战利谱「${spec.name}」，正常撤离可带回。` });
+    ST().addLog(st, { kind: 'loot', text: `发现蚀刻法「${spec.name}」，正常撤离可带回。` });
   }
 
   /** 开箱时一次登记全部物资，两件纹路各自归待拾区所有。 */
@@ -1017,7 +1017,7 @@
     findFieldManuscript(st, 'chest');
   }
 
-  /** 只在读取已校验的旧档时调用。旧版是在选取纹路之后才生成食材并抽取拓本。 */
+  /** 只在读取已校验的旧档时调用。旧版是在选取纹路之后才生成食材并抽取蚀刻法。 */
   function migrateChest(st) {
     const ids = st.run?.chestChoices;
     if (!ids) return;
@@ -1168,7 +1168,7 @@
 
     const newPart = st.itemsById[itemId];
     if (!newPart) return ST().fail(st, 'no_item', '找不到纹路');
-    if (newPart.kind !== 'circuit') return ST().fail(st, 'bad_item', '只能烙印回路纹路');
+    if (newPart.kind !== 'circuit') return ST().fail(st, 'bad_item', '只能烙印纹路');
     if (newPart.acquiredRunId !== run.id || !run.bag.includes(itemId)) {
       return ST().fail(st, 'not_this_run', '只能使用本局获得、且还在背包里的纹路');
     }
@@ -1243,10 +1243,13 @@
     next.run.party.forEach((p) => {
       const u = next.roster.find((x) => x.id === p.uid);
       const s = V.Roster.stats(next, u);
-      const cur = p.hp == null ? s.maxHp : p.hp;
-      p.hp = Math.min(s.maxHp, cur + Math.round(s.maxHp * 0.45));
+      /* v4.0：营火是「重新浇铸」，不是「睡一觉回点血」。
+         完整度按拓扑编译出来的上限补满，并把本趟熔断留下的裂（affliction）清掉 ——
+         代价仍然是每人每趟只能烧一次。 */
+      p.hp = s.maxHp;
       p.stress = Math.max(0, (p.stress || 0) - 30);
       u.stress = p.stress;
+      if (u.affliction) u.affliction = null;
     });
     return ST().ok(next, [{ type: 'campRest' }]);
   }
@@ -1409,7 +1412,7 @@
     if (record.eligible) next.stats.extracts = (next.stats.extracts || 0) + 1;
     if (kind === 'clear') next.stats.wins = (next.stats.wins || 0) + 1;
 
-    /* 战利谱随正常撤离带回；阶位谱另按合格撤离深度结算。 */
+    /* 蚀刻法随正常撤离带回；阶位谱另按合格撤离深度结算。 */
     const carried = D().manuscript(r.fieldManuscript);
     if (carried) (next.manuscriptVault ||= []).push(ST().clone(carried));
     let droppedMs = null;

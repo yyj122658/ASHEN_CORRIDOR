@@ -1,241 +1,314 @@
 'use strict';
-/* 生命金属板面生成：从原型种子长出「不规则的一块铁」。
-
-   形状与容量分开：
-   - 原型种子（archetype）只决定气质：内部有「毛坯区」macro 与「允许区」allow；
-   - 目标格数（target）决定容量：所有同档底盘格数一致，避免「谁大用谁」的公式化配队。
-
-   生成是纯函数：同一 seed + 同一 archetype + 同一 target 永远得到同一块铁，
-   随机数只来自 A.Random（不读时钟、不读 Math.random），因此可以存档、可重放。
-
-   约束（会被强制保证）：
-   1. 单一连通块（四邻接），没有孤岛；
-   2. 没有孤立格（每格至少一个面相邻），否则 2 格纹路永远放不进去；
-   3. 孔洞不会被后续补格填回；
-   4. 格数精确等于 target（补不满时返回实际值并标记）。
-*/
+/* 十四相各有固定轮廓。# 为普通格，@ 标时钟心核，+ 标先天锚点。 */
 (function (A) {
   'use strict';
   const V = (A.Veteran ||= {});
-
-  const SIZE = 7;             // 包围盒 7×7
+  const SIZE = 12;
+  const PLATE_TARGET = 77;
   const ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   const key = (x, y) => x + ',' + y;
-  const unkey = (k) => k.split(',').map(Number);
 
-  /* 原型种子：macro = 初始毛坯，allow = 允许长到的范围（形状身份靠它保住） */
-  const ARCHETYPES = {
-    full: {
-      name: '方坯', target: 28,
-      macro: () => true,
-      allow: () => true,
+  /* 圣髑院《圣铁登记册》的形制名。 */
+  const WEST = {
+    hundun:     { name: 'Prima Materia',  zh: '原质',   form: '炼金 · 第一材料' },
+    xianghu:    { name: 'Pale',           zh: '竖带',   form: '纹章 · 竖贯' },
+    zaohuyou:   { name: 'Tracery',        zh: '窗花格', form: '营造 · 窗棂' },
+    sida:       { name: 'Rood',           zh: '苦像',   form: '圣所 · 十字' },
+    jiansui:    { name: 'Reliquary',      zh: '圣物匣', form: '圣所 · 匣' },
+    dibuman:    { name: 'Buttress',       zh: '扶壁',   form: '营造 · 倚柱' },
+    xuanzhen:   { name: 'Pavise',         zh: '塔盾',   form: '军械 · 盾' },
+    chuyao:     { name: 'Cucurbit',       zh: '葫芦瓶', form: '炼金 · 甑' },
+    bingdi:     { name: 'Amphora',        zh: '双耳瓶', form: '器用 · 瓶' },
+    lunya:      { name: 'Rota',           zh: '命轮',   form: '图象 · 轮' },
+    xuanhuang:  { name: 'Scythe',         zh: '长镰',   form: '军械 · 刃' },
+    jiuceng:    { name: "Jacob's Ladder", zh: '天梯',   form: '经卷 · 梯' },
+    suhui:      { name: 'Labyrinth',      zh: '迷径',   form: '图象 · 曲' },
+    zhibi:      { name: 'Scourge',        zh: '苦鞭',   form: '戒律 · 鞭' },
+  };
+
+  const DESIGNS = {
+    xianghu: {
+      name: '象笏', source: '《礼记·玉藻》：诸侯以象（笏）',
+      likeness: '房塌了以后只剩下来的一根梁',
+      rows: [
+        '....###',
+        '....####',
+        '...######',
+        '..###+####',
+        '##########',
+        '#####@####',
+        '.##########',
+        '..###+#####',
+        '...########',
+        '....#####',
+        '....####',
+      ],
     },
-    bar: {
-      name: '狭长', target: 22,
-      macro: (x) => x >= 1 && x <= 4,
-      allow: (x) => x >= 1 && x <= 4,
+    hundun: {
+      name: '浑沌未凿', source: '《庄子·应帝王》：日凿一窍，七日而浑沌死',
+      likeness: '一块一个孔都没开过的坯',
+      rows: [
+        '',
+        '',
+        '###########',
+        '###########',
+        '###########',
+        '#####@#####',
+        '###########',
+        '###########',
+        '###########',
+      ],
     },
-    ring: {
-      name: '环', target: 28, minHoles: 1,
-      macro: (x, y) => !(x >= 2 && x <= 4 && y >= 2 && y <= 4),
-      allow: (x, y) => !(x >= 2 && x <= 4 && y >= 2 && y <= 4),
+    suhui: {
+      name: '溯洄从之', source: '《诗·秦风·蒹葭》：溯洄从之，道阻且长',
+      likeness: '水退下去时留在滩上的那道折痕',
+      rows: [
+        '......######',
+        '....#######',
+        '..#######',
+        '.########',
+        '###+####',
+        '..###+@##',
+        '...########',
+        '....#######',
+        '.....###+###',
+        '...#######',
+        '.#####',
+      ],
     },
-    ell: {
-      name: 'L 角', target: 28, minHoles: 0,
-      macro: (x, y) => !(x >= 4 && y >= 4),
-      allow: (x, y) => !(x >= 4 && y >= 4),
+    xuanzhen: {
+      name: '悬针', source: '卫夫人《笔阵图》：悬针垂露之异',
+      likeness: '挂在墙上的盾，上宽下尖，两边压得只剩一线',
+      rows: [
+        '..###',
+        '.#####',
+        '.#+####',
+        '########',
+        '#########',
+        '+##@########',
+        '##########',
+        '#########',
+        '##+####',
+        '.#####',
+        '..###',
+      ],
     },
-    cross: {
-      name: '厚十字', target: 22,
-      macro: (x, y) => (x >= 2 && x <= 4) || (y >= 2 && y <= 4),
-      allow: (x, y) => (x >= 2 && x <= 4) || (y >= 2 && y <= 4),
+    jiansui: {
+      name: '鉴燧之齐', source: '《考工记·攻金之工》：金锡半，谓之鉴燧之齐',
+      likeness: '吊在灶上的一口空瓮，壁是通的，肚是空的',
+      rows: [
+        '....###',
+        '..#######',
+        '.####@####',
+        '#####+#####',
+        '####....###',
+        '###+....###',
+        '####....+##',
+        '####....###',
+        '.#########',
+        '..#######',
+        '....###',
+      ],
     },
-    square: {
-      name: '小方', target: 28,
-      macro: (x, y) => x >= 1 && x <= 6 && y >= 1 && y <= 6,
-      allow: (x, y) => x >= 1 && x <= 6 && y >= 1 && y <= 6,
+    zaohuyou: {
+      name: '凿户牖', source: '《老子》十一章：凿户牖以为室，当其无，有室之用',
+      likeness: '窗上漏花的格，方整却挡不全风',
+      rows: [
+        '',
+        '.#########',
+        '##..###..##',
+        '##..###..##',
+        '###########',
+        '####+@+####',
+        '###########',
+        '##..###..##',
+        '.#..###..#',
+        '.#########',
+      ],
+    },
+    lunya: {
+      name: '轮牙', source: '《考工记·轮人》：牙也者，以为固抱也',
+      likeness: '磨坊里那圈咬合用的齿轮',
+      rows: [
+        '.....+',
+        '...#####+',
+        '.+#######',
+        '.#########',
+        '.#########',
+        '+####@####+',
+        '.#########',
+        '.#########',
+        '..#######+',
+        '..+#####',
+        '.....+',
+      ],
+    },
+    zhibi: {
+      name: '栉比', source: '《诗·周颂·良耜》：其崇如墉，其比如栉',
+      likeness: '一副脊骨带两排刺',
+      rows: [
+        '...#####',
+        '.#########',
+        '...##+##',
+        '.####+####',
+        '...##+##',
+        '####@+#####',
+        '...##+##',
+        '.####+####',
+        '...##+##',
+        '.#########',
+        '...#####',
+      ],
+    },
+    xuanhuang: {
+      name: '玄璜', source: '《周礼·春官·大宗伯》：以玄璜礼北方（半璧曰璜）',
+      likeness: '挂在梁上的镰刀，刃在内侧',
+      rows: [
+        '...#######+',
+        '.##########',
+        '##@#######',
+        '######',
+        '###',
+        '###',
+        '####',
+        '######',
+        '#########',
+        '.##########',
+        '...#######+',
+      ],
+    },
+    jiuceng: {
+      name: '九层之台', source: '《老子》六十四章：九层之台，起于累土',
+      likeness: '往下一级级收窄的石阶',
+      rows: [
+        '....###',
+        '....###',
+        '....###',
+        '..##+####',
+        '..#######',
+        '..#######',
+        '..###@###',
+        '..#######',
+        '##+########',
+        '###########',
+        '###########',
+      ],
+    },
+    dibuman: {
+      name: '地不满东南', source: '《淮南子·天文训》：天倾西北，故日月星辰移焉；地不满东南，故水潦尘埃归焉',
+      likeness: '塌了一角的墙根',
+      rows: [
+        '',
+        '.##########',
+        '.##########',
+        '.##########',
+        '.###@######',
+        '.########+',
+        '.########',
+        '.######+',
+        '.######',
+        '.###+',
+        '.###',
+      ],
+    },
+    chuyao: {
+      name: '楚腰', source: '《韩非子·二柄》：楚灵王好细腰，而国中多饿人',
+      likeness: '掐细了腰的坛子',
+      rows: [
+        '.#########',
+        '.##########',
+        '.####@####',
+        '..#######',
+        '....####',
+        '.....++',
+        '....####',
+        '..#######',
+        '.#########',
+        '.#########',
+        '..#######',
+      ],
+    },
+    bingdi: {
+      name: '并蒂', source: '并蒂莲：一茎两花，古人以为符瑞',
+      likeness: '一根茎上结出的两颗果',
+      rows: [
+        '',
+        '.###...###',
+        '####...####',
+        '#####.#####',
+        '##@##.##@##',
+        '#####.#####',
+        '#####.#####',
+        '.####.####',
+        '..###.###',
+        '...##.##',
+        '...##+##',
+      ],
+    },
+    sida: {
+      name: '四达之衢', source: '《尔雅·释宫》：四达谓之衢',
+      likeness: '城中心那口四通的十字路口',
+      rows: [
+        '....###',
+        '...#####',
+        '...#####',
+        '.#########',
+        '#####@#####',
+        '#####+#####',
+        '###########',
+        '.#########',
+        '...#####',
+        '...#####',
+        '....###',
+      ],
     },
   };
 
-  function makeRng(seed) {
-    let s = seed >>> 0;
-    return function rnd() {
-      const r = A.Random.next(s);
-      s = r.state;
-      return r.value;
-    };
-  }
-
-  function neighbors(set, x, y) {
-    let n = 0;
-    for (let i = 0; i < 4; i++) if (set.has(key(x + ORTH[i][0], y + ORTH[i][1]))) n++;
-    return n;
-  }
-
-  /** 最大连通块（四邻接） */
-  function largestComponent(set) {
-    const seen = new Set();
-    let best = [];
-    for (const k of set) {
-      if (seen.has(k)) continue;
-      const comp = [];
-      const stack = [k];
-      seen.add(k);
-      while (stack.length) {
-        const cur = stack.pop();
-        comp.push(cur);
-        const [x, y] = unkey(cur);
-        for (let i = 0; i < 4; i++) {
-          const nk = key(x + ORTH[i][0], y + ORTH[i][1]);
-          if (set.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
-        }
-      }
-      if (comp.length > best.length) best = comp;
-    }
-    return best;
-  }
-
-  function isConnected(set) { return largestComponent(set).length === set.size; }
-
-  /**
-   * 生成一块板面。
-   * @param {object} opts {seed, archetype, target}
-   * @returns {{cells:number[][], archetype:string, target:number, hit:boolean, seed:number}}
-   */
-  function buildOnce(archKey, arch, target, seed) {
-    const rnd = makeRng(seed);
-
-    let set = new Set();
-    for (let y = 0; y < SIZE; y++) {
-      for (let x = 0; x < SIZE; x++) if (arch.macro(x, y)) set.add(key(x, y));
-    }
-
-    const canCut = (x, y) => {
-      const trial = new Set(set);
-      trial.delete(key(x, y));
-      return trial.size > 0 && isConnected(trial);
-    };
-
-    /* 1. 边缘腐蚀：按裸露边数判概率；每删一格先验证整块仍连通 */
-    for (let y = 0; y < SIZE; y++) {
-      for (let x = 0; x < SIZE; x++) {
-        if (!set.has(key(x, y))) continue;
-        const exposed = 4 - neighbors(set, x, y) + (arch.allow(x, y) ? 0 : 4);
-        if (exposed === 0) continue;
-        const p = exposed >= 3 ? 0.6 : exposed === 2 ? 0.45 : 0.3;
-        if (rnd() >= p) continue;
-        if (canCut(x, y)) set.delete(key(x, y));
-      }
-    }
-
-    /* 2. 咬口：1~2 处从边缘再切深一格 */
-    const bites = 1 + Math.floor(rnd() * 2);
-    for (let i = 0; i < bites; i++) {
-      const bx = Math.floor(rnd() * SIZE);
-      const by = Math.floor(rnd() * SIZE);
-      if (!set.has(key(bx, by)) || neighbors(set, bx, by) > 2) continue;
-      if (canCut(bx, by)) set.delete(key(bx, by));
-    }
-
-    /* 3. 孔洞：0~2 个，可能连成一条缝；不能把板面切成两块 */
-    const holeCells = new Set();
-    const holes = Math.floor(rnd() * 2.6);
-    for (let i = 0; i < holes; i++) {
-      const hx = 1 + Math.floor(rnd() * (SIZE - 2));
-      const hy = 1 + Math.floor(rnd() * (SIZE - 2));
-      if (neighbors(set, hx, hy) < 3) continue;
-      const trial = new Set(set);
-      const cut = [key(hx, hy)];
-      trial.delete(key(hx, hy));
-      if (rnd() < 0.55) {
-        const horiz = rnd() < 0.5;
-        const k2 = key(hx + (horiz ? 1 : 0), hy + (horiz ? 0 : 1));
-        trial.delete(k2);
-        cut.push(k2);
-      }
-      if (trial.size && isConnected(trial)) {
-        set = trial;
-        cut.forEach((k) => holeCells.add(k));
-      }
-    }
-
-    /* 4. 收束到目标格数：多则啃边缘，少则补凹处（先补两面相邻的） */
-    let guard = 0;
-    while (set.size > target && guard++ < 400) {
-      const cand = [...set].filter((k) => {
-        const [x, y] = unkey(k);
-        return neighbors(set, x, y) <= 2;
+  const ARCHETYPES = {};
+  const FIXED = {};
+  for (const [id, design] of Object.entries(DESIGNS)) {
+    const { rows, ...lore } = design;
+    const cells = [];
+    const clockCore = [];
+    const innateNodes = [];
+    rows.forEach((row, y) => {
+      [...row].forEach((mark, x) => {
+        if (mark === '.') return;
+        cells.push([x, y]);
+        if (mark === '@') clockCore.push([x, y]);
+        if (mark === '+') innateNodes.push([x, y]);
       });
-      if (!cand.length) break;
-      const pick = cand[Math.floor(rnd() * cand.length)];
-      const [px, py] = unkey(pick);
-      if (canCut(px, py)) set.delete(pick);
-    }
-    guard = 0;
-    while (set.size < target && guard++ < 400) {
-      const tight = [];
-      const loose = [];
-      for (let y = 0; y < SIZE; y++) {
-        for (let x = 0; x < SIZE; x++) {
-          const k = key(x, y);
-          if (set.has(k) || holeCells.has(k) || !arch.allow(x, y)) continue;
-          const n = neighbors(set, x, y);
-          if (n >= 2) tight.push(k);
-          else if (n === 1) loose.push(k);
-        }
-      }
-      const cand = tight.length ? tight : loose;
-      if (!cand.length) break;
-      set.add(cand[Math.floor(rnd() * cand.length)]);
-    }
+    });
+    ARCHETYPES[id] = { id, target: PLATE_TARGET, ...lore, west: WEST[id] };
+    FIXED[id] = { cells, clockCore, innateNodes, holes: analyze(cells).holes };
+  }
 
-    /* 5. 清孤立格，只保留最大连通块 */
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const k of [...set]) {
-        const [x, y] = unkey(k);
-        if (neighbors(set, x, y) === 0) { set.delete(k); changed = true; }
-      }
-    }
-    const finalSet = new Set(largestComponent(set));
-    const cells = [...finalSet].map(unkey).sort((a, b) => (a[1] - b[1]) || (a[0] - b[0]));
-
+  function generate(opts) {
+    const id = opts && opts.archetype;
+    const archetype = Object.hasOwn(FIXED, id) ? id : 'hundun';
+    const { cells, clockCore, innateNodes, holes } = FIXED[archetype];
+    const copy = (coords) => coords.map((cell) => cell.slice());
     return {
-      cells,
-      archetype: archKey,
-      target,
-      seed,
-      holes: analyze(cells).holes,
-      hit: cells.length === target,
+      cells: copy(cells), clockCore: copy(clockCore), innateNodes: copy(innateNodes),
+      archetype, holes, target: PLATE_TARGET, hit: cells.length === PLATE_TARGET,
     };
   }
 
-  /**
-   * 对外入口。形状保证（格数命中 + 最小孔数）靠确定性重试：
-   * 同一 seed 的重试序列固定，所以仍然可存档、可重放。
-   */
-  function generate(opts) {
-    const o = opts || {};
-    const archKey = ARCHETYPES[o.archetype] ? o.archetype : 'full';
-    const arch = ARCHETYPES[archKey];
-    const target = Number.isFinite(o.target) ? o.target : arch.target;
-    const seed = (o.seed == null ? 1 : o.seed) >>> 0;
-    const needHoles = arch.minHoles || 0;
-
-    let best = null;
-    for (let i = 0; i < 24; i++) {
-      const trySeed = (seed + Math.imul(i, 0x9E3779B1)) >>> 0;
-      const cand = buildOnce(archKey, arch, target, trySeed);
-      cand.holes = analyze(cand.cells).holes;
-      cand.hit = cand.cells.length === target && cand.holes >= needHoles;
-      cand.seed = seed;
-      if (!best) best = cand;
-      else if (cand.hit && !best.hit) best = cand;
-      else if (!best.hit && !cand.hit && Math.abs(cand.cells.length - target) < Math.abs(best.cells.length - target)) best = cand;
-      if (cand.hit) return cand;
+  function isConnected(set) {
+    if (!set.size) return true;
+    const first = set.values().next().value;
+    const seen = new Set([first]);
+    const stack = [first];
+    while (stack.length) {
+      const [x, y] = stack.pop().split(',').map(Number);
+      for (const [dx, dy] of ORTH) {
+        const next = key(x + dx, y + dy);
+        if (!set.has(next) || seen.has(next)) continue;
+        seen.add(next);
+        stack.push(next);
+      }
     }
-    return best;
+    return seen.size === set.size;
   }
 
   /**
@@ -305,26 +378,5 @@
     };
   }
 
-  /**
-   * 由板面派生四个极端：左→时钟、下→受击、右→主手、上→保护。
-   * 位置永远是板面上真实存在的格，所以异形板面也不会出现悬空终端。
-   */
-  function terminals(cells) {
-    if (!cells || !cells.length) return null;
-    const pick = (cmp) => cells.slice().sort(cmp)[0];
-    const byX = (a, b) => (a[0] - b[0]) || (a[1] - b[1]);
-    const byY = (a, b) => (a[1] - b[1]) || (a[0] - b[0]);
-    const left = pick(byX);
-    const right = pick((a, b) => (b[0] - a[0]) || (b[1] - a[1]));
-    const top = pick(byY);
-    const bottom = pick((a, b) => (b[1] - a[1]) || (b[0] - a[0]));
-    return {
-      clock: { id: 'clock', cell: [left[0], left[1]], dir: 'W', role: 'in', kind: 'input', name: '时钟' },
-      damage: { id: 'damage', cell: [bottom[0], bottom[1]], dir: 'S', role: 'in', kind: 'input', name: '受击' },
-      main: { id: 'main', cell: [right[0], right[1]], dir: 'E', role: 'out', kind: 'output', name: '主手' },
-      support: { id: 'support', cell: [top[0], top[1]], dir: 'N', role: 'out', kind: 'output', name: '保护' },
-    };
-  }
-
-  V.PlateGen = { SIZE, ARCHETYPES, generate, analyze, isConnected, terminals };
+  V.PlateGen = { SIZE, PLATE_TARGET, ARCHETYPES, generate, analyze, isConnected };
 })(globalThis.Ashen ||= {});

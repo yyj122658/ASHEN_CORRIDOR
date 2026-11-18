@@ -1,5 +1,5 @@
 'use strict';
-/* 老兵回路版界面：全部页面 + 异形生命金属/蚀刻法膜/回路板面 SVG。只读 state，动作交给 app.dispatch。 */
+/* 老兵回路版界面：全部页面 + 异形金属板面/蚀刻法膜/回路板面 SVG。只读 state，动作交给 app.dispatch。 */
 (function (A) {
   'use strict';
   const V = (A.Veteran ||= {});
@@ -14,14 +14,29 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  /** 相名的悬停提示：这个人自己怎么叫，另一派怎么叫，两句都给。
+      营地里东西两边的人都有，同一块板会被两种叫法喊——只显示一套，
+      玩家会以为另一套是编的；两套摆在一起，才看得出是两个学派在说同一件东西。 */
+  function styleTip(id, culture) {
+    const east = D().bodyStyle(id);
+    const src = D().bodySource(id);
+    const w = D().bodyWest(id);
+    const eastLine = `东土《铁相录》录作「${east}」${src ? `——${src}` : ''}`;
+    const westLine = w.zh ? `圣髑院登记为 ${w.name}（${w.zh}），归「${w.form}」` : '';
+    const own = culture === 'west' ? westLine : eastLine;
+    const other = culture === 'west' ? eastLine : westLine;
+    return [own, other].filter(Boolean).join('\n');
+  }
+
   function btn(label, act, opts) {
     const o = opts || {};
     const cls = ['btn', o.cls || ''].join(' ').trim();
     const idAttr = o.id ? ` id="${o.id}"` : '';
     const data = o.data ? Object.entries(o.data).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('') : '';
+    const title = o.title ? ` title="${esc(o.title)}"` : '';
     const dis = o.disabled ? ' disabled' : '';
     const style = o.style ? ` style="${o.style}"` : '';
-    return `<button class="${cls}"${idAttr} data-act="${act}"${data}${dis}${style}>${label}</button>`;
+    return `<button class="${cls}"${idAttr} data-act="${act}"${data}${title}${dis}${style}>${label}</button>`;
   }
 
   function bar(v, max, cls) {
@@ -29,16 +44,19 @@
     return `<div class="bar ${cls || ''}"><i style="width:${pct.toFixed(1)}%"></i></div>`;
   }
 
-  const terms = {
-    '压力': '传奇在远征中积累的紧张程度，范围 0–100。敌方招式、现场烙印或撤退可能增加压力，休整、进食和安抚可以降低。压力达到 50 时，自然回裕减慢 20%；达到 80 时减慢 40%。',
-    '余裕': '释放蚀刻法招式所用的战斗资源。每位传奇单独积攒，随时间恢复；该传奇装配的各门招式共用这份余裕，释放时扣除。',
-    '主手 / 副手': '旧术语里的「主手」指主要攻击或板面的攻击输出端。当前版本没有独立的副手装备槽。板面另一类输出端叫「保护」，辅助招式看实际装配的蚀刻法。',
-    '主修 / 合修': '装配顺序中的第一门是主修，决定普攻和基础余裕恢复。后续各门是合修，可提供招式或被动，使用同一份余裕。',
-    '覆盖 / 贯通': '纹路占了几格，就算几格覆盖。达到覆盖台阶即可共鸣；从入口沿纹路接到出口，额外获得贯通加成。',
-    '营火烙印': '把本趟找到的一件纹路装进传奇的生命金属，立刻用于后续战斗。每人每趟一次，本趟生命上限降低20%，压力增加40。若落点上有未留痕的格子，其中一格会留下瘢痕。',
-    '瘢痕': '烙印留在格底的记录。填上纹路或蚀刻法时触发这一格的正负属性，腾空后属性休眠。指向板上的裂纹标记可查看来源和效果。',
-    '负荷': '装上一件纹路或一门蚀刻法占用的承载量。物品的形状决定占哪些格，负荷决定这块生命金属还承受得了多少。',
-  };
+  /** 术语解释统一从 terms.js 取（tooltip、图鉴术语页共用同一份）。 */
+  function term(id) { return V.Terms.text(id); }
+
+  /** 把 stats-engine 给出的数值事实排成一行；这里只做分隔与转义，不算数。 */
+  function factLine(facts, sep = ' · ') {
+    return (facts || []).map((f) => `${esc(f.label)} <b>${esc(f.value)}</b>`).join(esc(sep));
+  }
+
+  /** 纹路的一行摘要：占格、负荷、各项增益。 */
+  function runeFactLine(tpl) {
+    const f = V.Stats.runeFacts(tpl);
+    return factLine(f.size.concat(f.effects));
+  }
 
   function panel(title, body, extra) {
     return `<section class="panel ${extra || ''}"><h2 class="panel-h">${title}</h2>${body}</section>`;
@@ -56,6 +74,16 @@
   let svgUid = 0;
 
   /** 人物外观与装配几何分开呈现。@param {object} unit @param {string} cls @returns {string} */
+  /**
+   * 底盘轮廓缩略图。
+   * 缺图时退回人物立绘 —— 界面上不允许出现一块空白。
+   */
+  function plateFace(unit, cls = 'plate-face') {
+    const body = unit && D().body(unit.bodyPreset) ? D().body(unit.bodyPreset) : null;
+    const art = body && body.archetype ? V.Art.plateTag(body.archetype, cls) : '';
+    return art || legendPortrait(unit, cls);
+  }
+
   function legendPortrait(unit, cls = '') {
     return '<div class="legend-portrait ' + esc(cls) + '" role="img" aria-label="' + esc(unit.name) + '">' + V.Art.portraitTag(unit.skinId, '') + '</div>';
   }
@@ -83,29 +111,33 @@
     return V.State.manuscriptsOf(unit).map((m) => m.name).join('、') || '未修蚀刻法';
   }
 
-  /** 将有限招式条件译为玩家能判断的时机。@param {object} cond @returns {string} */
-  function skillCondition(cond = {}) {
-    return [cond.routed ? '纹路贯通' : '', cond.alliesHurt ? '同伴生命低于60%' : '',
-      cond.foeHpBelow ? `敌方生命低于${Math.round(cond.foeHpBelow * 100)}%` : '',
-      cond.attackCount ? `平攻${cond.attackCount}次后` : '', cond.energyAbove ? `余裕高于${cond.energyAbove}` : '']
-      .filter(Boolean).join(' · ') || '余裕足够时';
-  }
-
-  /** 蚀刻法文本直接取自战斗配置，避免只显示名字却猜不到打法。@param {object} spec @returns {string} */
-  function manuscriptDetails(spec) {
+  /**
+   * 蚀刻法详情：风味句取自 flavor.js，数值全部由 stats-engine 生成。
+   * 这里只负责排版，不拼任何数字，改平衡时文案自动跟着变。
+   * @param {object} spec
+   * @param {{compact?:boolean}} [opts] compact：208px 左栏用，长术语换短标签
+   * @returns {string}
+   */
+  function manuscriptDetails(spec, opts) {
     const canonical = D().manuscript(spec.id) || spec;
     const movement = D().MODS[canonical.modId];
-    const skills = spec.skills || [];
-    const interval = (D().DESIGN.autoAttack.interval * ((spec.attack && spec.attack.intervalScale) || 1)).toFixed(2);
-    return `<div class="technique-details"><p>${esc(canonical.desc)}</p>${movement ? `<p><b>${esc(movement.name)}</b> · ${esc(movement.desc)}</p>` : ''}<div class="technique-facts"><span>主修平攻 <b>${interval}s</b></span><span>主修余裕 <b>+${(spec.energy && spec.energy.regen) || 1}/s</b></span></div>
-      ${skills.map((sk) => { const e = sk.effect || {}; return `<div class="technique-skill"><div class="row"><b>${esc(sk.name)}</b><span class="spacer"></span><span class="tiny muted">${sk.cost}余裕 · 冷却${sk.cooldown}s</span></div><span class="tiny muted">${esc(skillCondition(sk.cond))}</span><div class="tiny">${e.heal ? `治疗最虚弱同伴 ${Math.round(e.heal * 100)}%攻击` : `${Math.round((e.mult || 1.4) * 100)}%攻击${e.pierce ? ` · 贯穿前${e.pierce}位` : ''}${e.hits ? ` · ${e.hits}段` : ''}`}${e.shield ? ` · 护盾${Math.round(e.shield * 100)}%生命` : ''}${e.buffAttack ? ` · 平攻强化${e.buffAttack.seconds}s` : ''}${e.dot ? ' · 附灼烧' : ''}</div></div>`; }).join('') || ''}</div>`;
+    const facts = V.Stats.manuscriptFacts(spec, opts);
+    /* 阵形动作的 desc 还是 data.js 里的原文，没走数值引擎；窄栏时补一次缩写 */
+    const movementDesc = movement && opts && opts.compact ? V.Terms.shorten(movement.desc) : movement && movement.desc;
+    return `<div class="technique-details">
+      <p class="technique-flavor">${esc(facts.flavor)}</p>
+      ${movement ? `<p><b>${esc(movement.name)}</b> · ${esc(movementDesc)}</p>` : ''}
+      <div class="technique-facts">${facts.main.map((f) => `<span>${esc(f.label)} <b>${esc(f.value)}</b></span>`).join('')}</div>
+      ${facts.skills.map((sk) => `<div class="technique-skill"><div class="row"><b>${esc(sk.name)}</b><span class="spacer"></span><span class="tiny muted">${esc(sk.cost)} · ${esc(sk.cooldown)}</span></div><span class="tiny muted">${esc(sk.condition)}</span><div class="tiny">${esc(sk.effect)}</div></div>`).join('')}
+      ${facts.tiers.length ? `<div class="technique-tiers">${facts.tiers.map((t) => `<span class="tiny muted">${esc(t.at)} ${esc(t.name)}${t.effects ? ` · ${esc(t.effects)}` : ''}</span>`).join('')}</div>` : ''}
+    </div>`;
   }
 
   /** 展示实际战斗贡献和可核对的构筑结果。@param {object} report @returns {string} */
   function contributionGrid(report) {
     const allies = report.allies || [];
     const maxDamage = Math.max(1, ...allies.map((u) => (u.stats && u.stats.damage) || 0));
-    return `<div class="contribution-grid">${allies.map((u) => `<article class="contribution-card"><div class="row"><b>${esc(u.name)}</b><span class="spacer"></span><span class="tiny ${u.alive ? 'success' : 'danger'}">${u.alive ? '站到了最后' : '失去战力'}</span></div><div class="contribution-damage"><b>${Math.round((u.stats && u.stats.damage) || 0)}</b><span class="tiny muted">造成伤害</span></div>${bar((u.stats && u.stats.damage) || 0, maxDamage, 'energy')}<div class="contribution-other"><span>治疗 ${Math.round((u.stats && u.stats.healing) || 0)}</span><span>承伤 ${Math.round((u.stats && u.stats.taken) || 0)}</span><span>招式 ${(u.stats && u.stats.skills) || 0}次</span></div><div class="tiny muted">${(u.resonances || (u.resonance ? [u.resonance] : [])).map((r) => `${esc(r.name)} · 纹路覆盖 ${r.pct}%${r.routed ? ' · 已贯通' : ''}`).join('<br>') || '基础平攻'}</div></article>`).join('')}</div>`;
+    return `<div class="contribution-grid">${allies.map((u) => `<article class="contribution-card"><div class="row"><b>${esc(u.name)}</b><span class="spacer"></span><span class="tiny ${u.alive ? 'success' : 'danger'}">${u.alive ? '站到了最后' : '失去战力'}</span></div><div class="contribution-damage"><b>${Math.round((u.stats && u.stats.damage) || 0)}</b><span class="tiny muted">造成伤害</span></div>${bar((u.stats && u.stats.damage) || 0, maxDamage, 'energy')}<div class="contribution-other"><span>治疗 ${Math.round((u.stats && u.stats.healing) || 0)}</span><span>承伤 ${Math.round((u.stats && u.stats.taken) || 0)}</span><span>招式 ${(u.stats && u.stats.skills) || 0}次</span></div><div class="tiny muted">${(u.resonances || (u.resonance ? [u.resonance] : [])).map((r) => `${esc(r.name)} · 纹路覆盖 ${r.pct}%${r.routed ? ' · 已贯通' : ''}`).join('<br>') || '基础普通攻击'}</div></article>`).join('')}</div>`;
   }
 
   /** 页面层次保持统一，主操作只出现一次。@param {string} kicker @param {string} title @param {string} sub @param {string} actions @returns {string} */
@@ -117,67 +149,61 @@
 
   const DIR_ANGLE = { E: 0, S: 90, W: 180, N: 270 };
 
-  /** 刀口朝向格边；入端一凿，出端留一枚短副刻。 */
+  /** 接头的中心落在真实格边，转动和翻转时随纹路朝向。 */
   function portCut(x, y, dir, role, state = '') {
-    const path = role === 'in' ? 'M-4 -3L1 0L-3 .7Z' : 'M-4 2L1 0L-3 -1Z M-5 -1L-2 -3L-3 -.8Z';
+    const path = 'M-5 -6H0V-3H4V3H0V6H-5Z';
     return `<path class="port-cut port-${role} ${state}" data-dir="${dir}" data-role="${role}" transform="translate(${x} ${y}) rotate(${DIR_ANGLE[dir]})" d="${path}"/>`;
   }
 
-  /** 以 60 单位一格描出真实膜谱，板面、图鉴、悬浮与吸附共用同一份刀痕。 */
-  function membraneEngraving(oriented, size, aligned = new Set(), ox = 0, oy = 0) {
-    const nodes = new Map(oriented.cells.map(([x, y], index) => [x + ',' + y, {
-      x, y, index, joins: new Set(), ports: new Set(), needs: oriented.veins[x + ',' + y] || [],
-    }]));
-    const opposite = { N: 'S', S: 'N', E: 'W', W: 'E' };
-    for (const port of Object.values(oriented.io || {})) nodes.get(port.cell.join(','))?.ports.add(port.dir);
-
-    // 共用格边只刻一次。按原谱格序选支路，使旋转和翻面时仍沿相同的格连接。
-    const visited = new Set();
-    for (const root of nodes.values()) {
-      if (visited.has(root)) continue;
-      const queue = [root];
-      visited.add(root);
-      for (const node of queue) {
-        const adjacent = Object.entries(DIR_VEC).map(([dir, [dx,dy]]) => ({
-          dir, next: nodes.get((node.x + dx) + ',' + (node.y + dy)),
-        })).filter(p => p.next).sort((a,b) => a.next.index - b.next.index);
-        for (const {dir, next} of adjacent) {
-          if (visited.has(next)) continue;
-          visited.add(next);
-          queue.push(next);
-          node.joins.add(dir);
-          next.joins.add(opposite[dir]);
-        }
-      }
-    }
-
-    const marks = [];
-    for (const [key, node] of nodes) {
-      const { x, y, needs, joins, ports } = node;
-      const directions = [...new Set([...joins, ...needs, ...ports])];
-      const center = [0, 0];
-      // 拐角向内让刀，边上按垂线收笔，使相邻半笔在同一点、同一切向相接。
-      for (const dir of directions) {
-        center[0] += 3 * DIR_VEC[dir][0];
-        center[1] += 3 * DIR_VEC[dir][1];
-      }
-      const strokes = directions.map(dir => {
-        const [dx, dy] = DIR_VEC[dir];
-        const across = directions.includes(opposite[dir]) ? opposite[dir] : directions.find(d => d !== dir);
-        const [ax, ay] = across ? DIR_VEC[across] : [0, 0];
-        const end = joins.has(dir) || ports.has(dir) ? 30 : 23;
-        const cut = `M${center[0]} ${center[1]} C${center[0] + 9*(dx-ax)} ${center[1] + 9*(dy-ay)} ${dx*(end-8)} ${dy*(end-8)} ${dx*end} ${dy*end}`;
-        const nick = needs.includes(dir) ? `<path class="etch-burr" data-vein="${dir}" transform="rotate(${DIR_ANGLE[dir]})" d="M15 0Q19 -1.8 21 -4.5"/>` : '';
-        return `<path class="etch-lip" transform="translate(.35 .9)" d="${cut}"/><path class="etch-cut" ${joins.has(dir) ? `data-join="${dir}"` : ''} d="${cut}"/><path class="etch-fleck" transform="translate(.35 .9)" d="${cut}"/>${nick}`;
-      }).join('');
-      const on = aligned.has((x + ox) + ',' + (y + oy));
-      marks.push(`<g class="ms-incision ${on ? 'aligned' : ''}" data-etch-cell="${key}" transform="translate(${60*x+30} ${60*y+30})"><rect class="ms-field" x="-30" y="-30" width="60" height="60"/>${strokes || '<path class="etch-lip" d="M-5 2q4 -1 9 -5"/>'}</g>`);
-    }
-    for (const [id, port] of Object.entries(oriented.io || {})) {
+  function membraneEngraving(oriented, size, { terminals = true, selected = false, catalogue = false } = {}) {
+    const shapeCells = new Set(oriented.cells.map(cell => cell.join(',')));
+    const ports = Object.entries(oriented.io || {}).filter(([, port]) => shapeCells.has(port.cell.join(','))).map(([id, port]) => {
       const [dx, dy] = DIR_VEC[port.dir];
-      marks.push(portCut(60*port.cell[0] + 30 + dx*28, 60*port.cell[1] + 30 + dy*28, port.dir, D().TERMINALS[id]?.role || 'out', 'membrane-port'));
+      return portCut(60*port.cell[0] + 30 + dx*26, 60*port.cell[1] + 30 + dy*26, port.dir,
+        id === 'clock' || id === 'damage' ? 'in' : 'out', 'membrane-port');
+    }).join('');
+    const art = catalogue ? V.RuneArt.etchImage(oriented, size) : '';
+    const ends = terminals ? manuscriptBeacons(oriented, (x, y) => [60*x, 60*y]) : '';
+    return `<g pointer-events="none">${V.RuneArt.waxFilm(oriented, size, selected)}${art}
+      <g transform="scale(${size/60})">${ports}${ends}</g></g>`;
+  }
+
+  function clockBeacon(port, px, py, kind) {
+    const inlet = kind === 'entry';
+    const x = px + 16, y = py + 16;
+    const angle = DIR_ANGLE[port.dir] || 0;
+    return `<g class="conduit-beacon beacon-${kind}" data-etch-terminal="${kind}" transform="translate(${x} ${y})">
+      <path class="beacon-seat" d="M-6 -10H6L10 -6V6L6 10H-6L-10 6V-6Z"/>
+      <path class="beacon-ring" d="M-6 -10H6L10 -6V6L6 10H-6L-10 6V-6Z"/>
+      <g class="beacon-core">${V.RuneArt.conduitTile(inlet ? 32 : 33, 0, 0, 39)}</g>
+      <g transform="rotate(${angle})"><path class="beacon-arrow" d="${inlet ? 'M10 -3L15 0L10 3Z' : 'M14 -3L9 0L14 3Z'}"/></g>
+    </g>`;
+  }
+
+  function manuscriptBeacons(shape, cellXY) {
+    const stamp = (port, kind) => clockBeacon(port, ...cellXY(...port.cell), kind);
+    const portOf = cell => ({cell, dir: shape.veins[cell.join(',')]?.[0]});
+    const clock = shape.io?.clock?.cell.join(',') === shape.entry.join(',') ? shape.io.clock : portOf(shape.entry);
+    return stamp(clock, 'entry') + shape.exits.map(cell => stamp(shape.io?.main?.cell.join(',') === cell.join(',')
+      ? shape.io.main : portOf(cell), 'exit')).join('');
+  }
+
+  const runeFamilies = { straight: '直导系', elbow: '弯折系', splitter: '分流系',
+    capacitor: '储能系', threshold: '逻辑闸系', ember: '余烬系' };
+
+  function runeHover(piece, paths) {
+    const family = V.Circuit.familyOf(piece.tpl);
+    const cells = piece.abs.map(c => c.x + ',' + c.y);
+    const lines = [piece.tpl.name, runeFamilies[family] + ' · 负荷 ' + piece.tpl.load];
+    for (const pulse of paths) {
+      if (!cells.some(cell => pulse.path.includes(cell))) continue;
+      const {turn, turnCap} = V.Circuit.PULSE;
+      const turnBonus = Math.round(100 * turn * Math.min(pulse.turns, turnCap));
+      lines.push(`当前路径幅值 ×${pulse.ampMult} · 间隔 ×${pulse.intervalScale}`);
+      if (turnBonus) lines.push(`当前路径转角 +${turnBonus}% 幅值`);
     }
-    return `<g class="engraved-membrane" transform="scale(${size/60})" pointer-events="none">${marks.join('')}</g>`;
+    if (lines.length === 2) lines.push('当前未接入贯通路径');
+    return lines.join('\n');
   }
 
   /* 工坊可预览的蚀刻法膜谱图（全部通过 V.Manuscript 判定，不改领域逻辑） */
@@ -185,7 +211,7 @@
     {
       id: 'ash12',
       name: '余烬十二脉',
-      desc: '4×3 古老回流拓片。共 12 格，覆盖 40%/75%/100% 依次共鸣。',
+      desc: '4×3 古老回流蚀刻法。共 12 格，覆盖 40%/75%/100% 依次共鸣。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [3, 2]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'],
@@ -199,7 +225,7 @@
     {
       id: 'corridor5',
       name: '直贯五脉',
-      desc: '窄型 5 格拓片，适配狭窄骨架与基础直弯配组。',
+      desc: '窄型 5 格蚀刻法，适配狭窄骨架与基础直弯配组。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [3, 1]],
       veins: { '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,1': ['E'] },
       entry: [0, 0],
@@ -209,7 +235,7 @@
     {
       id: 'wide14',
       name: '重铸阔卷',
-      desc: '5×3 重型拓片，仅厚实宽幅板面可完整容纳。',
+      desc: '5×3 重型蚀刻法，仅厚实宽幅板面可完整容纳。',
       cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [4, 2]],
       veins: {
         '0,0': ['W'], '1,0': ['E'], '2,0': ['W'], '3,0': ['E'], '4,0': ['S'],
@@ -232,8 +258,9 @@
     if (!V.Manuscript || !plate) return null;
     const uui = ui || {};
     if (uui.wsMsId === 'none' && !(unit && unit.manuscript)) return { disabled: true, id: 'none' };
-    const raw = (D().MANUSCRIPTS || {})[uui.wsMsId]
-      || (unit && unit.manuscript)
+    const raw = V.State.manuscriptsOf(unit).find(m => m.id === uui.wsMsId)
+      || (D().MANUSCRIPTS || {})[uui.wsMsId]
+      || unit?.manuscript
       || (D().MANUSCRIPTS || {})[(D().MANUSCRIPT_ORDER || [])[0]];
     if (!raw) return null;
     const base = V.Manuscript.normalize(raw);
@@ -260,19 +287,15 @@
     if (manual) spotIdx = Math.max(0, validSpots.findIndex(([x, y]) => x === ox && y === oy));
     const fits = V.Manuscript.fits(oriented, cellsList, ox, oy);
 
-    let anyFits = validSpots.length > 0;
-    if (!anyFits) {
-      for (let m = 0; m < 2 && !anyFits; m++) {
-        for (let r = 0; r < 4 && !anyFits; r++) {
-          if (V.Manuscript.placements(V.Manuscript.orient(base, r, !!m), cellsList).length) anyFits = true;
-        }
-      }
-    }
+    const anyFits = validSpots.length > 0 || V.Manuscript.hasPlacement(base, cellsList);
+    const shapeFits = anyFits || V.Manuscript.hasPlacement(base, plateCellsList(plate));
 
     let reason = '';
     if (!fits) {
-      if (!anyFits) {
-        reason = `摆不下：当前板面形状或孔洞缺少足够连续空位容纳「${base.name}」`;
+      if (!shapeFits) {
+        reason = `轮廓不兼容，当前金属相摆不下完整的「${base.name}」`;
+      } else if (!anyFits) {
+        reason = '当前空位不足，请挪开其他蚀刻法';
       } else if (!validSpots.length) {
         reason = `当前朝向（旋${rot * 90}°${mir ? '·翻' : ''}）在此板面上无处落脚，请旋转、翻转或重置位置`;
       } else {
@@ -301,80 +324,15 @@
     };
   }
 
-  /** 计算视觉连通集合：区分完整通电（到输出极）与仅输入已到达。 */
-  function traceVisualFlow(L) {
-    const adjFwd = new Map();
-    const adjRev = new Map();
-    (L.edges || []).forEach((e) => {
-      if (!adjFwd.has(e.from)) adjFwd.set(e.from, []);
-      adjFwd.get(e.from).push(e.to);
-      if (!adjRev.has(e.to)) adjRev.set(e.to, []);
-      adjRev.get(e.to).push(e.from);
-    });
-    const bfs = (starts, adj) => {
-      const vis = new Set(starts);
-      const q = starts.slice();
-      while (q.length) {
-        const cur = q.shift();
-        (adj.get(cur) || []).forEach((nxt) => {
-          if (!vis.has(nxt)) { vis.add(nxt); q.push(nxt); }
-        });
-      }
-      return vis;
-    };
-    const fwd = bfs([...adjFwd.keys()].filter((id) => id.startsWith('T:')), adjFwd);
-    const rev = bfs([...adjRev.keys()].filter((id) => id.startsWith('T:')), adjRev);
-    return { fwd, rev };
-  }
 
   /** 沿网格边界生成不规则锯齿金属轮廓：只向格子外空隙生长，厚度 >=0.35 格，绝不侵犯可用格。 */
-  function traceJaggedLoops(cellSet, cellsList, seedVal) {
+  function traceJaggedLoops(cellSet, loops, seedVal) {
     const has = (x, y) => cellSet.has(x + ',' + y);
     const noise = (a, b, c) => {
       let h = ((seedVal >>> 0) ^ Math.imul(a + 37, 374761393) ^ Math.imul(b + 53, 668265263) ^ Math.imul(c + 19, 1442695041)) >>> 0;
       h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
       return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
     };
-
-    const rawEdges = [];
-    cellsList.forEach(([x, y]) => {
-      if (!has(x, y - 1)) rawEdges.push({ x0: x, y0: y, x1: x + 1, y1: y, dir: 0, nx: 0, ny: -1, ex: x, ey: y - 1 });
-      if (!has(x + 1, y)) rawEdges.push({ x0: x + 1, y0: y, x1: x + 1, y1: y + 1, dir: 1, nx: 1, ny: 0, ex: x + 1, ey: y });
-      if (!has(x, y + 1)) rawEdges.push({ x0: x + 1, y0: y + 1, x1: x, y1: y + 1, dir: 2, nx: 0, ny: 1, ex: x, ey: y + 1 });
-      if (!has(x - 1, y)) rawEdges.push({ x0: x, y0: y + 1, x1: x, y1: y, dir: 3, nx: -1, ny: 0, ex: x - 1, ey: y });
-    });
-
-    const byStart = new Map();
-    rawEdges.forEach((e, idx) => {
-      e.id = idx;
-      e.used = false;
-      const k = e.x0 + ',' + e.y0;
-      if (!byStart.has(k)) byStart.set(k, []);
-      byStart.get(k).push(e);
-    });
-
-    const loops = [];
-    for (let i = 0; i < rawEdges.length; i++) {
-      if (rawEdges[i].used) continue;
-      const loop = [];
-      let cur = rawEdges[i];
-      while (cur && !cur.used) {
-        cur.used = true;
-        loop.push(cur);
-        const list = (byStart.get(cur.x1 + ',' + cur.y1) || []).filter((n) => !n.used);
-        if (!list.length) break;
-        if (list.length === 1) { cur = list[0]; continue; }
-        /* 多岔口（对角相接）优先右转绕实心块，防止自交 */
-        const pref = [(cur.dir + 1) % 4, cur.dir, (cur.dir + 3) % 4];
-        let picked = list[0];
-        for (let p = 0; p < pref.length; p++) {
-          const hit = list.find((n) => n.dir === pref[p]);
-          if (hit) { picked = hit; break; }
-        }
-        cur = picked;
-      }
-      if (loop.length >= 4) loops.push(loop);
-    }
 
     const polyLoops = [];
     loops.forEach((edges) => {
@@ -388,7 +346,7 @@
           || has(e.ex + tx, e.ey + ty)
           || has(e.ex - tx, e.ey - ty);
         const minD = tight ? 0.37 : 0.39;
-        const maxD = tight ? 0.43 : 0.55;
+        const maxD = tight ? 0.43 : 0.47;
         return {
           tight, minD, maxD,
           dA: minD + noise(e.x0, e.y0, idx + 1) * (maxD - minD),
@@ -407,7 +365,7 @@
         const vy = curr.y0;
 
         if (turn === 0) {
-          const d = Math.min(Math.max(0.37, (pp.dB + cp.dA) / 2), pp.tight || cp.tight ? 0.43 : 0.53);
+          const d = Math.min(Math.max(0.37, (pp.dB + cp.dA) / 2), pp.tight || cp.tight ? 0.43 : 0.47);
           pts.push([vx + d * curr.nx, vy + d * curr.ny]);
         } else if (turn === 1) {
           /* 外凸 90 度：先查外斜角格是否被其它实心分支占住，占住则贴墙角绕过 */
@@ -453,13 +411,7 @@
   /** 按当前板面（异形 / 经典）算出精确像素包围盒与底材多边形。 */
   function computeBoardGeo(plate, seedVal) {
     const cellsList = plateCellsList(plate);
-    const termOut = plate.generated ? 34 : 14;
-    const rawTermLoc = (t) => {
-      const [dx, dy] = DIR_VEC[t.dir];
-      const cx = t.cell[0] * CELL + CELL / 2;
-      const cy = t.cell[1] * CELL + CELL / 2;
-      return [cx + dx * (CELL / 2 + termOut), cy + dy * (CELL / 2 + termOut)];
-    };
+    const boundary = plate.generated ? V.RuneArt.edgeLoops(cellsList) : [];
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const grow = (x, y) => {
@@ -471,7 +423,7 @@
 
     let metalLoops = null;
     if (plate.generated) {
-      metalLoops = traceJaggedLoops(plate.cells, cellsList, seedVal);
+      metalLoops = traceJaggedLoops(plate.cells, boundary, seedVal);
       metalLoops.forEach((loop) => loop.forEach(([x, y]) => grow(x, y)));
     } else {
       const size = plate.size || 4;
@@ -479,35 +431,13 @@
       grow(size * CELL + 6, size * CELL + 6);
     }
 
-    Object.values(plate.terminals || {}).forEach((t) => {
-      const [tx, ty] = rawTermLoc(t);
-      if (t.dir === 'W') { grow(tx - 40, ty - 14); grow(tx + 6, ty + 14); }
-      else if (t.dir === 'E') { grow(tx - 6, ty - 14); grow(tx + 40, ty + 14); }
-      else if (t.dir === 'N') { grow(tx - 24, ty - 24); grow(tx + 24, ty + 6); }
-      else { grow(tx - 24, ty - 6); grow(tx + 24, ty + 24); }
-    });
-
     const pad = 12;
     const gx = Math.ceil(pad - minX);
     const gy = Math.ceil(pad - minY);
     const cw = Math.ceil(maxX + gx + pad);
     const ch = Math.ceil(maxY + gy + pad);
     const slabPath = metalLoops ? metalLoops.map((loop) => 'M' + loop.map(([x, y]) => `${(x + gx).toFixed(1)} ${(y + gy).toFixed(1)}`).join(' L') + ' Z').join(' ') : '';
-    return { gx, gy, cw, ch, termOut, slabPath, cellsList };
-  }
-
-  /** 勾出占格的外缘，内部相邻边保持连成一块。 */
-  function footprint(cells, gx, gy) {
-    const shape = new Set(cells.map(c => c.join(',')));
-    const edges = [];
-    for (const [x,y] of cells) {
-      const px = gx + x*CELL, py = gy + y*CELL;
-      if (!shape.has(x + ',' + (y-1))) edges.push(`M${px} ${py}h${CELL}`);
-      if (!shape.has(x + ',' + (y+1))) edges.push(`M${px} ${py+CELL}h${CELL}`);
-      if (!shape.has((x-1) + ',' + y)) edges.push(`M${px} ${py}v${CELL}`);
-      if (!shape.has((x+1) + ',' + y)) edges.push(`M${px+CELL} ${py}v${CELL}`);
-    }
-    return edges.join(' ');
+    return { gx, gy, cw, ch, slabPath, cellsList, boundary };
   }
 
   /**
@@ -515,12 +445,27 @@
    * 四层顺序为金属底材、蚀刻法底纹、已装纹路和端口反馈。
    * opts: {interactive, pickId, locked, ms}
    */
+  const PLATE_NODE_TIPS = {
+    xianghu: ['直导锚点', '直导贯通此格时，缩短间隔的上限提高 8 个百分点'],
+    suhui: ['弯折锚点', '弯折纹路在此转向时，脉冲幅值加成 +10%'],
+    xuanzhen: ['盾锚', '纹路占据此格时，基础阻抗 +6'],
+    jiansui: ['内壁共振锚点', '脉冲经过锚点时，每经过一格空腔内壁，幅值 +4%'],
+    zaohuyou: ['交叉锚点', '分流纹路贯通此格时，免除分流衰减'],
+    lunya: ['齿锚', '一格或两格纹路覆盖此格时，与蚀刻法对齐的纹路增益翻倍'],
+    zhibi: ['中脊锚点', '覆盖此格的纹路免于外围熔断'],
+    xuanhuang: ['双端锚点', '两端接入同一条贯通线路时，挂上的异常层数翻倍'],
+    jiuceng: ['层间锚点', '储能纹路沿贯通路径跨过此处的层界时，储能缓冲上限 +25%'],
+    dibuman: ['边缘锚点', '纹路补齐此格时，完整度 +3，缓冲上限 +2'],
+    chuyao: ['腰部锚点', '脉冲经过一处或两处腰部锚点时，压力 +10'],
+    bingdi: ['双核汇合锚点', '两个心核沿各自线路在此汇合且贯通时，入场缓冲及上限 +6'],
+    sida: ['四达中心锚点', '分流纹路经过此格时免除衰减，闸系触发时幅值加成额外 +15%'],
+  };
+
   function boardSvg(state, unitId, placements, opts) {
     const o = opts || {};
     const unit = state.roster.find((u) => u.id === unitId);
     const body = D().body(unit ? unit.bodyPreset : 'sturdy');
     const plate = V.Circuit.plateOf(unit || { bodyPreset: 'sturdy', plateSeed: 1 });
-    const terminals = plate.terminals || D().TERMINALS;
     const geo = computeBoardGeo(plate, unit && unit.plateSeed != null ? unit.plateSeed : 1);
     const gx = geo.gx;
     const gy = geo.gy;
@@ -531,18 +476,10 @@
     const portPoint = (pt) => {
       const [cx, cy] = cellXY(pt.cell[0], pt.cell[1]);
       const [dx, dy] = DIR_VEC[pt.dir];
-      return [cx + CELL / 2 + dx * (CELL / 2 - 2), cy + CELL / 2 + dy * (CELL / 2 - 2)];
+      return [cx + CELL / 2 + dx * CELL / 2, cy + CELL / 2 + dy * CELL / 2];
     };
-    const terminalPoint = (t, outward) => {
-      const [cx, cy] = cellXY(t.cell[0], t.cell[1]);
-      const [dx, dy] = DIR_VEC[t.dir];
-      const d = outward ? CELL / 2 + geo.termOut : CELL / 2 - 2;
-      return [cx + CELL / 2 + dx * d, cy + CELL / 2 + dy * d];
-    };
-
-    const L = V.Circuit.layout(state, placements, terminals);
+    const L = V.Circuit.layout(state, placements);
     const cellsUsed = new Set(L.cells.map((c) => c.x + ',' + c.y));
-    const flow = traceVisualFlow(L);
     const locked = o.locked instanceof Set ? o.locked : new Set(o.locked || []);
     const fid = 'b_' + (++svgUid);
 
@@ -573,12 +510,8 @@
       data-ms-ox="${o.ms && !o.ms.disabled ? (o.ms.ox || 0) : ''}"
       data-ms-oy="${o.ms && !o.ms.disabled ? (o.ms.oy || 0) : ''}"
       data-ms-cells="${o.ms && !o.ms.disabled && o.ms.oriented ? o.ms.oriented.cells.map((c) => c.join(',')).join(';') : ''}"
-      xmlns="http://www.w3.org/2000/svg" role="img" aria-label="生命金属回路板面">`);
+      xmlns="http://www.w3.org/2000/svg" role="group" aria-label="金属回路板面">`);
     parts.push(`<defs>
-      <pattern id="${fid}_metal" width="256" height="256" patternUnits="userSpaceOnUse">
-        <rect width="256" height="256" fill="#211A2D"/>
-        <image class="metal-surface-texture" href="assets/art/rune-set-v2/living-metal.png" x="0" y="0" width="256" height="256" preserveAspectRatio="none"/>
-      </pattern>
       <pattern id="${fid}_blk" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
         <line x1="0" y1="0" x2="0" y2="10" stroke="rgba(180,95,88,0.22)" stroke-width="2"/>
       </pattern>
@@ -589,20 +522,41 @@
 
     /* === 第 1 层：底材（异形锯齿金属 / 经典 4x4 退化路径） === */
     parts.push('<g class="layer-base" pointer-events="none">');
-    parts.push(`<rect class="board-bg" x="0" y="0" width="${geo.cw}" height="${geo.ch}" rx="4"/>`);
+    parts.push(`<rect class="board-bg" x="0" y="0" width="${geo.cw}" height="${geo.ch}"/>`);
     if (plate.generated) {
-      parts.push(`<path class="plate-metal-slab" d="${geo.slabPath}" fill="url(#${fid}_metal)" fill-rule="nonzero"/>`);
-      parts.push(`<path class="plate-metal-bevel" d="${geo.slabPath}"/>`);
-      const rimEdges = [];
+      const texture = A.Art.getArt('surface.forge').src;
+      const slab = geo.slabPath;
+      parts.push(`<defs>
+        <linearGradient id="${fid}_forge" x1=".12" x2=".69" y1="0" y2="1">
+          <stop stop-color="#1E2230"/><stop offset=".28" stop-color="#4F5968"/>
+          <stop offset=".41" stop-color="#4F5968"/><stop offset=".85" stop-color="#1E2230"/>
+          <stop offset="1" stop-color="#4F5968"/>
+        </linearGradient>
+        <linearGradient id="${fid}_bevel" x1=".08" x2=".7" y1="0" y2="1">
+          <stop stop-color="#7A838F"/><stop offset=".42" stop-color="#4F5968"/>
+          <stop offset=".76" stop-color="#1E2230"/><stop offset="1" stop-color="#7A838F"/>
+        </linearGradient>
+        <clipPath id="${fid}_slab"><path d="${slab}" clip-rule="evenodd"/></clipPath>
+      </defs>
+      <path class="plate-metal-slab" d="${slab}" fill="url(#${fid}_forge)" fill-rule="evenodd"/>
+      <g clip-path="url(#${fid}_slab)">
+        <image class="plate-forge-grain" href="${texture}" width="${geo.cw}" height="${geo.ch}" preserveAspectRatio="none"/>
+        <path class="plate-forge-shoulder" d="${slab}"/>
+        <path class="plate-metal-bevel" d="${slab}" stroke="url(#${fid}_bevel)"/>
+        <path class="plate-bevel-glint" d="${slab}" stroke="url(#${fid}_bevel)"/>
+        ${geo.boundary.flatMap(loop => loop.filter((_, i) => i % 3 === 1)).map(e => {
+          const x = gx + (e.x0+e.x1)*CELL/2 + e.nx*13, y = gy + (e.y0+e.y1)*CELL/2 + e.ny*13;
+          return `<g class="plate-rivet" transform="translate(${x} ${y})">
+            <path class="rivet-seat" d="M-5 -3H5V3L3 5H-3L-5 3Z"/>
+            <path class="rivet-pin" d="M-3 -3H3V2H-3Z"/><path class="rivet-glint" d="M-2 -2H2M0 -2V1"/>
+          </g>`;
+        }).join('')}
+      </g>`);
       cellsList.forEach(([x, y]) => {
         const [px, py] = cellXY(x, y);
-        parts.push(`<rect class="plate-cell-bed" x="${px + 0.5}" y="${py + 0.5}" width="${CELL - 1}" height="${CELL - 1}"/>`);
-        if (!plate.cells.has(x + ',' + (y - 1))) rimEdges.push(`M${px} ${py} h${CELL}`);
-        if (!plate.cells.has(x + ',' + (y + 1))) rimEdges.push(`M${px} ${py + CELL} h${CELL}`);
-        if (!plate.cells.has((x - 1) + ',' + y)) rimEdges.push(`M${px} ${py} v${CELL}`);
-        if (!plate.cells.has((x + 1) + ',' + y)) rimEdges.push(`M${px + CELL} ${py} v${CELL}`);
+        parts.push(`<rect class="plate-cell-bed" x="${px}" y="${py}" width="${CELL}" height="${CELL}"/>
+          <path class="plate-datum" d="M${px+27} ${py+30}h6m-3 -3v6"/>`);
       });
-      parts.push(`<path class="plate-edge-rim" d="${rimEdges.join(' ')}"/>`);
     } else {
       const n = plate.size;
       parts.push(`<rect class="board-frame" x="${gx - 2}" y="${gy - 2}" width="${CELL * n + 4}" height="${CELL * n + 4}" rx="2"/>`);
@@ -631,10 +585,9 @@
     const msCells = new Set();
     for (const ms of membranes) {
       if (!ms || ms.disabled || !ms.oriented || !ms.fits) continue;
-      parts.push(`<g data-ms-shape="${ms.id}" opacity="${o.ms && o.ms.id !== ms.id ? '0.66' : '1'}">`);
-      const aligned = new Set(ms.cov.alignedCells || []);
+      parts.push(`<g data-ms-shape="${ms.id}">`);
       const [mx, my] = cellXY(ms.ox, ms.oy);
-      parts.push(`<g transform="translate(${mx} ${my})">${membraneEngraving(ms.oriented, CELL, aligned, ms.ox, ms.oy)}</g>`);
+      parts.push(`<g transform="translate(${mx} ${my})">${membraneEngraving(ms.oriented, CELL, {terminals: false, selected: o.ms?.id === ms.id})}</g>`);
       for (const [lx, ly] of ms.oriented.cells) msCells.add((lx + ms.ox) + ',' + (ly + ms.oy));
       /* 可拖命中区：蚀刻法膜和纹路一样能被抓起换位置 */
       if (o.interactive && !o.readOnlyMs) {
@@ -652,6 +605,9 @@
     parts.push('</g>');
 
     /* 第 3 层：纹路本体按相同的朝向刻入金属表面。 */
+    const paths = o.combat
+      ? [o.combat.ms, ...(o.combat.extraMs || [])].filter(m => m?.routed && m.pulse?.path?.length).map(m => m.pulse)
+      : membranes.filter(m => m?.fits && m.rt?.ok).map(m => V.Circuit.pulseOf(L, m.rt, plate));
     const placementById = new Map((placements || []).map((p) => [p.itemId, p]));
     const builtData = [];
     parts.push('<g class="layer-runes">');
@@ -661,28 +617,27 @@
       const isErr = errorItems.has(b.item.id);
       const isLocked = locked.has(b.item.id);
 
-      const partLive = b.aps.some((p) => flow.fwd.has(b.item.id + ':' + p.id) && flow.rev.has(b.item.id + ':' + p.id));
-      const partCharged = b.aps.some((p) => flow.fwd.has(b.item.id + ':' + p.id));
-
-      parts.push(`<g class="part-group ${isSelected ? 'selected' : ''} ${partLive ? 'live' : partCharged ? 'charged' : 'dormant'} ${isLocked ? 'locked' : ''}"
-        data-act="wsGrab" data-id="${b.item.id}" data-px="${pl.x}" data-py="${pl.y}">
-        <title>${esc(b.tpl.name)} · 点击选中 · 拖拽移动 · 右键/滚轮旋转${isLocked ? '' : ' · 双击卸下'}</title>`);
+      parts.push(`<g class="part-group ${isSelected ? 'selected' : ''} live ${isLocked ? 'locked' : ''}"
+        role="img" tabindex="0" aria-label="${esc(b.tpl.name)}" data-rune-tooltip="${esc(runeHover(b, paths))}"
+        ${o.interactive ? `data-act="wsGrab" data-id="${b.item.id}" data-px="${pl.x}" data-py="${pl.y}"` : ''}>`);
       const bx0 = gx + Math.min.apply(null, b.abs.map((c) => c.x)) * CELL;
       const by0 = gy + Math.min.apply(null, b.abs.map((c) => c.y)) * CELL;
       const runeTag = V.RuneArt && V.RuneArt.image
         ? V.RuneArt.image(b.tpl.id, {
           x: bx0, y: by0, cell: CELL,
           rotation: pl.rotation || 0, mirrorY: !!pl.mirrorY,
-          cls: partLive ? 'rune-live' : partCharged ? 'rune-charged' : 'rune-dormant',
+          cls: 'rune-live',
         })
         : '';
       if (runeTag) parts.push(runeTag);
+      if (o.interactive) {
+        const outline = V.RuneArt.contourPath(b.abs.map(c => [c.x,c.y]), CELL, gx, gy);
+        parts.push(`<path class="ws-rune-locator" d="${outline}" aria-hidden="true"/>`);
+      }
 
-      const labelCell = b.abs.slice().sort((a, c) => c.y - a.y || a.x - c.x)[0];
-      const [lx, ly] = cellXY(labelCell.x, labelCell.y);
-      parts.push(`<text class="part-label" x="${lx + CELL / 2}" y="${ly + CELL - 8}" text-anchor="middle">${esc(b.tpl.name)}</text>`);
       if (isLocked) {
-        parts.push(`<text class="part-lock" x="${lx + CELL - 9}" y="${ly + 14}" text-anchor="end">锁</text>`);
+        const [lx, ly] = cellXY(b.abs[0].x, b.abs[0].y);
+        parts.push(`<path class="part-lock-symbol" transform="translate(${lx + 43} ${ly + 5})" d="M1 6V3H2V1H9V3H10V6H12V14H0V6ZM3 6H8V3H3Z" fill-rule="evenodd"/>`);
       }
       b.abs.forEach((c) => {
         const [hx, hy] = cellXY(c.x, c.y);
@@ -697,57 +652,23 @@
     /* === 第 4 层：高亮 / 通电动画 / 端子 / 错误标红 / 交互命中 === */
     parts.push('<g class="layer-highlights">');
     parts.push('<g class="layer-fx" pointer-events="none">');
-    for (const film of membranes.filter(m => m?.fits && m.oriented)) {
-      const selected = film.id === o.ms?.id;
-      parts.push(`<path class="ms-contour ${selected ? 'focused' : ''}" ${selected ? 'data-ms-outline="' + esc(film.id) + '"' : ''} d="${footprint(film.oriented.cells,gx + film.ox*CELL,gy + film.oy*CELL)}"/>`);
-    }
-
-    const seenEdge = new Set();
-    const portPoints = new Map();
-    L.ports.forEach((p) => portPoints.set(p.itemId + ':' + p.id, portPoint(p)));
-    Object.values(terminals).forEach((t) => portPoints.set('T:' + t.id, portPoint(t)));
-    L.edges.forEach((e) => {
-      if (e.internal) return;
-      const k = e.from + '>' + e.to;
-      if (seenEdge.has(k)) return;
-      seenEdge.add(k);
-      const a = portPoints.get(e.from);
-      const b = portPoints.get(e.to);
-      if (!a || !b) return;
-      const isLive = flow.fwd.has(e.from) && flow.fwd.has(e.to) && flow.rev.has(e.from) && flow.rev.has(e.to);
-      const isCharged = flow.fwd.has(e.from) && flow.fwd.has(e.to);
-      const cls = isLive ? 'link-flow live' : isCharged ? 'link-flow charged' : 'link-flow';
-      parts.push(`<line class="link ${cls}" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/>`);
-    });
-
+    const sockets = new Set(L.ports.map(p => p.cell.join(',') + '/' + p.dir));
     builtData.forEach(({ b, isSelected, isErr }) => {
-      if (isSelected || isErr) parts.push(`<path class="part-unified-frame ${isErr ? 'bad' : ''}" d="${footprint(b.abs.map(c => [c.x,c.y]), gx, gy)}"/>`);
-      b.aps.forEach((p) => {
+      if (isSelected || isErr) parts.push(`<path class="part-unified-frame ${isErr ? 'bad' : ''}" d="${V.RuneArt.contourPath(b.abs.map(c => [c.x,c.y]), CELL, gx, gy)}"/>`);
+      b.aps.forEach(p => {
         const [px, py] = portPoint(p);
-        const pk = b.item.id + ':' + p.id;
-        const lit = flow.fwd.has(pk) && flow.rev.has(pk) ? 'lit' : flow.fwd.has(pk) ? 'charged' : '';
-        parts.push(portCut(px, py, p.dir, p.role, lit));
+        const [dx, dy] = DIR_VEC[p.dir];
+        const paired = sockets.has(`${p.cell[0] + dx},${p.cell[1] + dy}/${V.Circuit.opposite(p.dir)}`);
+        if (paired && (dx > 0 || dy > 0)) {
+          const turn = dx ? 0 : 90;
+          parts.push(`<path class="conduit-join" transform="translate(${px} ${py}) rotate(${turn})" d="M-3 -4H3M-3 4H3"/>`);
+        }
       });
     });
 
-    /* 终端（画在 plate.terminals 所指板面边界外沿） */
-    Object.values(terminals).forEach((t) => {
-      const [x1, y1] = portPoint(t);
-      const [x2, y2] = terminalPoint(t, true);
-      const isIn = t.role === 'in';
-      const active = isIn ? flow.fwd.has('T:' + t.id) : (flow.fwd.has('T:' + t.id) && flow.rev.has('T:' + t.id));
-      parts.push(`<line class="link ${isIn ? 'link-in' : 'link-out'} ${active ? 'term-wire-lit' : ''}" x1="${x2}" y1="${y2}" x2="${x1}" y2="${y1}"/>`);
-      parts.push(`<svg class="term-cut" data-term="${t.id}" x="${x2 - 4}" y="${y2 - 4}" width="8" height="8" viewBox="-4 -4 8 8" overflow="visible">${portCut(0, 0, t.dir, t.role, active ? 'lit' : '')}</svg>`);
-      if (o.ms && t.manuscriptId && t.manuscriptId !== o.ms.id) return;
-      let lx = x2;
-      let ly = y2 - 4;
-      let anchor = 'middle';
-      if (t.dir === 'W') { lx = x2 - 8; anchor = 'end'; }
-      else if (t.dir === 'E') { lx = x2 + 8; anchor = 'start'; }
-      else if (t.dir === 'N') { ly = y2 - 9; }
-      else { ly = y2 + 15; }
-      parts.push(`<text class="terminal-label ${active ? 'lit' : ''}" x="${lx}" y="${ly}" text-anchor="${anchor}">${esc(t.id === 'main' ? '攻击' : t.name)}</text>`);
-    });
+    for (const film of membranes.filter(m => m?.fits && m.oriented)) {
+      parts.push(manuscriptBeacons(film.oriented, (x, y) => cellXY(film.ox + x, film.oy + y)));
+    }
 
     /* 冲突/不在板面红框 */
     errorCells.forEach((k) => {
@@ -786,7 +707,47 @@
     parts.push('<g class="drop-ghost" pointer-events="none" style="display:none"></g>');
     parts.push('</g>');
 
+    const pieces = L.built.map(({item, abs}) => [item.id, abs.map(c => [c.x, c.y])]);
+    if (paths.length) {
+      const routed = new Set(paths.flatMap(p => p.path));
+      const modules = L.built.filter(({abs}) => abs.some(c => routed.has(c.x + ',' + c.y)));
+      const lit = modules.map(({item, tpl, abs}) => {
+        const pl = placementById.get(item.id);
+        return V.RuneArt.powered(tpl.id, gx + Math.min(...abs.map(c => c.x)) * CELL,
+          gy + Math.min(...abs.map(c => c.y)) * CELL, CELL, pl?.rotation, pl?.mirrorY);
+      }).join('');
+      parts.push(`<defs><clipPath id="${fid}_flow"><path class="conduit-mask"/></clipPath></defs>
+        <g class="conduit-powered" clip-path="url(#${fid}_flow)" pointer-events="none">${lit}</g>`);
+    }
+    if (o.combat) parts.push('<g class="conduit-fuses" pointer-events="none" aria-hidden="true"></g>');
+    const activeNodes = new Set(paths.flatMap((p) => p.activeNodes || []));
+    const archetype = plate.archetype;
+    const [nodeName, nodeEffect] = PLATE_NODE_TIPS[archetype] || ['先天锚点', ''];
+    if (plate.clockCore.length || plate.innateNodes.length) {
+      parts.push('<g class="plate-nodes" pointer-events="none">');
+      [plate.clockCore, plate.innateNodes].forEach((nodes, kind) => nodes.forEach(([x, y], i) => {
+        const key = `${x},${y}`;
+        const core = kind === 0;
+        const [px, py] = cellXY(x, y);
+        const name = core ? `心核${nodes.length > 1 ? ` ${i + 1}` : ''}` : nodeName;
+        const effect = core ? (archetype === 'bingdi' ? '独立心核，与另一心核在锚点汇合' : '金属相的心核') : nodeEffect;
+        const active = activeNodes.has(key)
+          || (['xuanzhen', 'zhibi', 'dibuman'].includes(archetype) && cellsUsed.has(key));
+        const detail = `${name} · (${x},${y})\n${effect}`;
+        parts.push(`<g class="plate-node ${core ? 'core' : 'anchor'}${active ? ' active' : ''}" data-plate-node="${key}"
+          data-rune-tooltip="${esc(detail)}" aria-label="${esc(detail)}" role="img" tabindex="0">
+          ${V.RuneArt.plateNode(core, px + 4, py + CELL - 24)}</g>`);
+      }));
+      parts.push('</g>');
+    }
     parts.push('</svg>');
+    if (paths.length || o.combat && pieces.length) {
+      parts.push(`<canvas class="topology-flow" width="${Math.ceil(geo.cw)}" height="${Math.ceil(geo.ch)}"
+        data-flow="${esc(JSON.stringify(paths.map(p => p.path.map(cell => cell.split(',').map(Number)))))}"
+        data-pieces="${esc(JSON.stringify(pieces))}" data-origin="${gx},${gy}" data-unit="${esc(unitId)}"
+        data-live="${o.combat ? 1 : 0}" data-stress="${o.stress ?? unit?.stress ?? 0}"
+        aria-hidden="true"></canvas>`);
+    }
     return parts.join('');
   }
 
@@ -834,7 +795,7 @@
   function partIcon(state, id) {
     const it = state.itemsById[id];
     if (!it) return '';
-    return tag('回路', 'tag-circuit');
+    return V.RuneArt.thumb(it.templateId, 'part-symbol');
   }
 
   /** Gambit 的人类可读描述，避免在界面上暴露内部 id。 */
@@ -870,7 +831,7 @@
       ? `最深 ${state.bestDepth} 层 · ${state.gold} 金币 · ${state.roster.length} 位传奇`
       : '';
     return `<div class="v-title gate-title">
-      <div class="v-title-bg">${V.Art.v1Tag('scene.camp', 'title-bg-img')}</div>
+      <div class="v-title-bg">${V.Art.anyImgTag('scene.camp', 'title-bg-img')}</div>
       <div class="v-title-frame">
         <div class="gate-inscription" aria-hidden="true"><i></i> ASHEN CORRIDOR</div>
         <h1 class="v-title-main">灰烬回廊</h1>
@@ -898,7 +859,7 @@
     const goalFloor = Math.max(3, Math.min(D().DESIGN.maxFloor, state.bestDepth + 1));
     const nextManuscript = D().manuscriptReward(state, D().rewardTier(goalFloor));
     return `<section class="outpost-hero camp-gate">
-      <div class="outpost-art">${V.Art.v1Tag('scene.camp', 'outpost-img')}</div>
+      <div class="outpost-art">${V.Art.anyImgTag('scene.camp', 'outpost-img')}</div>
       <div class="outpost-copy">
         <h1>灰烬前哨</h1>
         <p>本趟目标 · 完成 <strong>${D().chapterLabel(goalFloor)}</strong> 后撤离</p>
@@ -906,7 +867,7 @@
         <div class="hero-actions">${btn('开始下潜 <span aria-hidden="true">↗</span>', 'startRun', { cls: 'gold primary-cta', disabled: party.length === 0 })}
           ${btn('前哨仓库','go',{cls:'ghost', data:{v:'stash'}})}
           ${btn('营地厨房', 'go', { cls: 'ghost', data: { v: 'kitchen' } })}
-          <span class="tiny muted">${party.length ? `${party.length} 人就绪` : '请先编队'}</span></div>
+          ${party.length ? '' : '<span class="tiny muted">请先编队</span>'}</div>
       </div>
       <div class="departure-strip"><span>最深记录 <b>${state.bestDepth}</b> / 49 节点</span><div class="depth-track" aria-hidden="true">${Array.from({ length: 7 }, (_, i) => `<i class="${(i+1)*7 <= state.bestDepth ? 'explored' : i + 1 === D().chapterAt(goalFloor).number ? 'goal' : ''}"></i>`).join('')}</div></div>
     </section>
@@ -915,15 +876,25 @@
         <div class="row wrap mt2">${costs.map(([id,n]) => `<span class="small" title="${esc(V.Kitchen.INGREDIENTS[id].source)}">${itemLabel('ingredient', V.Kitchen.INGREDIENTS[id])} ${state.pantry?.[id] || 0}/${n}</span>`).join('')}
         ${btn('消耗材料扩容', 'upgradePack', { cls: 'gold sm', disabled: costs.some(([id,n]) => (state.pantry?.[id] || 0) < n) })}</div>` : '<p>全部改装完成</p>'}
     </details>
-    ${pageHeading('远征队伍', '', btn('调整编队 →', 'go', { cls: 'ghost', data: { v: 'team' } }))}
+    ${pageHeading('远征队伍', `${party.length} / ${state.team.length} 人已编入`, btn('调整编队 →', 'go', { cls: 'ghost', data: { v: 'team' } }))}
     <div class="metal-party camp-party">${state.team.map((uid, slot) => {
       const u = uid ? ST().unitById(state, uid) : null;
-      return `<article class="metal-card ${u ? '' : 'empty'}"><div class="metal-card-top"><span class="slot-index">0${slot + 1}</span><span class="tiny muted">${slot === 0 ? '前锋' : slot === 3 ? '后阵' : '中阵'}</span>${u ? `<span class="spacer"></span><span class="tiny muted">${(u.scars || []).length} 道瘢痕</span>` : ''}</div>
-      ${u ? `<div class="metal-display">${legendPortrait(u)}</div>
-        <div class="metal-card-name"><h2>${esc(u.name)}</h2><span class="tiny muted" title="${esc(terms.压力)}">压力 ${u.stress}</span></div>
-        <div class="metal-card-manuscript"><span class="tiny muted">所修蚀刻法</span><b>${esc(manuscriptNames(u))}</b></div>
-        <div class="metal-card-actions">${btn('人物详情', 'inspectUnit', { cls: 'ghost', data: { id: u.id } })}${btn('进入工坊', 'go', { cls: 'ghost', data: { v: 'workshop', id: u.id } })}</div>`
-        : `<div class="empty-note">空缺身位</div>${btn('选择传奇', 'go', { cls: 'ghost', data: { v: 'team' } })}`}</article>`;
+      const seat = `<span class="slot-index">${slot + 1} 号位</span>`;
+      if (!u) {
+        return `<article class="metal-card empty"><div class="camp-seat-socket" aria-hidden="true">+</div>
+          <div class="camp-seat-main"><header class="metal-card-top">${seat}</header>
+            <h2>空位</h2><div class="metal-card-actions">${btn('选择队员', 'go', { cls: 'ghost', data: { v: 'team', slot } })}</div>
+          </div></article>`;
+      }
+      const style = V.Positions.style(u);
+      const role = [style.mode === 'melee' ? '近战' : '远程', style.label].filter(Boolean).join(' · ');
+      return `<article class="metal-card"><div class="metal-display">${legendPortrait(u)}${plateFace(u, 'plate-chip')}</div>
+        <div class="camp-seat-main">
+          <header class="metal-card-top">${seat}<span class="camp-seat-role">${esc(role)}</span></header>
+          <div class="metal-card-name"><h2>${esc(u.name)}</h2><span class="tiny muted" title="${esc(term('stress'))}">压力 ${u.stress}</span><span class="tiny muted">${(u.scars || []).length} 道瘢痕</span></div>
+          <div class="metal-card-manuscript"><span class="tiny muted">蚀刻法</span><b>${esc(manuscriptNames(u))}</b></div>
+          <div class="metal-card-actions">${btn('人物详情', 'inspectUnit', { cls: 'ghost', data: { id: u.id } })}${btn('进入工坊', 'go', { cls: 'ghost', data: { v: 'workshop', id: u.id } })}</div>
+        </div></article>`;
     }).join('')}</div>`;
 
   }
@@ -934,7 +905,7 @@
     const selected = state.roster.find((u) => u.id === ui.teamUnit) || state.roster[0];
     return `${pageHeading('传奇编队', '')}
     <div class="formation-layout">
-      ${panel('上场顺序', `
+      ${panel('队伍席位', `
         <div class="vet-grid mt3">${state.team.map((uid, slot) => {
     const u = uid ? state.roster.find((x) => x.id === uid) : null;
     return `<div class="vet-slot ${u ? '' : 'empty'}">
@@ -942,10 +913,10 @@
       ${u ? legendPortrait(u, 'vet-slot-metal') + `<div class="vet-name">${esc(u.name)}</div><div class="vet-weapon">${esc(manuscriptNames(u))}</div>`
     : '<div class="vet-empty">空位</div>'}
       <div class="row tight mt2 slot-ops">
-        ${slot > 0 ? btn('前移', 'teamMove', { cls: 'ghost xs', data: { from: String(slot), to: String(slot - 1) } }) : ''}
-        ${btn('换上', 'teamPick', { cls: 'ghost xs', data: { id: String(slot) } })}
+        ${u && slot > 0 ? btn(`换到 ${slot} 号`, 'teamMove', { cls: 'ghost xs', data: { from: String(slot), to: String(slot - 1) } }) : ''}
+        ${btn(u ? '换上' : '选择队员', 'teamPick', { cls: 'ghost xs', data: { id: String(slot) } })}
         ${u ? btn('换下', 'teamClear', { cls: 'ghost xs', data: { id: String(slot) } }) : ''}
-        ${slot < 3 ? btn('后移', 'teamMove', { cls: 'ghost xs', data: { from: String(slot), to: String(slot + 1) } }) : ''}
+        ${u && slot < state.team.length - 1 ? btn(`换到 ${slot + 2} 号`, 'teamMove', { cls: 'ghost xs', data: { from: String(slot), to: String(slot + 1) } }) : ''}
       </div>
     </div>`;
   }).join('')}</div>
@@ -964,15 +935,25 @@
   function unitDetail(state, u) {
     const s = V.Roster.stats(state, u);
     const h = V.Roster.history(state, u.id);
+    const cracked = u.affliction === 'crack';
     return `<div class="u-detail mt3">
       ${legendPortrait(u, 'unit-portrait')}
       <div class="u-detail-head"><b>${esc(u.name)}</b>
-        <span class="muted small">${esc(D().body(u.bodyPreset).name)} · 压力 ${u.stress} · 逻辑槽 ${u.logicSlots}</span></div>
+        <span class="muted small">${esc(D().body(u.bodyPreset).name)} · <span title="${esc(styleTip(u.bodyPreset, D().cultureOf(u.skinId)))}">${esc(D().bodyStyle(u.bodyPreset, D().cultureOf(u.skinId)))}</span> · 压力 ${u.stress} · 逻辑槽 ${u.logicSlots}</span></div>
+      <p class="tiny muted">${esc(D().originOf(u.skinId))}</p>
+      ${(() => {
+        /* 相性：形状决定「这块铁怎么用」。名字与说明都从数据表来，缺字段就不画，别在界面上留 undefined */
+        const inn = D().body(u.bodyPreset).innate;
+        return inn && inn.name
+          ? `<p class="small mt1"><span class="tag tag-circuit">相性 · ${esc(inn.name)}</span> <span class="muted tiny">${esc(inn.desc || '')}</span></p>`
+          : '';
+      })()}
+      ${cracked ? `<p class="small danger mt1" title="${esc(term('resolve'))}">裂 —— 纹理方向律反转：满压的红利翻成负担，受伤加深，抛光只剩七成。安抚可以清掉。</p>` : ''}
       <div class="stat-row">
-        <span>生命 ${s.maxHp}</span><span>攻击 ${s.atk}</span><span>防御 ${s.def}</span>
+        <span title="结构完整度">完整度 ${s.maxHp}</span><span title="输出脉冲幅值">幅值 ${s.atk}</span><span title="回路阻抗">阻抗 ${s.def}</span>
         <span>负荷 ${s.loadCap}</span>
       </div>
-      <div class="inscribed-list">${V.State.manuscriptsOf(u).map(m => `<p><b>${itemLabel('etching', m)}</b><span>${esc(D().manuscript(m.id)?.desc || m.desc)}</span></p>`).join('') || '<p>尚未装配蚀刻法</p>'}</div>
+      <div class="inscribed-list">${V.State.manuscriptsOf(u).map(m => `<p><b>${itemLabel('etching', m)}</b><span>${esc(V.Flavor.etching(m))}</span></p>`).join('') || '<p>尚未装配蚀刻法</p>'}</div>
       <div class="small muted mt1">撤离调谐 · ${attunementText(h)}</div>
 
       <div class="mt2 row wrap">${btn('进入工坊', 'go', { cls: 'gold xs', data: { v: 'workshop', id: u.id } })}
@@ -989,7 +970,7 @@
     const rules = ui.ruleDraft || u.gambits;
     const inRun = !!(state.run && state.run.encounter);
     const pool = inRun
-      ? state.run.encounter.preparation.formation.filter(Boolean).map((id) => state.roster.find((x) => x.id === id)).filter(Boolean)
+      ? state.run.party.map(({ uid }) => state.roster.find(x => x.id === uid)).filter(Boolean)
       : state.roster;
 
     return panel(`${esc(u.name)} 的行为指令`, `
@@ -1044,65 +1025,169 @@
     return (list || []).map((p) => `${p.itemId}:${p.x},${p.y},${p.rotation || 0},${p.mirrorY ? 1 : 0}`).sort().join('|');
   }
 
-  /** 渲染蚀刻法膜覆盖率与贯通状态面板（分母永远是膜格数，摆不下时灰掉并给出明确原因）。 */
-  function manuscriptPanelBody(ms, unit, state, readOnly) {
-    const catalog = Object.keys(D().MANUSCRIPTS || {}).map((id) => D().MANUSCRIPTS[id]);
-    const vault = (state && state.manuscriptVault) || [];
-    const inVault = (id) => vault.some((m) => m.id === id);
+  function workshopSkills(spec, facts) {
+    const movement = D().MODS[D().manuscript(spec.id)?.modId];
+    const description = [facts.flavor, movement && movement.name + ' · ' + movement.desc].filter(Boolean).join('\n');
+    return `<section class="ws-skill-card ws-cut" aria-label="招式与节拍" title="${esc(description)}">
+      ${facts.skills.map((skill, i) => {
+        const source = spec.skills[i];
+        const effect = source.effect || {};
+        const tips = V.Stats.skillTooltip(source);
+        const icon = effect.heal ? 'M6 1H10V6H15V10H10V15H6V10H1V6H6Z'
+          : effect.shield ? 'M2 2H14V8L12 12L8 15L4 12L2 8ZM4 4V8L8 12V4Z'
+            : 'M11 1H15V5L7 13L9 15L7 16L0 9L2 7L4 9Z';
+        return `<article class="ws-skill"><div class="ws-skill-head">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="${icon}" fill-rule="evenodd"/></svg>
+          <b>${esc(skill.name)}</b><span class="ws-skill-cost">${esc(skill.cost)}</span><span class="ws-skill-cd">${esc(skill.cooldown)}</span>
+        </div><div class="ws-effect-tags">${skill.condition ? `<span class="ws-trigger" title="${esc(tips.condition)}">${esc(skill.condition)}</span>` : ''}
+          ${tips.effects.map(({label, hint}) => `<span title="${esc(hint)}">${esc(V.Stats.shorten(label))}</span>`).join('')}</div></article>`;
+      }).join('')}
+      <div class="ws-skill-beat">${facts.main.map(f => `<span>${esc(f.label === '余裕上限' ? '上限' : f.label)} <b>${esc(f.value)}</b></span>`).join('')}</div>
+    </section>`;
+  }
+
+  function manuscriptPanelBody(ms, unit, state, {readOnly, vaultOpen}) {
     const equipped = V.State.manuscriptsOf(unit);
-    const installed = (id) => equipped.some((m) => m.id === id);
-    const chip = (m, location) => `<button class="ms-chip${ms?.id === m.id ? ' is-active' : ''}" data-act="wsMsPick" data-ms-drag="${readOnly ? '0' : '1'}" data-source="${location}" data-id="${m.id}" aria-pressed="${ms?.id === m.id}" title="${location === 'board' && unit.manuscript?.id === m.id ? '主修决定普攻与余裕' : esc(m.name)}">
-      <span class="ms-chip-name">${itemLabel('etching', m)}</span><span class="ms-chip-meta">${location === 'board' ? (unit.manuscript?.id === m.id ? '主修' : '合修') : '库存 ×' + vault.filter((v) => v.id === m.id).length} · ${m.cells.length} 格</span></button>`;
-    const picker = `<p class="small muted mb2">主修决定平攻和余裕恢复。合修追加招式或被动，招式共用余裕。</p><div class="row wrap tight mb2 ms-chips">${equipped.map((m) => chip(m, 'board')).join('')}
-      ${catalog.filter((m) => inVault(m.id)).map((m) => installed(m.id) ? `<span class="tiny muted">${esc(m.name)} · 库存 ×${vault.filter((v) => v.id === m.id).length}</span>` : chip(m, 'vault')).join('')}</div>
-      <div class="row wrap tight mb2">${readOnly ? '' : ms && installed(ms.id)
-        ? (unit.manuscript?.id !== ms.id ? btn('设为主修', 'wsMsPromote', { cls: 'gold xs' }) : '') + btn('卸下蚀刻法', 'wsMsUnequip', { cls: 'ghost xs' })
-        : ms && inVault(ms.id) ? btn('装入蚀刻法', 'wsMsEquip', { cls: 'gold xs' })
-          : ms?.spec ? `<span class="tiny muted">${ms.spec.fieldSource ? `第 ${ms.spec.fieldDepth} 层起 · ${ms.spec.fieldSource === 'chest' ? '搜宝箱' : '击败精英'}后撤离` : `第 ${D().rewardNodes[ms.spec.unlockDepth-1]} 节点起撤离可发现`}</span>` : ''}</div>`;
+    const installed = new Set(equipped.map(m => m.id));
+    const vault = state.manuscriptVault || [];
+    const counts = new Map();
+    for (const {id} of vault) counts.set(id, (counts.get(id) || 0) + 1);
+    const chip = (m, location, role) => {
+      const active = ms?.id === m.id;
+      const shape = active && ms.oriented || V.Manuscript.orient(V.Manuscript.normalize(m), m.rotation, m.mirrorY);
+      return `<button type="button" class="ms-chip ws-cut${active ? ' is-active' : ''}" data-act="wsMsPick"
+        data-ms-drag="${readOnly ? '0' : '1'}" data-source="${location}" data-id="${esc(m.id)}" aria-pressed="${active}" title="${esc(m.name)} · ${shape.cells.length} 格">
+        <span class="ms-chip-meta">${role}</span>${V.RuneArt.membraneBadge(shape)}<span class="ms-chip-name">${esc(m.name)}</span>
+      </button>`;
+    };
+    const picker = `<div class="ms-chips">
+      ${equipped.map((m,i) => chip(m, 'board', i === 0 ? '主修' : '辅修')).join('')}
+      <button type="button" class="ms-reserve ws-cut" data-act="wsMsVault" aria-expanded="${vaultOpen}" aria-controls="ws-ms-vault" title="查看尚未装配的蚀刻法">
+        <span class="ms-vault-icon" aria-hidden="true">▤</span><span>蚀刻法库存</span><small>${vault.length} 份</small>
+      </button></div>
+      <div class="ms-vault" id="ws-ms-vault"${vaultOpen ? '' : ' hidden'}>
+        ${counts.size ? [...counts].map(([id, count]) => {
+          const spec = D().manuscript(id);
+          return installed.has(id) ? `<span class="ms-vault-copy">${esc(spec.name)} · 库存 ×${count}</span>` : chip(spec, 'vault', '库存 ×' + count);
+        }).join('') : '<span class="ms-vault-copy">库存暂无蚀刻法</span>'}
+      </div>`;
+    if (!ms || ms.disabled) return picker;
 
-    if (!ms || ms.disabled) {
-      return picker;
-    }
-
-    const unfit = !ms.fits;
-    const tierName = ms.cov.tier ? ms.cov.tier.name : '未达台阶';
-    const pctText = `${ms.cov.aligned}/${ms.cov.total} · ${ms.cov.pct}%`;
-    return `<div class="ms-panel ${unfit ? 'ms-unfit' : ''}" data-ms-fits="${ms.fits ? '1' : '0'}">
+    const held = installed.has(ms.id);
+    const role = held ? (unit.manuscript?.id === ms.id ? '主修' : '辅修') : counts.has(ms.id) ? '库存' : '预览';
+    const {cov, rt} = ms;
+    const facts = V.Stats.manuscriptFacts(ms.spec, {compact: true});
+    const res = V.Stats.resonance(ms);
+    const tierName = !ms.fits ? '无法覆盖' : cov.tier?.name || '未达共鸣阶';
+    const tierMarks = ms.oriented.tiers.map((tier, i) => {
+      const rank = ['一阶','二阶','三阶','四阶'][i] || (i+1) + '阶';
+      const reached = cov.pct >= tier.at && ms.fits;
+      const detail = facts.tiers.find(f => f.at === tier.at + '%');
+      return `<span class="ms-milestone${reached ? ' reached' : ''}" data-at="${tier.at}" style="--mark:${tier.at}%"
+        title="${esc(tier.name + (detail?.effects ? ' · ' + detail.effects : ''))}">${tier.at}% ${rank}</span>`;
+    }).join('');
+    const tool = (glyph, label, action, disabled, title) => btn(`<span aria-hidden="true">${glyph}</span><b>${label}</b>`, action,
+      { cls: 'ws-etch-tool ws-cut', disabled, title });
+    const slots = ms.validSpots.length;
+    return `<div class="ms-panel${ms.fits ? '' : ' ms-unfit'}" data-ms-fits="${ms.fits ? '1' : '0'}">
       ${picker}
-      <div class="row wrap tight">
-        <span class="small"><b class="${unfit ? 'danger' : 'gold'}">${itemLabel('etching', ms.spec)}</b> <span class="tiny muted">${installed(ms.id) ? (unit.manuscript?.id === ms.id ? '主修' : '合修') : '预览'} · ${ms.cov.total} 格 · 负荷 ${ms.spec.load || 0}</span></span>
-        <div class="spacer"></div>
-        <span class="tag ${unfit ? '' : ms.cov.tier ? 'tag-weapon' : ''}" data-ms-tier>${esc(unfit ? '无法覆盖' : tierName)}</span>
+      <div class="ms-nameplate ws-cut"${ms.spec.geometryFamily ? ' title="' + esc(ms.spec.geometryFamily) + '"' : ''}>
+        <i class="ms-nameplate-seal">${V.RuneArt.membraneBadge(ms.oriented)}</i>
+        <strong>${esc(ms.spec.name)}</strong>
+        <div class="ms-nameplate-facts"><span>${role}</span><span>占 ${cov.total} 格</span><span>负荷 ${ms.spec.load || 0}/${V.Circuit.loadCap(unit)}</span></div>
       </div>
-      <div class="mt2">
-        <div class="row tiny muted">
-          <span>纹路覆盖</span>
-          <div class="spacer"></div>
-          <span class="${unfit ? 'muted' : 'gold'}" data-ms-cov>${esc(pctText)}</span>
+      <div class="ws-etch-tools">
+        ${tool('↺', '旋转', 'wsMsRotate', readOnly)}
+        ${tool('⇄', '翻转', 'wsMsFlip', readOnly)}
+        ${tool('⌖', '换位 ' + (slots ? (ms.spotIdx+1) + '/' + slots : '0'), 'wsMsShift', readOnly || slots <= 1, '换到下一个可用落点')}
+        ${tool('✕', '卸下', 'wsMsUnequip', readOnly || !held, '卸回库存')}
+      </div>
+      ${!readOnly && held && role === '辅修' ? btn('设为主修', 'wsMsPromote', { cls: 'ms-secondary-action ghost xs' })
+        : !readOnly && counts.has(ms.id) && !held ? btn('装入蚀刻法', 'wsMsEquip', { cls: 'ms-secondary-action gold xs', disabled: !ms.anyFits }) : ''}
+      ${ms.fits ? '' : `<div class="ms-reason" data-ms-reason>${esc(ms.reason)}</div>`}
+      <div class="ms-gauge ws-cut">
+        <div class="ms-gauge-head"><span>纹路覆盖</span><b data-ms-cov>${cov.aligned}/${cov.total} · ${cov.pct}%</b></div>
+        <div class="ms-meter${tierMarks ? '' : ' no-marks'}" title="${esc(tierName)}">
+          <div class="ms-meter-track" role="progressbar" aria-label="纹路覆盖率" aria-valuenow="${cov.pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${cov.pct}%"></i></div>
+          ${tierMarks}
         </div>
-        ${bar(ms.cov.aligned, ms.cov.total, ms.cov.pct >= 100 ? 'energy' : 'hp')}
+        <div class="ms-live-benefit">
+          <div class="ms-gain" title="${esc(res.parts.join(' · '))}"><b>+${res.pct}%</b><span>共鸣增幅</span></div>
+          <span class="ms-live-route${rt.ok ? ' is-routed' : ''}" data-ms-route><i aria-hidden="true"></i>${rt.ok ? '已贯通' : '未贯通'}</span>
+        </div>
+        <span class="ws-visually-hidden" data-ms-tier>${esc(tierName)}</span>
       </div>
-      <div class="ms-live-benefit"><span>共鸣增幅</span><b>+${Math.round((((ms.cov.tier && ms.cov.tier.effect && ms.cov.tier.effect.mainMult) || 1) * (ms.rt.ok ? 1.1 : 1) - 1) * 100)}%</b><span data-ms-route>${ms.rt.ok ? '已贯通' : '未贯通'}</span></div>
-      <div class="row wrap tight mt2">
-        ${btn('旋转 ⟳', 'wsMsRotate', { cls: 'ghost xs', disabled: readOnly })}
-        ${btn('翻转 ⇅', 'wsMsFlip', { cls: 'ghost xs', disabled: readOnly })}
-        ${btn(`换落点 (${ms.validSpots.length ? `${ms.spotIdx + 1}/${ms.validSpots.length}` : '0'})`, 'wsMsShift', { cls: 'ghost xs', disabled: readOnly || ms.validSpots.length <= 1 })}
-      </div>
-      <details class="move-reference"><summary>招式与阵形动作</summary>${manuscriptDetails(ms.spec)}</details>
-      <details class="manuscript-index"><summary>蚀刻法图鉴 · ${catalog.length}</summary>${[['chest','宝箱拓本'],['elite','精英拓本'],[undefined,'营地与撤离']].map(([source,label]) => `<details><summary>${label}</summary>${catalog.filter(m => m.fieldSource === source).map(m => `<button class="codex-line" data-act="wsMsPick" data-id="${m.id}" title="${esc(m.desc)}">${itemLabel('etching', m)}<span class="muted tiny">${source ? `第${m.fieldDepth}层起` : `${m.rarity}阶`} · ${m.cells.length}格</span></button>`).join('')}</details>`).join('')}</details>
-      ${unfit ? `<div class="ms-reason" data-ms-reason><div>${esc(ms.reason)}</div></div>` : ''}
+      ${workshopSkills(ms.spec, facts)}
+      ${role === '预览' && !readOnly ? `<small class="ms-source-hint">${ms.spec.fieldSource ? `第 ${ms.spec.fieldDepth} 层起 · ${ms.spec.fieldSource === 'chest' ? '搜宝箱' : '击败精英'}后撤离` : `第 ${D().rewardNodes[ms.spec.unlockDepth-1]} 节点起撤离可发现`}</small>` : ''}
     </div>`;
   }
 
+  /** 蚀刻法图鉴：独立一页，按取得途径分组；点条目即回工坊选中该门。 */
+  function workshopCodex(state, ui) {
+    const original = state.roster.find((u) => u.id === ui.wsUnit) || state.roster[0];
+    const unit = workshopUnit(original, ui) || original;
+    const owned = new Map(V.State.manuscriptsOf(unit).map((m, i) => [m.id, i === 0 ? '主修' : '辅修']));
+    const vault = state.manuscriptVault || [];
+    const catalog = Object.values(D().MANUSCRIPTS || {});
+    const source = (m) => (m.fieldSource
+      ? `第 ${m.fieldDepth} 层起 · ${m.fieldSource === 'chest' ? '宝箱产出' : '精英战获'}`
+      : `${D().rewardNodes[m.unlockDepth - 1]} 节点起 · 撤离奖励`);
+    return `<header class="atelier-head"><div><h1>蚀刻法图鉴</h1>
+      <p class="small muted">共 ${catalog.length} 门。点一门回工坊选中它，板面会跟着标出形制与落点。</p></div>
+      ${btn(ui.wsMode === 'inscribe' ? '返回营火烙印' : '返回工坊', 'wsCodex', { cls: 'ghost sm' })}</header>
+      <div class="codex-book" data-catalogue="codex" data-catalogue-limit="9999">
+      ${catalogueControls('查名称、效果或出处', [['', '全部'], ['chest', '宝箱产出'], ['elite', '精英战获'], ['camp', '营地与撤离'], ['owned', '已持有']])}
+      <div class="codex-shelves">${[['chest', '宝箱产出'], ['elite', '精英战获'], [undefined, '营地与撤离']].map(([key, label]) => {
+    const list = catalog.filter((m) => m.fieldSource === key);
+    if (!list.length) return '';
+    return `<section class="codex-group"><h2 class="codex-group-h">${label}<span>${list.length}</span></h2>
+        <div class="codex-grid">${list.map((m) => {
+    const held = owned.has(m.id) || vault.some((v) => v.id === m.id);
+    const facts = V.Stats.manuscriptFacts(m);
+    return `<button class="codex-card" data-act="wsMsPick" data-id="${m.id}" data-catalogue-item="${esc([m.name, m.desc, source(m)].join(' '))}" data-filter="etching ${key || 'camp'}${held ? ' owned' : ''}">
+          <span class="codex-art">${V.CatalogueArt.icon('etching', m.id)}<span class="codex-shape">${etchingMark(m)}</span></span>
+          <span class="codex-info">
+            <span class="codex-title">${esc(m.name)}<span class="tag">${owned.has(m.id) ? owned.get(m.id) : held ? '库存' : '未获得'}</span></span>
+            <small>${m.rarity} 阶 · ${factLine(facts.size)}</small>
+            <span class="codex-desc">${esc(facts.flavor)}</span>
+            <small class="codex-facts">${factLine(facts.main)}</small>
+            <small class="codex-source">${esc(source(m))}</small>
+          </span></button>`;
+  }).join('')}</div></section>`;
+  }).join('')}</div>
+      ${catalogueFooter()}
+      ${termsSection()}
+      </div>`;
+  }
+
+  /** 术语页：词条全部来自 terms.js，和 tooltip 是同一份文案，不另写。 */
+  function termsSection() {
+    return `<details class="codex-terms" data-terms><summary>术语（${V.Terms.ENTRIES.length}）</summary>
+      <dl class="term-list">${V.Terms.ENTRIES.map((e) => `<dt>${esc(e.label)}</dt><dd>${esc(e.desc)}</dd>`).join('')}</dl></details>`;
+  }
+
+  function workshopRuneFace(tpl, rotation, mirror) {
+    const family = V.Circuit.familyOf(tpl);
+    return `<span class="part-shape-box">${V.RuneArt.blueprint(tpl.id, rotation, mirror)}</span>
+      <span class="part-text"><span class="ws-rune-name"><b>${esc(tpl.name)}</b><span data-family="${family}">${esc(runeFamilies[family])}</span></span>
+        <span class="part-meta">占 ${tpl.cells.length} 格 · 负荷 ${tpl.load}</span></span>`;
+  }
+
+  function workshopRuneTip(tpl) {
+    const facts = V.Stats.runeFacts(tpl);
+    return esc([facts.flavor, ...facts.effects.map(f => f.label + ' ' + f.value)].join('\n'));
+  }
+
   function workshopScreen(state, ui) {
+    if (ui.wsCodex) return workshopCodex(state, ui);
     const original = state.roster.find((u) => u.id === ui.wsUnit) || state.roster[0];
     const unit = workshopUnit(original, ui);
     if (unit !== original) state = { ...state, roster: state.roster.map((u) => u === original ? unit : u) };
     const draft = ui.wsDraft || (unit ? unit.board.placements : []);
-    const pv = unit ? V.Circuit.preview(state, unit.id, draft) : { ok: false, errors: ['没有角色'], occupied: [], load: 0, reachableOutputs: [] };
+    const pv = unit ? V.Circuit.preview(state, unit.id, draft) : { ok: false, errors: ['没有角色'], occupied: [], load: 0, overload: 0, cap: 0 };
     const plate = V.Circuit.plateOf(unit || { bodyPreset: 'sturdy', plateSeed: 1 });
     const cellsList = plateCellsList(plate);
-    const layout = V.Circuit.layout(state, draft, plate.terminals);
+    const layout = V.Circuit.layout(state, draft);
     const ms = resolveManuscript(unit, plate, ui, layout);
 
     const locked = new Set(ui.wsLocked || []);
@@ -1117,6 +1202,13 @@
     const stashCircuits = source.filter((id) => state.itemsById[id]?.kind === 'circuit');
     const detachedOrigins = ui.wsMode === 'inscribe' ? [] : originIds.filter((id) => !stashCircuits.includes(id));
     const poolIds = [...stashCircuits, ...detachedOrigins].filter((id) => !draftIds.has(id));
+    const poolStacks = new Map();
+    for (const id of poolIds) {
+      const item = state.itemsById[id];
+      const key = ui.wsMode === 'inscribe' || item.modId || Object.keys(item.attunements || {}).length ? id : item.templateId;
+      if (!poolStacks.has(key)) poolStacks.set(key, []);
+      poolStacks.get(key).push(id);
+    }
 
     const pickedItem = ui.wsPick ? state.itemsById[ui.wsPick] : null;
     const pickedPlaced = ui.wsPick ? draft.find((p) => p.itemId === ui.wsPick) : null;
@@ -1126,86 +1218,84 @@
     const draftStats = unit ? V.Roster.stats(state, unit, draft) : null;
     const pendingScar = ui.wsMode === 'inscribe' ? V.Expedition.inscriptionScar(state, unit.id, ui.inscribeItem, draft) : null;
 
-    const surface = !plate.generated ? V.Art.imgTag('veteran.surface.board', 'board-surface-img') : '';
+    const surface = !plate.generated ? V.Art.anyImgTag('surface.board', 'board-surface-img') : '';
     return `
-    <header class="atelier-head"><div><h1>${ui.wsMode === 'inscribe' ? '营火烙印 · 装入纹路' : '纹路工坊'}</h1>
+    <header class="atelier-head">${V.Art.anyImgTag('scene.workshop', 'atelier-head-bg')}<div><h1>${ui.wsMode === 'inscribe' ? '营火烙印 · 装入纹路' : '纹路工坊'}</h1>
       ${ui.wsMode === 'inscribe' ? `<span>${esc(unit.name)}</span>` : `<div class="ws-unit-picker">${state.roster.map(u => btn(esc(u.name), 'wsUnit', { cls: u.id === unit.id ? 'gold xs' : 'ghost xs', data: { id: u.id } })).join('')}</div>`}</div>
-      ${ui.wsMode === 'inscribe' ? '' : btn(isDirty ? '保存改动' : '保存装配', 'wsSave', { cls: 'gold sm' })}
+      ${ui.wsMode === 'inscribe' ? '' : `<div class="atelier-head-actions">${btn(`图鉴 · ${Object.keys(D().MANUSCRIPTS || {}).length}`, 'wsCodex', { cls: 'ghost sm' })}${btn(isDirty ? '保存改动' : '保存装配', 'wsSave', { cls: 'gold sm' })}</div>`}
     </header>
     ${ui.wsMode === 'inscribe' ? '' : `<div class="palette-switch" role="group" aria-label="工坊工具">
       ${[['etchings','蚀刻法'],['runes','纹路']].map(([id,name]) => `<button type="button" data-act="wsPalette" data-id="${id}" aria-pressed="${(ui.wsPalette || 'etchings') === id}">${name}</button>`).join('')}</div>`}
     <div class="ws-layout" data-palette="${ui.wsMode === 'inscribe' ? 'field' : ui.wsPalette || 'etchings'}">
       <aside class="ws-left">
-        ${panel('蚀刻法', manuscriptPanelBody(ms, unit, state, ui.wsMode === 'inscribe'))}
+        <section class="panel ws-manuscripts">
+          <header class="ws-etch-heading"><h2 class="panel-h">蚀刻法</h2>
+            <div class="ws-etch-help">
+              <button type="button" aria-label="蚀刻法规则" aria-describedby="ws-etch-hint">?</button>
+              <div class="ws-etch-hint ws-cut" id="ws-etch-hint" role="tooltip">
+                <p>主修决定普攻节奏与回裕。辅修施展自己的招式，冷却短 1 秒，纹路增益减半计入余裕。</p>
+                <p>覆盖决定共鸣阶。贯通需要蜡膜内的入口、接缝和出口连续相接。卸下的蚀刻法会原样回到库存。</p>
+              </div>
+            </div>
+          </header>
+          ${manuscriptPanelBody(ms, unit, state, {readOnly: ui.wsMode === 'inscribe', vaultOpen: !!ui.wsVaultOpen})}
+        </section>
         ${(!pv.ok && pv.errors.length) || (ui.wsErrors && ui.wsErrors.length) ? `<div class="err-box">${(ui.wsErrors && ui.wsErrors.length ? ui.wsErrors : pv.errors).slice(0, 3).map((e) => `<div>${esc(e)}</div>`).join('')}</div>` : ''}
       </aside>
 
       <div class="ws-board">
-        <div class="board-heading"><div class="plate-owner">${legendPortrait(unit, 'plate-face')}<div><strong>${esc(unit.name)}</strong><span>${cellsList.length} 格金属 · 已装 ${V.State.manuscriptsOf(unit).length} 门</span></div></div>
-          <div class="plate-load"><span>负荷 <b>${pv.load}</b> / ${loadCap}</span>${bar(pv.load, loadCap, loadOver ? 'hp' : 'energy')}</div></div>
+        <div class="board-heading"><div class="plate-owner">${plateFace(unit)}<div><strong>${esc(unit.name)}</strong><span>${cellsList.length} 格金属 · 已装 ${V.State.manuscriptsOf(unit).length} 门</span></div></div>
+          <div class="plate-load"><span>负荷 <b>${pv.load}</b> / ${loadCap}${pv.scarSaved > 0 ? ` <span class="tiny muted" title="永久瘢痕已成肉身之纹，不再需要维持">瘢痕 −${pv.scarSaved}</span>` : ''}${loadOver ? ` <span class="danger">${V.Art.iconTag('rust', 'icon-inline')}超载 +${pv.load - loadCap}</span>` : ''}</span>${bar(pv.load, loadCap, loadOver ? 'hp' : 'energy')}</div></div>
         <div class="plate-key"><button type="button" class="film-switch" data-act="wsFilmView" aria-pressed="${!!ui.wsFilmView}"><i aria-hidden="true"></i>${ui.wsFilmView ? '返回装配视图' : '查看覆膜'}</button>
-          <span class="scar-key" title="${esc(terms.瘢痕)}">⌁ 瘢痕 ${(unit.scars || []).length}</span></div>
+          <span class="scar-key" title="${esc(term('scar'))}">${V.Art.iconTag('scar', 'icon-inline')}⌁ 瘢痕 ${(unit.scars || []).length}</span></div>
         <div class="board-stack ${ui.wsFilmView ? 'film-view' : ''}">
           ${surface ? `<div class="board-surface">${surface}</div>` : ''}
           ${boardSvg(state, unit.id, draft, { interactive: true, pickId: ui.wsPick, locked, ms, readOnlyMs: ui.wsMode === 'inscribe' })}
         </div>
-        <div class="plate-readout">${draftStats ? `<span>生命 <b>${draftStats.maxHp}</b></span><span>攻击 <b>${draftStats.atk}</b></span><span>防御 <b>${draftStats.def}</b></span>` : ''}</div>
+        <div class="plate-readout">${draftStats ? `<span title="当前装配的生命上限。战斗中生命降到 0 时倒下。">完整度 <b>${draftStats.maxHp}</b></span><span title="输出脉冲幅值">幅值 <b>${draftStats.atk}</b></span><span title="回路阻抗">阻抗 <b>${draftStats.def}</b></span><span title="电容缓冲上限">缓冲 <b>${draftStats.shieldCap || 0}</b></span>` : ''}</div>
         ${pickedTpl ? `<div class="ws-focus mt2">
           <div class="row wrap tight">
             <span class="gold small">${itemLabel('rune', pickedTpl)}</span>
-            <span class="tag">${pickedTpl.cells.length} 格</span>
-            <span class="tag">负荷 ${pickedTpl.load}</span>
+            ${V.Stats.runeFacts(pickedTpl).size.map((f) => `<span class="tag">${esc(f.label)} ${esc(f.value)}</span>`).join('')}
             ${pickedPlaced ? '' : btn('对纹试铺', 'wsQuickPlace', { cls: 'gold xs', data: { id: pickedItem.id } })}
           </div>
-          <div class="tiny muted mt1">${esc(pickedTpl.desc)}</div>
+          <div class="tiny muted mt1">${esc(V.Flavor.rune(pickedTpl))}</div>
+          <div class="tiny mt1">${factLine(V.Stats.runeFacts(pickedTpl).effects)}</div>
         </div>` : ''}
         <div class="row wrap tight atelier-tools">
           ${ui.wsPick ? btn('旋转 R', 'wsRotate', { cls: 'ghost sm' }) + btn('翻转 F', 'wsFlip', { cls: 'ghost sm' }) + btn('放下', 'wsCancelPick', { cls: 'ghost sm' }) : ''}
           ${btn('撤销', 'wsUndo', { cls: 'ghost sm', disabled: !(ui.wsHist && ui.wsHist.length) })}
           ${btn('重做', 'wsRedo', { cls: 'ghost sm', disabled: !(ui.wsRedo && ui.wsRedo.length) })}
         </div>
-        ${ui.wsMode === 'inscribe' ? '' : `<details class="layout-tools"><summary>布局工具</summary><div class="row wrap tight">
-          ${btn('自动接通', 'wsAutoConnect', { cls: 'ghost xs' })}
-          ${btn(esc(D().PRESETS.basic.name), 'wsPreset', { cls: 'ghost xs', data: { id: 'basic' } })}
-          ${btn(esc(D().PRESETS.charge.name), 'wsPreset', { cls: 'ghost xs', data: { id: 'charge' } })}
-          ${isDirty ? btn('还原已存', 'wsRevert', { cls: 'ghost xs' }) : ''}
-          ${btn('清空纹路', 'wsClear', { cls: 'ghost xs', disabled: !draft.some(p => !locked.has(p.itemId)) })}
-        </div></details>`}
       </div>
 
       <aside class="ws-right">
         ${panel(`${ui.wsMode === 'inscribe' ? '随行纹路' : '纹路库'}（${poolIds.length}）`, `
 
-          <div class="part-list">${poolIds.length ? poolIds.map((id) => {
+          <div class="part-list ws-rune-list">${poolIds.length ? [...poolStacks.values()].map((ids) => {
+    const id = ids.includes(ui.wsPick) ? ui.wsPick : ids[0];
     const it = state.itemsById[id];
     const t = D().template(it.templateId);
     const isPicked = ui.wsPick === id;
     const rot = isPicked ? ui.wsRot : 0;
     const mir = isPicked ? ui.wsMirror : false;
-    return `<button class="part-item ${isPicked ? 'on' : ''}" data-act="wsPick" data-id="${id}" data-stash="1"
+    return `<button type="button" class="part-item ws-rune-card ws-cut${isPicked ? ' on' : ''}" data-act="wsPick" data-id="${id}" data-stash="1"
+      aria-pressed="${isPicked}" title="${workshopRuneTip(t)}"
       ${locked.has(id) ? 'disabled' : ''}>
-      <span class="part-shape-box">${miniShapeSvg(t.id, rot, mir)}</span>
-      <span class="part-text">
-        <span class="part-name">${itemLabel('rune', t)} <span class="tiny muted">· ${t.cells.length}格 · 负荷${t.load}</span></span>
-        <span class="part-meta">${esc(t.desc.replace(/^\d+ 负荷。纹路覆盖时，/, ''))}</span>
-      </span>
+      ${workshopRuneFace(t, rot, mir)}<span class="ws-rune-quantity" aria-label="持有 ${ids.length} 枚">×${ids.length}</span>
     </button>`;
   }).join('') : '<div class="muted small">没有闲置纹路了</div>'}</div>
         `)}
-        ${panel(`板面上的纹路（${draft.length}）`, `<div class="part-list">${draft.length ? draft.map((p) => {
+        ${panel(`板面上的纹路（${draft.length}）`, `<div class="part-list ws-rune-list">${draft.length ? draft.map((p) => {
     const it = state.itemsById[p.itemId];
     if (!it) return '';
     const t = D().template(it.templateId);
     const isLocked = locked.has(p.itemId) || ui.wsMode === 'inscribe';
-    return `<div class="part-item ${ui.wsPick === p.itemId ? 'on' : ''}" data-act="wsPick" data-id="${p.itemId}">
-      <span class="part-shape-box">${miniShapeSvg(t.id, p.rotation, p.mirrorY)}</span>
-      <span class="part-text">
-        <span class="part-name">${itemLabel('rune', t)}</span>
-        <span class="part-meta">${t.cells.length} 格 · 负荷 ${t.load}</span>
-      </span>
-      <span class="row tight">
-        ${isLocked ? '' : btn('卸下', 'wsRemove', { cls: 'ghost xs', data: { id: p.itemId } })}
-      </span>
+    return `<div class="part-item ws-rune-card ws-cut${ui.wsPick === p.itemId ? ' on' : ''}" data-act="wsPick" data-id="${p.itemId}" data-watch-rune="${p.itemId}">
+      <button type="button" class="ws-rune-select" title="${workshopRuneTip(t)}" aria-pressed="${ui.wsPick === p.itemId}">
+        ${workshopRuneFace(t, p.rotation, p.mirrorY)}
+      </button>
+      ${isLocked ? '' : btn('卸下', 'wsRemove', { cls: 'ws-rune-remove ws-cut', data: { id: p.itemId } })}
     </div>`;
   }).join('') : '<div class="muted small">板面空着</div>'}</div>`)}
         ${ui.wsMode === 'inscribe' ? `<div class="col mt2">
@@ -1222,11 +1312,14 @@
 
   function recruitScreen(state, ui) {
     const offers = state.shop || [];
-    return `<section class="hearth-arrivals">${pageHeading('火塘来客', `已结识 ${D().SKINS.filter((s) => state.roster.some((u) => u.skinId === s.id)).length} / 21 位`, btn('打听来客 · 12 金', 'refreshShop', { cls: 'ghost', disabled: state.gold < 12 || D().SKINS.every((s) => state.roster.some((u) => u.skinId === s.id)) }))}
+    return `<section class="hearth-arrivals">${pageHeading('火塘来客', `已结识 ${D().SKINS.filter((s) => state.roster.some((u) => u.skinId === s.id)).length} / ${D().SKINS.length} 位`, btn('打听来客 · 12 金', 'refreshShop', { cls: 'ghost', disabled: state.gold < 12 || D().SKINS.every((s) => state.roster.some((u) => u.skinId === s.id)) }))}
       <div class="recruit-grid">${offers.map((o) => {
-        const preview = ST().makeUnit({ ...state }, { ...o, plateSeed: o.plateSeed == null ? A.Random.seedFrom(o.id) : o.plateSeed });
+        const preview = ST().makeUnit({ ...state }, o);
         const plate = V.Circuit.plateOf(preview);
-        return `<article class="recruit-card metal-card ${o.sold ? 'sold' : ''}"><div class="metal-display">${legendPortrait(preview)}</div><h2>${esc(o.name)}</h2><p class="arrival-body">${esc(D().body(preview.bodyPreset).name)} · ${plate.cellsList.length} 格板面</p><div class="recruit-price"><span><b>${o.price}</b> <span class="muted tiny">金币</span></span>${o.sold ? '<span class="quiet-status">已加入营地</span>' : btn('邀请加入 →', 'recruitOffer', { cls: 'gold', data: { id: o.id }, disabled: state.gold < o.price || state.roster.some((u) => u.skinId === o.skinId) })}</div></article>`;
+        return `<article class="recruit-card metal-card ${o.sold ? 'sold' : ''}"><div class="metal-display">${legendPortrait(preview)}${plateFace(preview, 'plate-chip')}</div><h2>${esc(o.name)}</h2><p class="arrival-body">${esc(D().body(preview.bodyPreset).name)} · <span title="${esc(styleTip(preview.bodyPreset, D().cultureOf(o.skinId)))}">${esc(D().bodyStyle(preview.bodyPreset, D().cultureOf(o.skinId)))}</span> · ${plate.cellsList.length} 格板面</p><p class="arrival-origin tiny muted">${esc(D().originOf(o.skinId))}${(() => {
+          const inn = D().body(preview.bodyPreset).innate;
+          return inn && inn.name ? ` · 相性「${esc(inn.name)}」` : '';
+        })()}</p><div class="recruit-price"><span><b>${o.price}</b> <span class="muted tiny">金币</span></span>${o.sold ? '<span class="quiet-status">已加入营地</span>' : btn('邀请加入 →', 'recruitOffer', { cls: 'gold', data: { id: o.id }, disabled: state.gold < o.price || state.roster.some((u) => u.skinId === o.skinId) })}</div></article>`;
       }).join('') || '<div class="empty-note">火塘旁暂时没有来客</div>'}</div>${ui.shopMsg ? `<div class="err-box mt3">${esc(ui.shopMsg)}</div>` : ''}</section>`;
   }
 
@@ -1242,16 +1335,17 @@
     const shape = V.Manuscript.normalize(m);
     const width = (1 + Math.max(...shape.cells.map(c => c[0]))) * 60;
     const height = (1 + Math.max(...shape.cells.map(c => c[1]))) * 60;
-    return `<svg class="etch-mark" viewBox="-2 -2 ${width+4} ${height+4}" aria-hidden="true">${membraneEngraving(shape, 60)}</svg>`;
+    return `<svg class="etch-mark" viewBox="-2 -2 ${width+4} ${height+4}" aria-hidden="true">${membraneEngraving(shape, 60, {catalogue: true})}</svg>`;
   }
 
   function archiveCatalogue() {
     const entries = (items, kind) => items.map(m => {
       const source = kind === 'rune' ? '战获 · 宝箱 · 游商' : m.fieldSource
-        ? `第 ${m.fieldDepth} 层起 · ${m.fieldSource === 'chest' ? '宝箱拓本' : '精英战获'}`
+        ? `第 ${m.fieldDepth} 层起 · ${m.fieldSource === 'chest' ? '宝箱产出' : '精英战获'}`
         : `完成 ${D().rewardNodes[m.unlockDepth-1]} 个节点起 · 撤离奖励`;
+      const facts = kind === 'rune' ? V.Stats.runeFacts(m) : V.Stats.manuscriptFacts(m);
       return `<article class="catalogue-entry" data-catalogue-item="${esc([m.name, m.desc, source].join(' '))}" data-filter="${kind}">
-        <div class="catalogue-shape">${kind === 'rune' ? miniShapeSvg(m.id, 0, false) : etchingMark(m)}</div><small>${kind === 'rune' ? '纹路' : '蚀刻法'} · ${m.cells.length} 格 · 负荷 ${m.load}</small><h4>${itemLabel(kind, m)}</h4><p>${esc(m.desc)}</p><small>${esc(source)}</small></article>`;
+        <div class="catalogue-shape">${kind === 'rune' ? miniShapeSvg(m.id, 0, false) : etchingMark(m)}</div><small>${kind === 'rune' ? '纹路' : '蚀刻法'} · ${factLine(facts.size)}</small><h4>${itemLabel(kind, m)}</h4><p>${esc(facts.flavor)}</p><small>${esc(source)}</small></article>`;
     }).join('');
     return `<details class="archive-catalogue" data-catalogue="archive"><summary>回廊藏品索引</summary>
       ${catalogueControls('查名称、效果或出处', [['','全部藏品'],['etching','蚀刻法'],['rune','纹路']])}
@@ -1302,7 +1396,7 @@
     }).join('');
     const art = Object.keys(places).map(token=>{
       const tag = describe(token), turn = entries.get(token).turn;
-      const drawing = tag.kind === 'rune' ? V.RuneArt.thumb(tag.spec.id,null,turn) : tag.kind === 'weapon' ? esc(tag.spec.name) : V.CatalogueArt?.icon(tag.kind,tag.spec.id) || '';
+      const drawing = tag.kind === 'rune' ? V.RuneArt.footprint(tag.spec.id,turn) : tag.kind === 'weapon' ? esc(tag.spec.name) : V.CatalogueArt?.icon(tag.kind,tag.spec.id) || '';
       return footprintArt(tag,token,slots.flatMap((v,i)=>v===token?[i]:[]),token===picked,turn,drawing,'store');
     }).join('');
     const tag = picked && describe(picked);
@@ -1402,7 +1496,7 @@
           ${btn(busy?.id === r.id ? '制作中…' : ready ? '烹饪一份' : plan ? '背包放不下' : '缺食材', 'cookRecipe', { cls: ready ? 'gold' : 'ghost', data: { id: r.id }, disabled: !ready || !!busy })}</div></article>`;
     };
     return `<section class="k-kitchen"><header class="k-stove">
-      ${V.Art.v1Tag('node.camp', 'k-stove-art')}<div><h2>${field ? '营火炊事' : '营地厨房'}</h2>
+      ${V.Art.anyImgTag('node.camp', 'k-stove-art')}<div><h2>${field ? '营火炊事' : '营地厨房'}</h2>
       <p>做好后收进背包，选一名队员用餐。</p></div>
       <div class="k-stove-actions">${btn('打开背包 · ' + Object.values(packed).reduce((n,q) => n+q,0) + ' 份菜品','kitchenPack',{cls:'gold sm'})}
       ${field ? '' : btn('查看仓库', 'go', { cls: 'ghost sm', data: { v: 'stash' } })}</div></header>
@@ -1444,6 +1538,77 @@
       <h1>${esc(title)}</h1>${detail ? `<p>${esc(detail)}</p>` : ''}</div></header>`;
   }
 
+  function routeTrack(run) {
+    const chapter = D().chapterAt(run.floor);
+    const current = run.nodes.find(n => n.id === (run.activeNodeId || run.lockedNodeId)) || (run.nodes.length === 1 ? run.nodes[0] : null);
+    return `<ol class="ex-depth topology-track" aria-label="本章探索进度">${Array.from({length: 7}, (_, i) => {
+      const floor = (chapter.number - 1) * 7 + i + 1;
+      const here = floor === run.floor;
+      const type = i === 6 ? 'boss' : here ? current?.type : null;
+      const label = '第 ' + (i + 1) + ' 节' + (type ? ' · ' + D().nodeType(type).name : '');
+      return `<li class="${here ? 'here' : floor < run.floor ? 'passed' : ''}" ${here ? 'aria-current="step"' : ''} aria-label="${esc(label)}" title="${esc(label)}">
+        <span class="track-medal">${type ? A.Art.imgTag('node.' + type, 'track-emblem') : ''}<i aria-hidden="true"></i></span><small>${i+1}</small></li>`;
+    }).join('')}</ol>`;
+  }
+
+  function expeditionTopology(state, ui, battle = null, records = true) {
+    const r = state.run;
+    const party = (battle ? battle.allies.map(u => ({uid: u.sourceUnitId, live: u, slot: u.slot})) : r.party)
+      .slice().sort((a,b) => a.slot - b.slot);
+    const selected = party.find(p => p.uid === ui.topologyUnit) || party[0];
+    const selectedUnit = state.roster.find(u => u.id === selected?.uid);
+    const dataFor = unit => r.fieldLayouts?.[unit.id] || unit.board.placements;
+    const crew = Array.from({length: 4}, (_, slot) => {
+      const entry = party.find(p => p.slot === slot);
+      const u = entry && state.roster.find(x => x.id === entry.uid);
+      if (!u) return `<div class="topology-vacant">${slot + 1} 号位 · 空位</div>`;
+      const placements = dataFor(u);
+      const stats = entry.live || V.Roster.stats(state, u, placements);
+      const load = entry.live?.circuit || V.Circuit.preview(state, u.id, placements);
+      return `<button type="button" class="topology-crew-card" data-act="selectTopologyUnit" data-id="${esc(u.id)}"
+        aria-pressed="${u === selectedUnit}">
+        <span class="legend-portrait">${V.Art.portraitTag(u.skinId, '')}</span>
+        <span class="topology-crew-info"><strong>${esc(u.name)}</strong>
+          <small class="topology-role">${V.Positions.style(u).mode === 'melee' ? '近战' : '远程'} · ${esc(V.Positions.style(u).label || '')}</small>
+          <span class="topology-stats">
+            <span>完整度 <b data-integrity>${entry.live?.hp ?? entry.hp ?? stats.maxHp}/${stats.maxHp}</b></span>
+            <span>幅值 <b data-amplitude>${Math.round(stats.atk * (stats.pulseAmp || 1) * 10) / 10}</b></span>
+            <span>阻抗 <b data-impedance>${stats.def}</b></span>
+            <span>负荷 <b>${load.load}/${load.cap}</b></span>
+          </span></span>${V.Art.plateTag(D().body(u.bodyPreset).archetype, 'topology-plate-medal')}</button>`;
+    }).join('');
+    let board = '';
+    let diagnosis = '';
+    if (selectedUnit) {
+      const placements = dataFor(selectedUnit);
+      const live = selected.live;
+      const circuit = live?.circuit || V.Circuit.compile(state, selectedUnit.id, placements).value;
+      const ms = live?.ms?.pulse ? live.ms : V.Circuit.manuscriptState(state, selectedUnit.id, placements);
+      const plate = V.Circuit.plateOf(selectedUnit);
+      board = `<header class="topology-board-title"><h2>金属板面</h2><span>${plate.cells.size} 格 · ${esc(manuscriptNames(selectedUnit))}</span></header>
+        <div class="board-stack">${boardSvg(state, selectedUnit.id, placements, {combat: live, stress: selected.stress})}</div>
+        <div class="topology-key"><span>蚀刻法</span><span>贯通脉冲</span><span>外围熔断</span></div>`;
+      diagnosis = `<h3>回路诊断</h3><dl><div><dt>脉冲通路</dt><dd>${ms.routed ? '已贯通 · ' + ms.pulse.path.length + ' 格' : '未贯通'}</dd></div>
+        <div><dt>已用格位</dt><dd>${circuit?.panel?.usedCells || 0} / ${plate.cells.size}</dd></div>
+        <div><dt>弯折 / 闭环</dt><dd>${ms.pulse.turns || 0} / ${circuit?.panel?.loops || 0}</dd></div>
+        <div><dt>缓冲 / 熔断</dt><dd data-topology-buffer>${live?.shield || 0} / ${live?.fusedNodes?.length || 0}</dd></div></dl>`;
+    }
+    return `<div class="topology-console">
+      <section class="topology-panel topology-crew"><h2>随行来客</h2><div class="topology-crew-list">${crew}</div></section>
+      <section class="topology-panel topology-assembly">${board}</section>
+      <aside class="topology-panel topology-diagnostics"><h2>${esc(D().chapterAt(r.floor).name)}</h2>${routeTrack(r)}
+        ${diagnosis}
+        <h3>战利品</h3><dl><div><dt>金币 / 遗物</dt><dd>${r.goldFound} / ${r.shards}</dd></div>
+        <div><dt>纹路 / 行囊</dt><dd>${r.bag.length} · ${V.Expedition.bagUsed(state)}/${V.Expedition.bagCapacity(state)} 格</dd></div>
+        <div><dt>蚀刻法匣</dt><dd>${r.fieldManuscript ? esc(D().manuscript(r.fieldManuscript).name) : '空'}</dd></div></dl>
+        ${btn('立即撤离', battle ? 'retreatEmergency' : 'extractNow', { cls: 'gold topology-extract' })}
+        ${!records ? '' : battle ? `<details class="topology-record"><summary>战场记录</summary><div class="battle-log" id="battleLog">${(battle.logs || []).slice(-14).map(l => `<div class="lg ${logClass(l)}">${esc(l.text || '')}</div>`).join('')}</div></details>
+          <details class="topology-record"><summary>单位状态</summary><div data-battle-status>${[...battle.allies, ...battle.enemies].map(battleBar).join('')}</div></details>`
+          : `<details class="k-carry"><summary>随行食材 · ${ingredientSummary(r.ingredients)}</summary>${ingredientRows(r.ingredients, false)}</details>`}
+      </aside>
+    </div>`;
+  }
+
   function mapScreen(state, ui) {
     const r = state.run;
     const max = D().DESIGN.maxFloor;
@@ -1454,19 +1619,14 @@
       `${r.floor < 3 ? '完成三层' : '完成本层'}后撤离，可带回「${upcoming.name}」`;
     const rewards = { battle: '金币 · 纹路 · 战后取材', elite: '更多金币 · 两件纹路 · 取材', boss: r.floor === max ? '通关 · 三件纹路' : '突破本章 · 三件纹路', chest: '两件纹路 · 采集食材', camp: '休整 · 营火做菜 · 烙印', merchant: '购买纹路', event: '调查现场 · 自选结果' };
     if (!r.fieldManuscript) {
-      rewards.chest += ' · 可能藏有拓本';
-      rewards.elite += ' · 战获拓本';
+      rewards.chest += ' · 可能藏有蚀刻法';
+      rewards.elite += ' · 战获蚀刻法';
     }
     return `<div class="ex-page">
       ${expeditionHeader(state, chapter.step === 7 ? 'scene.boss' : 'scene.corridor', chapter.step === 7 ? D().enemy(chapter.boss).name : chapter.name, milestone)}
-      <ol class="ex-depth" aria-label="远征进度">${Array.from({ length: 7 }, (_, i) => {
-        const floor = (chapter.number-1)*7+i+1;
-        return `<li class="${floor === r.floor ? 'here' : floor < r.floor ? 'passed' : ''}" ${floor === r.floor ? 'aria-current="step"' : ''}>
-          <b>${String(i+1).padStart(2, '0')}</b><span>${i === 6 ? '首领' : D().DESIGN.blessingFloors.includes(floor) ? '祝福' : '下潜'}</span></li>`;
-      }).join('')}</ol>
       <details class="chapter-itinerary"><summary>七章路线</summary><ol>${D().CHAPTERS.map((c,i) =>
         `<li ${i+1 === chapter.number ? 'aria-current="step"' : ''}><b>${esc(c.name)}</b><small>${esc(D().enemy(c.boss).name)}</small></li>`).join('')}</ol></details>
-      <div class="ex-map-layout"><section class="ex-fork"><h2>选择去路</h2><div class="ex-paths">${r.nodes.map((n) => {
+      <section class="ex-fork topology-panel"><h2>选择去路</h2><div class="ex-paths">${r.nodes.map((n) => {
         const risk = ['chest', 'merchant'].includes(n.type) ? '补给'
           : { low: '低危', medium: '中危', high: '高危', deadly: '致命', none: '安全' }[n.risk] || n.risk;
         return `<button class="ex-road" data-act="chooseNode" data-id="${esc(n.id)}" ${n.consumed ? 'disabled' : ''}>
@@ -1474,23 +1634,48 @@
           <span class="ex-road-info"><small class="ex-risk risk-${esc(n.risk)}">${esc(risk)}</small>
           <strong>${esc(n.name)}</strong><span>${esc(rewards[n.type] || n.desc)}</span></span></button>`;
       }).join('')}</div>${biomeNotes(state)}</section>
-      <aside class="ex-manifest"><h2>随行小队</h2><div class="ex-crew">${r.party.map((p) => {
-        const u = state.roster.find((x) => x.id === p.uid);
-        const maxHp = V.Roster.stats(state, u).maxHp;
-        const hp = p.hp ?? maxHp;
-        return `<div class="ex-crew-member">${legendPortrait(u)}<div><strong>${esc(u.name)}</strong>
-          <small>${p.slot + 1}号位 · 压力 ${p.stress}</small>${bar(hp, maxHp, 'hp')}</div><span>${hp}<small>/${maxHp}</small></span></div>`;
-      }).join('')}</div><div class="ex-pack">
-        <h2>撤离可带回</h2><p>金币 <b>${r.goldFound}</b>　遗物 <b>${r.shards}</b>　纹路 <b>${r.bag.length}</b></p>
-        <p>拓本匣 · <b>${r.fieldManuscript ? itemLabel('etching', D().manuscript(r.fieldManuscript)) : '空 0/1'}</b></p>
-        <details class="k-carry"><summary>随行食材 · ${ingredientSummary(r.ingredients)}</summary>${ingredientRows(r.ingredients, false)}</details>
-        ${bar(V.Expedition.bagUsed(state), V.Expedition.bagCapacity(state), 'energy')}
-        <small>背包 ${V.Expedition.bagUsed(state)} / ${V.Expedition.bagCapacity(state)} 格 · 已完成 ${r.completedFloors} 层</small>
-        ${r.completedFloors >= 3 ? `<small>蚀刻法 · ${esc(D().manuscriptReward(state, D().rewardTier(r.completedFloors)).name)}</small>` : ''}
-        ${btn(r.completedFloors ? '带着收获撤离' : '返回前哨', 'extractNow', { cls: 'ghost' })}</div></aside></div></div>`;
+      ${expeditionTopology(state, ui)}</div>`;
   }
 
   /* ------------------------------ 战前 ------------------------------ */
+
+  function preparationField(state, ui, enemies) {
+    const { ARENA: a, homeX, homeY, projectY, style, attackRange } = V.Positions;
+    const px = x => `${x / a.width * 100}%`;
+    const py = y => `${projectY(y) / a.height * 100}%`;
+    const anchor = (x, y) => `left:${px(x)};top:${py(y)};z-index:${Math.round(projectY(y))}`;
+    const selected = state.roster.find(u => u.id === ui.prepUnit);
+    const selectedEntry = state.run.party.find(p => p.uid === selected?.id);
+    const range = selectedEntry && attackRange({ ...selected, slot: selectedEntry.slot });
+    return `<div class="prep-field" data-prep-field role="group" aria-label="遭遇战场" aria-describedby="prep-help"
+        style="aspect-ratio:${a.width}/${a.height}">
+      ${V.Art.anyImgTag('scene.battle.angled', 'prep-field-art')}
+      <span class="prep-side ally">我方布阵</span><span class="prep-side enemy">敌方</span>
+      <div class="prep-zone" aria-hidden="true" style="left:${px(a.minX)};right:${px(a.width - a.maxX)};top:${py(a.minY)};bottom:${100 - projectY(a.maxY) / a.height * 100}%"></div>
+      ${range ? `<div class="prep-reach-layer" aria-hidden="true" style="clip-path:inset(${py(a.minY)} 0 ${100 - projectY(a.maxY) / a.height * 100}%);">
+        <div class="prep-reach" style="left:${px(homeX(selectedEntry))};top:${py(homeY(selectedEntry))};
+          width:${px(2 * range)};height:${2 * range * a.depthScale / a.height * 100}%"></div></div>` : ''}
+      ${state.run.party.map(p => {
+        const unit = state.roster.find(u => u.id === p.uid);
+        const kind = style(unit).mode === 'melee' ? '近战' : '远程';
+        return `<button type="button" class="prep-actor ally" data-act="prepPick" data-id="${esc(unit.id)}"
+          data-prep-unit="${esc(unit.id)}" data-field-x="${homeX(p)}" data-field-y="${homeY(p)}"
+          style="${anchor(homeX(p), homeY(p))}" aria-pressed="${unit === selected}"
+          aria-label="${esc(`${unit.name} · ${kind} · ${p.slot + 1} 号位 · 射程 ${attackRange({ ...unit, slot: p.slot })}`)}">
+          ${V.Art.anyImgTag(`sprite.${unit.skinId}`, 'prep-sprite')}
+          <span class="prep-actor-name">${esc(unit.name)}</span>
+        </button>`;
+      }).join('')}
+      ${enemies.map(u => {
+        const enemy = { ...u, side: 'enemy' };
+        return `<div class="prep-actor enemy ${u.isBoss ? 'boss' : ''}" style="${anchor(homeX(enemy), homeY(enemy))}">
+          ${V.Art.anyImgTag(`enemy.${u.enemyType}`, 'prep-sprite')}
+          <span class="prep-actor-name">${esc(u.name)}</span></div>`;
+      }).join('')}
+    </div>
+    <p class="prep-help muted" id="prep-help" aria-live="polite">${selected
+      ? `${esc(selected.name)} · 射程 ${range}。点击己方地面或用方向键移动。` : '抓住队员拖到己方地面。也可以先选队员，再选落点。'}</p>`;
+  }
 
   function prebattleScreen(state, ui) {
     const r = state.run;
@@ -1499,61 +1684,35 @@
     const bp = enc.enemyBlueprint;
     const prep = enc.preparation;
     const attempt = enc.attemptNumber;
-
-    return `
-    <div class="ex-page">${expeditionHeader(state, 'node.' + (bp.kind === 'normal' ? 'battle' : bp.kind), '遭遇整备', bp.units.map((u) => u.name).join(' · '))}
-    <div class="ex-prep">
-      ${panel('敌方情报', `<div class="enemy-list">${bp.units.map((u) => `<div class="enemy-row">
+    const enemyIntel = panel('敌方情报', `<div class="enemy-list">${bp.units.map((u) => `<div class="enemy-row">
         ${u.isBoss ? V.Art.bossTag(u.enemyType, 'enemy-boss-img') : ''}
         <span class="enemy-name ${u.isBoss ? 'boss' : ''}">${esc(u.name)}</span>
-        <span class="muted tiny">${u.hp} 生命 · ${u.atk} 攻击 · ${u.def} 防御 · ${u.spd} 速度</span>
+        <span class="muted tiny">${u.hp} 完整度 · ${u.atk} 幅值 · ${u.def} 阻抗 · ${u.spd} 节拍</span>
         <span class="k-harvest-note">可取材 · ${itemLabel('ingredient', V.Kitchen.INGREDIENTS[V.Kitchen.ECOSYSTEM[u.enemyType].ingredient])} ×1</span>
         ${u.isBoss ? tag('首领', 'tag-boss') : ''}
-      </div>`).join('')}</div>
-      `)}
+      </div>`).join('')}</div>`);
 
-      ${panel('出战阵形', `
-
-        <div class="vet-grid mt2">${prep.formation.map((uid, slot) => {
-    const u = uid ? state.roster.find((x) => x.id === uid) : null;
-    const partyEntry = u ? r.party.find((p) => p.uid === u.id) : null;
-    const stStats = u ? V.Roster.stats(state, u) : null;
-    const curHp = u && partyEntry ? (partyEntry.hp == null ? stStats.maxHp : partyEntry.hp) : 0;
-    return `<div class="vet-slot ${u ? '' : 'empty'}">
-      <div class="vet-slot-no">${slot + 1}号位</div>
-      ${u ? legendPortrait(u, 'vet-slot-metal')
-        + `<div class="vet-name">${esc(u.name)}</div>
-           <div class="vet-weapon">${esc(manuscriptNames(u))}</div>
-           <div class="tiny muted">${curHp}/${stStats.maxHp} · 压${partyEntry ? partyEntry.stress : 0}</div>
-           ` : '<div class="vet-empty">空位</div>'}
-      <div class="row tight mt2 slot-ops">
-        ${slot > 0 ? btn('←', 'prepMove', { cls: 'ghost xs', data: { from: String(slot), to: String(slot - 1) } }) : ''}
-        ${btn('换位', 'prepPick', { cls: 'ghost xs', data: { id: String(slot) } })}
-        ${slot < 3 ? btn('→', 'prepMove', { cls: 'ghost xs', data: { from: String(slot), to: String(slot + 1) } }) : ''}
-      </div>
-    </div>`;
-  }).join('')}</div>
-        ${ui.prepSlot != null ? `<div class="picker mt2"><div class="muted small mb2">把 ${ui.prepSlot + 1} 号位换成</div>
-          <div class="row wrap">${prep.formation.map((uid) => {
-    if (!uid) return '';
-    const u = state.roster.find((x) => x.id === uid);
-    return btn(u.name, 'prepSwap', { cls: 'ghost xs', data: { a: String(ui.prepSlot), uid } });
-  }).join('')}</div></div>` : ''}
+    return `
+    <div class="ex-page ex-preparation">
+      <div class="prep-heading row wrap"><div><h1>遭遇整备</h1><span class="muted">${esc(D().chapterAt(r.floor).name)} · 第 ${r.floor} 层</span></div>
+        ${btn(attempt > 0 ? '开始第 ' + (attempt + 1) + ' 次尝试' : '开始战斗', 'startAttempt', { cls: 'gold' })}</div>
+      <section class="battle-stage topology-panel" aria-label="战场布阵">${preparationField(state, ui, bp.units)}</section>
+      <div class="ex-prep">${panel('作战指令', `
         <details class="ex-rules"><summary>查看作战指令</summary>
-        ${state.roster.filter((u) => prep.formation.includes(u.id)).map((u) => {
+        ${state.roster.filter(u => r.party.some(p => p.uid === u.id)).map(u => {
     const rules = (prep.rules[u.id] || u.gambits).filter((x) => x.enabled !== false);
     return `<div class="rule-line"><span class="muted tiny">${esc(u.name)}</span>
-      <span class="tiny">${rules.length ? rules.map((x) => esc(ruleText(x))).join(' / ') : '（仅基础攻击）'}</span></div>`;
+      <span class="tiny">${rules.length ? rules.map((x) => esc(ruleText(x))).join(' / ') : '（仅普通攻击）'}</span></div>`;
   }).join('')}</details>
         <div class="row wrap mt3">
-          ${btn(attempt > 0 ? '开始（第 ' + (attempt + 1) + ' 次尝试）' : '开始战斗', 'startAttempt', { cls: 'gold' })}
-          ${btn('编辑指令', 'editRules', { cls: 'ghost', data: { id: prep.formation.filter(Boolean)[0] } })}
+          ${btn('编辑指令', 'editRules', { cls: 'ghost', data: { id: r.party[0]?.uid } })}
         </div>
         <div class="row mt2">
           ${btn('紧急撤退', 'retreatEmergency', { cls: 'ghost danger sm' })}
         </div>
         ${attempt > 0 ? `<div class="muted tiny mt2">已经试过 ${attempt} 次。重试不消耗任何资源。</div>` : ''}
       `)}
+      ${enemyIntel}
     </div>
     ${retreatPreviewPanel(state, ui)}</div>`;
   }
@@ -1571,25 +1730,19 @@
     const b = state.run && state.run.battle;
     if (!b) return panel('战斗', '<p class="muted">没有战斗。</p>');
     return `
-    <div class="ex-page ex-combat"><div class="battle-top ex-combat-top">
+    <div class="ex-page ex-combat"><div class="battle-top ex-combat-top topology-panel">
       <h1>${esc({ normal: '回廊交锋', elite: '精英遭遇', boss: '首领交锋' }[b.kind] || '回廊交锋')}</h1>
       <span class="bt-round">回合 ${b.round}</span>
       <span class="bt-tick muted tiny">${(b.tick * D().DESIGN.stepSeconds).toFixed(1)}s</span>
       <div class="spacer"></div>
-      <button class="btn ghost xs" id="btlTactic" data-act="setTactic" title="均衡：按战前指令；集火：优先虚弱者；压制：优先蓄力敌人">战术：${({ balance: '均衡', focus: '集火', safe: '压制' })[b.tactic] || '均衡'}</button>
+      <button class="btn ghost xs" id="btlTactic" data-act="setTactic" title="均衡：按战前指令；集火：优先虚弱者；压制：优先引导敌人">战术：${({ balance: '均衡', focus: '集火', safe: '压制' })[b.tactic] || '均衡'}</button>
       <button class="btn ghost xs" id="btlSpeed" data-act="cycleSpeed">速度 ×${ui.speed || 1}</button>
       <button class="btn ghost xs" data-act="togglePause">${ui.paused ? '继续' : '暂停'}</button>
+      ${btn('重新整备', 'rewind', { cls: 'ghost xs' })}
+      ${b.over ? btn(b.win ? '结算战果' : '查看结果', 'reviewNow', { cls: 'gold xs', id: 'btlNext' }) : ''}
     </div>
-    <div class="ex-battle-layout"><div class="ex-field"><div class="battle-stage"><canvas id="cv" width="960" height="300" aria-label="战场与双方行动"></canvas></div>
-    <div class="battle-actions">
-      ${b.over ? btn(b.win ? '结算战果' : '查看结果', 'reviewNow', { cls: 'gold', id: 'btlNext' })
-    : '<span class="muted tiny" id="btlWait">交战中</span>'}
-      ${btn('重新整备', 'rewind', { cls: 'ghost sm' })}
-      ${btn('紧急撤退', 'retreatEmergency', { cls: 'ghost sm danger' })}
-    </div></div>
-    <aside class="ex-feed"><h2>战场记录</h2><div class="battle-log" id="battleLog">${(b.logs || []).slice(-14).map((l) => `<div class="lg ${logClass(l)}">${esc(l.text || '')}</div>`).join('')}</div></aside></div>
-    <div class="battle-bars"><section><h2>我方阵线</h2><div class="side allies">${b.allies.slice().sort((a, c) => c.slot - a.slot).map(battleBar).join('')}</div></section>
-      <section><h2>敌方阵线</h2><div class="side enemies">${b.enemies.map(battleBar).join('')}</div></section></div></div>`;
+    <div class="battle-stage topology-panel"><canvas id="cv" width="${V.View.CW * 3}" height="${V.View.CH * 3}" aria-label="战场与双方行动"></canvas></div>
+    ${expeditionTopology(state, ui, b)}</div>`;
   }
 
   function logClass(l) {
@@ -1602,29 +1755,38 @@
 
   function battleBar(u) {
     const isAlly = u.side === 'ally';
-    const pressurePenalty = Math.round((1 - V.Combat.pressureRegenMultiplier(u.stress)) * 100);
-    /* 时间轴：能量按秒回，出手靠 atkTimer，不再有「行动条」 */
+    /* 裂了的人，同一个压力档位算出来是负的：回裕要乘抛光倍率，伤害加成是反的 */
+    const cracked = !!u.cracked;
+    const polish = u.polishMult == null ? 1 : u.polishMult;
+    const pressurePenalty = Math.round((1 - V.Combat.pressureRegenMultiplier(u.stress) * polish) * 100);
+    const pressureBoost = Math.round((V.Combat.pressureDamageMultiplier(u.stress, u) - 1) * 100);
+    /* 高热：压力顶到 50 之上，超载扣的那段回裕被抵掉。bar 上要说出来，
+       否则玩家只看「压力 60 · 回裕 −15%」会以为超载还在罚他 */
+    const heatOn = isAlly && (u.overloadPenalty || 0) > 0 && V.Combat.heatConducting(u);
+    /* 时间轴：余裕按秒回，出手靠 atkTimer，不再有「行动条」 */
     const energy = [Math.floor(u.energy || 0), Math.round(u.energyMax || 20)];
-    const gPct = Math.max(0, Math.min(100, ((u.atkTimer || 0) / (u.attackInterval || 0.5)) * 100));
-    const hasBurn = (u.buffs || []).some((x) => x.k === 'burn' || x.k === 'bleed');
+    /* 持续伤害改为按「目标出手次数」结算后，条上直接写还剩几次 */
+    const DOT_NAME = { burn: '灼烧', bleed: '流血', poison: '中毒', corrode: '腐蚀' };
+    const dots = (u.buffs || []).filter((x) => DOT_NAME[x.k]);
     const hasGuard = (u.buffs || []).some((x) => x.k === 'guard' || x.k === 'dmgReduce');
+    const atkUp = (u.buffs || []).find((x) => x.k === 'atkUp');
     return `<div class="unit-bar ${u.alive === false ? 'dead' : ''} ${u.isBoss ? 'boss' : ''}">
       <div class="ub-top"><span class="ub-name">${esc(u.name)}</span>
         <span class="ub-slot">${u.slot + 1}号</span></div>
-      ${bar(u.hp, u.maxHp, 'hp')}
-      <div class="bar gauge"><i style="width:${gPct.toFixed(0)}%"></i></div>
       <div class="ub-meta">
         <span>${u.hp}/${u.maxHp}</span>
         ${u.shield > 0 ? `<span class="shield">盾${u.shield}</span>` : ''}
-        ${isAlly ? `<span class="energy" title="${esc(terms.余裕)}">余裕 ${energy[0]}/${energy[1]}</span>` : ''}
-        ${isAlly ? `<span class="${pressurePenalty ? 'tag tag-warn' : ''}" title="${esc(terms.压力)} · 每秒自然恢复${V.Combat.energyRegen(u).toFixed(2)}余裕">压力 ${u.stress || 0}${pressurePenalty ? ' · 回裕 −' + pressurePenalty + '%' : ''}</span>` : ''}
-        ${u.skipActions > 0 ? tag('被压住', 'tag-warn') : ''}
-        ${u.charging ? tag('蓄力 · ' + u.charging.name, 'tag-boss') : ''}
-        ${hasBurn ? tag('灼烧', 'tag-warn') : ''}
+        ${isAlly ? `<span class="energy" title="${esc(term('energy'))}">余裕 ${energy[0]}/${energy[1]}</span>` : ''}
+        ${isAlly ? `<span class="${pressurePenalty ? 'tag tag-warn' : ''}" title="${esc(term('stress'))} · 每秒自然恢复${V.Combat.energyRegen(u).toFixed(2)}余裕${u.overloadPenalty ? ` · 超载已扣 ${u.overloadPenalty.toFixed(2)}${heatOn ? '（高热：已抵掉）' : ''}` : ''}">压力 ${u.stress || 0}${pressurePenalty ? ` · 回裕 −${pressurePenalty}%` : ''}${pressureBoost ? ` · 伤害 ${pressureBoost > 0 ? '+' : ''}${pressureBoost}%` : ''}</span>` : ''}
+        ${heatOn ? tag('高热', 'tag-ok') : ''}
+        ${cracked ? tag('裂', 'tag-boss') : ''}
+        ${u.charging ? tag('引导 · ' + u.charging.name, 'tag-boss') : ''}
+        ${dots.map((d) => tag(`${DOT_NAME[d.k]} ×${d.hits || 0}`, 'tag-warn')).join('')}
         ${hasGuard ? tag('减伤', 'tag-circuit') : ''}
+        ${atkUp ? tag(`强化 ×${atkUp.hits || 0}`, 'tag-ok') : ''}
         ${u.refract > 0 ? tag('残影', 'tag-circuit') : ''}
       </div>
-      ${isAlly ? `<div class="live-technique"><b>${esc(u.casting && u.pendingSkill ? u.pendingSkill.name : ([u.ms, ...(u.extraMs || [])].filter((m) => m?.spec).map((m) => m.spec.name).join('、') || '基础平攻'))}</b><span>${u.casting ? '引导 ' + Math.max(0, u.castTimer).toFixed(1) + 's' : (u.skillList || []).length ? '蓄势 ' + Math.floor(u.energy || 0) : '持续平攻'}</span></div>` : ''}
+      ${isAlly ? `<div class="live-technique"><b>${esc(u.casting && u.pendingSkill ? u.pendingSkill.name : ([u.ms, ...(u.extraMs || [])].filter((m) => m?.spec).map((m) => m.spec.name).join('、') || '基础普通攻击'))}</b><span>${u.casting ? '引导 ' + Math.max(0, u.castTimer).toFixed(1) + 's' : (u.skillList || []).length ? '蓄势 ' + Math.floor(u.energy || 0) : '持续普通攻击'}</span></div>` : ''}
 
     </div>`;
   }
@@ -1638,7 +1800,7 @@
     const rep = p.report || {};
     const win = p.outcome === 'win';
     return `
-    <div class="ex-page">${expeditionHeader(state, rep.kind === 'boss' ? 'scene.boss' : 'scene.corridor', win ? '战斗胜利' : p.outcome === 'timeout' ? '回廊闭合' : '小队败退', rep.allies?.filter(u => u.alive).length + ' 人仍可作战')}
+    <div class="ex-page">${expeditionHeader(state, rep.kind === 'boss' ? 'scene.boss' : win ? 'scene.corridor' : 'scene.extract', win ? '战斗胜利' : p.outcome === 'timeout' ? '回廊闭合' : '小队败退', rep.allies?.filter(u => u.alive).length + ' 人仍可作战')}
     ${panel(win ? '可领取战利品' : '战后决定', `
       <div class="row wrap mb3">
         <span class="chip">${((rep.tick || 0) * D().DESIGN.stepSeconds).toFixed(1)}s</span><span class="chip">回合 ${rep.round || 0}</span>
@@ -1656,6 +1818,7 @@
       </div>
     `)}
     <h2>小队战绩</h2>${contributionGrid(rep)}
+    ${state.run?.battle ? `<details class="topology-review"><summary>战后板面</summary>${expeditionTopology(state, ui, state.run.battle, false)}</details>` : ''}
     <details class="combat-journal"><summary>战斗记录</summary><div class="battle-log">${(rep.logs || []).map((l) => `<div class="lg ${logClass(l)}">${esc(l.text || '')}</div>`).join('')}</div></details></div>`;
   }
 
@@ -1666,8 +1829,8 @@
     if (!it) return '';
     const t = D().template(it.templateId);
     return `<article class="ex-part"><div class="ex-specimen">${miniShapeSvg(t.id, 0, false)}</div><div class="ex-part-info">
-      <small>占用 ${t.cells.length} 格 · 负荷 ${t.load}</small><h3>${itemLabel('rune', t)}</h3>
-      <p>${esc(t.desc.replace(/^\d+ 负荷。/, ''))}</p>${action}</div></article>`;
+      <small>${factLine(V.Stats.runeFacts(t).size)}</small><h3>${itemLabel('rune', t)}</h3>
+      <p>${esc(V.Flavor.rune(t))}</p>${action}</div></article>`;
   }
 
   const groundColumns = 6;
@@ -1762,7 +1925,7 @@
     const clipId = 'ground-cut-' + kind + '-' + id;
     const mask = kind === 'ingredient' && width*height > cells.length
       ? `<svg width="0" height="0" aria-hidden="true"><defs><clipPath id="${clipId}" clipPathUnits="objectBoundingBox">${cells.map(([x,y]) => `<rect x="${x/width}" y="${y/height}" width="${1/width}" height="${1/height}"/>`).join('')}</clipPath></defs></svg>` : '';
-    const art = kind === 'rune' ? V.RuneArt.thumb(spec.id,null,it.turn) : V.CatalogueArt.icon(kind,spec.id);
+    const art = kind === 'rune' ? V.RuneArt.footprint(spec.id,it.turn) : V.CatalogueArt.icon(kind,spec.id);
     const pieces = cells.map(([x,y]) => {
       const edge = [[x,y-1],[x+1,y],[x,y+1],[x-1,y]].map(c => occupied.has(c.join(',')) ? '0' : '1px').join(' ');
       return `<span class="ground-cell" aria-hidden="true" style="left:${100*(x-ax)}%;top:${100*(y-ay)}%;border-width:${edge}"></span>`;
@@ -1791,7 +1954,7 @@
     const items = groundItems(state, ui);
     const rows = ui.groundSurvey.rows;
     const slots = Array.from({length:rows * groundColumns}, (_,i) => `<span class="ground-slot" data-ground-slot="${i}" aria-hidden="true" style="grid-column:${i%groundColumns+1};grid-row:${Math.floor(i/groundColumns)+1}"></span>`).join('');
-    return `<div class="ex-page loot-page"><div class="loot-columns">
+    return `<div class="ex-page loot-page">${expeditionHeader(state, 'scene.chest', chest ? '封存宝箱' : '战利品', D().chapterLabel(r.floor))}<div class="loot-columns">
       ${packDialog(state, ui, true)}
       <section class="loot-ground" aria-labelledby="loot-heading"><header class="pack-heading"><h2 id="loot-heading">${chest ? '封存宝箱' : '战利品'}</h2><small>${D().chapterLabel(r.floor)}</small></header>
       <div class="ground-grid" role="group" aria-label="地面战利品，六列" data-ground-columns="${groundColumns}" style="--ground-rows:${rows}">${slots}${items.map(groundPiece).join('')}</div>
@@ -1813,7 +1976,7 @@
     if (eff.ingredient) tags.push(`食材 ×${eff.ingredient.n || 1}`);
     if (eff.consumeIngredient) tags.push(`耗食材 ${eff.consumeIngredient}`);
     if (eff.meal) tags.push(`成菜 ×${eff.meal}`);
-    if (eff.manuscript) tags.push('战利谱');
+    if (eff.manuscript) tags.push('蚀刻法');
     if (eff.blessing) tags.push('祝福');
     if (eff.healPct) tags.push(`回血 ${Math.round(eff.healPct * 100)}%`);
     if (eff.damagePct) tags.push(`有人受伤 ${Math.round(eff.damagePct * 100)}%`);
@@ -1828,14 +1991,14 @@
     const resolved = state.run.event.resolved;
     const branch = state.run.event.branch;
     if (resolved) {
-      return `<div class="ex-page ex-event">${expeditionHeader(state, 'node.event', ev.title, ev.text)}
+      return `<div class="ex-page ex-event">${expeditionHeader(state, 'scene.event', ev.title, ev.text)}
         <div class="story mt2 success">${esc(state.run.event.resultText)}</div>
         ${branch ? `<div class="muted tiny mt2">${branch === 'win' ? '这一次赌赢了。' : '这一次没赌赢。'}</div>` : ''}
         <div class="row mt3">${btn('继续', 'eventDone', { cls: 'gold' })}</div>
       </div>`;
     }
     const choices = V.Expedition.eventChoices(state);
-    return `<div class="ex-page ex-event">${expeditionHeader(state, 'node.event', ev.title, ev.text)}
+    return `<div class="ex-page ex-event">${expeditionHeader(state, 'scene.event', ev.title, ev.text)}
       <div class="mt3">${choices.map((c) => {
     const tags = effectTags(c.effects);
     const tagLine = `${c.combat ? '战斗' : ''}${c.gamble ? '赌局' : ''}${tags.join(' · ')}`;
@@ -1850,7 +2013,7 @@
 
   function campNodeScreen(state, ui) {
     const r = state.run;
-    return `<div class="ex-page">${expeditionHeader(state, 'veteran.scene.field', '废弃营火', '火还有余温。铁在这里会变软一点。')}
+    return `<div class="ex-page">${expeditionHeader(state, 'scene.camp', '废弃营火', '火还有余温。铁在这里会变软一点。')}
     ${panel('火边休整', `
       <div class="row wrap mt3">
         ${btn(r.campRested ? '已休整' : '休息（恢复 45% 生命，压力 -30）', 'campRest', { cls: 'gold', disabled: !!r.campRested })}
@@ -1858,7 +2021,7 @@
       </div>
     `)}${kitchenScreen(state, ui)}<details class="field-inscription"><summary>营火烙印</summary>
       <div class="mt4">
-        <p class="muted small">把本趟拾取的纹路装上生命金属，接下来的战斗即可使用。每人每趟一次，生命上限本趟降低 20%，压力 +40。未留痕的落点会留下一道瘢痕。</p>
+        <p class="muted small">把本趟拾取的纹路装上金属板面，接下来的战斗即可使用。每人每趟一次，生命上限本趟降低 20%，压力 +40。未留痕的落点会留下一道瘢痕。</p>
         <div class="row wrap">${r.party.map((p) => {
     const u = state.roster.find((x) => x.id === p.uid);
     const gate = V.Expedition.inscribable(state, u.id);
@@ -1875,7 +2038,7 @@
   function merchantScreen(state) {
     const r = state.run;
     const free = V.Expedition.bagCapacity(state) - V.Expedition.bagUsed(state);
-    return `<div class="ex-page">${expeditionHeader(state, 'node.merchant', '回廊游商', '可用金币 ' + state.gold + ' · 背包空余 ' + free + ' 格')}
+    return `<div class="ex-page">${expeditionHeader(state, 'scene.merchant', '回廊游商', '可用金币 ' + state.gold + ' · 背包空余 ' + free + ' 格')}
       <div class="ex-offers">${(r.shop || []).map((o) => {
         const it = state.itemsById[o.itemId];
         if (!it) return '';
@@ -1918,7 +2081,7 @@
         <span class="chip">遗物 +${s.shards}</span>
         <span class="chip">纹路 +${s.items.length}</span>
       </div>
-      ${s.fieldManuscript ? `<div class="manuscript-found"><h2>拓本入库 · ${itemLabel('etching', D().manuscript(s.fieldManuscript))}</h2>${manuscriptDetails(D().manuscript(s.fieldManuscript))}</div>` : ''}
+      ${s.fieldManuscript ? `<div class="manuscript-found"><h2>蚀刻法入库 · ${itemLabel('etching', D().manuscript(s.fieldManuscript))}</h2>${manuscriptDetails(D().manuscript(s.fieldManuscript))}</div>` : ''}
       <div class="k-pantry-door"><div><h3>入库食材</h3><p>${ingredientSummary(s.ingredients)}</p></div></div>
       ${s.manuscript ? `<div class="manuscript-found"><h2>撤离奖励 · ${itemLabel('etching', s.manuscript)}</h2>${manuscriptDetails(D().manuscript(s.manuscript.id))}</div>` : ''}
       ${s.items.length ? `<div class="part-list mt2">${s.items.map((id) => `<div class="part-item static">
@@ -2012,7 +2175,7 @@
     const artwork = Array.from(footprints, ([token, indices]) => {
       const tag = packItem(state, token);
       const turn = V.Expedition.itemTurn(state,token);
-      const art = tag.food || tag.meal ? drawing(tag.kind,tag.id) : V.RuneArt.thumb(tag.spec.id,null,turn);
+      const art = tag.food || tag.meal ? drawing(tag.kind,tag.id) : V.RuneArt.footprint(tag.spec.id,turn);
       return footprintArt(tag,token,indices,token === picked,turn,art,'pack');
     }).join('');
     const details = item ? `<div class="pack-inspect-art">${item.food || item.meal ? drawing(item.kind,item.spec.id) : miniShapeSvg(item.spec.id, 0, false)}</div>
@@ -2036,7 +2199,7 @@
         <div class="pack-tools"><span>空余 ${free} 格</span>${editable ? btn('一键整理','packSort',{cls:'ghost sm',disabled:free === slots.length}) : ''}</div></div>
         <aside class="pack-detail" aria-live="polite">${details}${ui.packMessage ? `<p class="pack-message">${esc(ui.packMessage)}</p>` : ''}</aside></div>
       ${editable && slots.some(t=>t?.startsWith('meal:')) ? packDiners(state, item?.meal ? item : null) : ''}
-      ${overflowPanel}${r ? `<div class="pack-folio"><strong>拓本匣</strong>${r.fieldManuscript ? itemLabel('etching', D().manuscript(r.fieldManuscript)) : '<span>空</span>'}<small>独立收纳</small></div>` : ''}`;
+      ${overflowPanel}${r ? `<div class="pack-folio"><strong>蚀刻法匣</strong>${r.fieldManuscript ? itemLabel('etching', D().manuscript(r.fieldManuscript)) : '<span>空</span>'}<small>独立收纳</small></div>` : ''}`;
     if (inline) return `<section class="loot-pack" aria-labelledby="pack-title">${inventory}</section>`;
     return `<div class="modal-backdrop"><div class="modal-dim" data-act="closeModal"></div>
       <section class="modal-card pack-dialog" role="dialog" aria-modal="true" aria-labelledby="pack-title" data-editable="${editable}">
@@ -2057,7 +2220,7 @@
             <div class="spacer"></div>
             ${btn('✕', 'closeModal', { cls: 'ghost xs' })}
           </div>
-          <details class="term-guide"><summary>玩法词条</summary><dl>${Object.entries(terms).map(([name,text]) => `<dt>${name}</dt><dd>${text}</dd>`).join('')}</dl></details>
+          ${termsSection()}
           <div class="setting-list">
             <div class="setting-row">
               <div>游戏音效</div>

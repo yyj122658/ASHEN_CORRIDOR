@@ -1,10 +1,13 @@
 /* 回廊行图与远征界面。节点插画直接来自游戏图集。 */
 .ex-page {
-  --ex-metal: #1a242b;
-  --ex-edge: #394852;
-  --ex-copper: #e0ab7f;
-  --ex-type: #e4e8e9;
-  --ex-muted: #acbcc5;
+  /* 2026-11-16：原来这里自带一套 #1a242b / #e0ab7f 的独立色。
+     现在只做「别名」—— 值全部来自 styles/tokens.css，不再有第二份色源。
+     文件里其余写死的十六进制是局部高光/阴影，留在原处不影响统一。 */
+  --ex-metal: var(--surface);
+  --ex-edge: var(--border-soft);
+  --ex-copper: var(--accent);
+  --ex-type: var(--text);
+  --ex-muted: var(--text-muted);
   color: var(--ex-type);
   display: grid;
   gap: 18px;
@@ -35,15 +38,6 @@
 .ex-header h1, .ex-combat-top h1 { font-family: var(--font-title); font-weight: 650; }
 .ex-header h1 { font-size: clamp(30px, 3.8vw, 54px); line-height: 1.25; letter-spacing: .075em; margin-top: 7px; color: #f4ece1; }
 .ex-header p { max-width: 62ch; line-height: 1.65; margin: 8px 0 0; color: #d3dce0; font-size: 14px; }
-.ex-depth { display: flex; list-style: none; padding: 0; margin: -18px 0 0; border: 1px solid var(--ex-edge); border-top: 0; background: #141d24; }
-.ex-depth li { min-width: 0; flex: 1; display: flex; align-items: baseline; justify-content: center; gap: 7px;
-  padding: 12px 2px; color: #a6b3bb; border-right: 1px solid #35414b; }
-.ex-depth li:last-child { border: 0; }
-.ex-depth b { font: 600 18px var(--font-mono); }
-.ex-depth span { font-size: 11px; }
-.ex-depth .here { background: #342c29; color: #f1bf95; box-shadow: inset 0 -3px #e0ab7f; }
-.ex-depth .passed { color: #b3d0cd; }
-.ex-map-layout, .ex-battle-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(210px, 1fr); gap: 20px; align-items: start; }
 .ex-fork h2 { text-align: center; }
 .ex-paths { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; position: relative; padding-top: 32px; }
 .ex-paths::before { content: ""; position: absolute; width: 1px; height: 16px; top: 0; left: 50%; background: var(--ex-copper); }
@@ -61,35 +55,54 @@
 .ex-road-info .ex-risk { font-size: 11px; color: #d1b497; }
 .ex-road-info .risk-none { color: #9ec3bc; }
 .ex-road-info .risk-high, .ex-road-info .risk-deadly { color: #f4a49b; }
-.ex-manifest, .ex-feed { border-left: 2px solid #937158; background: #172128; padding: 15px; min-width: 0; }
-.ex-crew { margin-block: 10px 14px; }
-.ex-crew-member { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 9px; padding: 6px 0; border-bottom: 1px solid var(--ex-edge); }
-.ex-crew-member .legend-portrait { height: 42px; width: 40px; min-height: 0; overflow: hidden; }
-.ex-crew-member strong, .ex-crew-member > span { font-size: 13px; }
-.ex-crew-member small, .ex-pack small { display: block; font-size: 11px; }
-.ex-crew-member > span { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.ex-crew-member > span small { display: inline; color: var(--ex-muted); }
-.ex-pack p { margin: 10px 0; font-size: 13px; }
-.ex-pack b, .ex-reward-line b { color: var(--ex-copper); }
-.ex-pack small { margin: 6px 0; }
-.ex-pack .btn { margin-top: 6px; width: 100%; }
-.ex-prep { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr); gap: 16px; align-items: start; }
-.ex-page .vet-slot { background: #202c33; border-color: var(--ex-edge); }
+.ex-reward-line b { color: var(--ex-copper); }
+
+.ex-prep { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.prep-heading { justify-content: space-between; }
+.prep-heading h1 { font: 650 clamp(24px, 3vw, 42px) var(--font-title); }
+.prep-field { position: relative; isolation: isolate; overflow: hidden; user-select: none;
+  background: linear-gradient(180deg, var(--ink) 30%, var(--border-soft) 85%); }
+.prep-field .prep-field-art { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%;
+  object-fit: fill; image-rendering: pixelated; pointer-events: none; }
+.prep-side { position: absolute; z-index: 180; top: 5%; padding: 4px 8px; border: 1px solid currentColor;
+  background: var(--ink); font-size: clamp(10px, 1vw, 14px); pointer-events: none; }
+.prep-side.ally { left: 3%; color: var(--ice); }
+.prep-side.enemy { right: 3%; color: var(--accent-bright); }
+.prep-zone { position: absolute; pointer-events: none; box-shadow: inset 0 0 0 1px #57a6a74d; }
+.prep-reach-layer { position: absolute; inset: 0; pointer-events: none; }
+.prep-reach { position: absolute; pointer-events: none; border: 2px dashed var(--ice); border-radius: 50%;
+  background: #57a6a71f; transform: translate(-50%, -50%); }
+.prep-field:has(.prep-dragging) .prep-reach { visibility: hidden; }
+.prep-field:has(.prep-dragging, [aria-pressed="true"]) .prep-zone {
+  background: #57a6a71a; box-shadow: inset 0 0 0 2px var(--ice); }
+.prep-actor { position: absolute; aspect-ratio: 1; width: max(44px, 13.43%); padding: 0; transform: translate(-50%, -85%);
+  color: var(--text); border: 0; background: none; box-shadow: none; font: inherit; }
+.prep-actor.ally { touch-action: none; cursor: grab; }
+.prep-actor.enemy { pointer-events: none; }
+.prep-actor.boss { width: 19.45%; }
+.prep-actor .prep-sprite { position: absolute; width: 100%; height: 100%; inset: 0; object-fit: contain;
+  image-rendering: pixelated; pointer-events: none; }
+.prep-actor-name { position: absolute; bottom: 0; left: 50%; transform: translate(-50%, 60%); pointer-events: none;
+  color: inherit; font-size: clamp(10px, 1.3vw, 16px); white-space: nowrap;
+  text-shadow: -1px -1px var(--ink), 1px -1px var(--ink), -1px 1px var(--ink), 1px 1px var(--ink); }
+.prep-actor.enemy .prep-actor-name { color: var(--accent-bright); }
+.prep-actor::before { content: ''; position: absolute; left: 33%; right: 33%; bottom: 11%; height: 10%;
+  pointer-events: none; border-radius: 50%; background: #0f111a9c; }
+.prep-actor.ally:hover::before, .prep-actor[aria-pressed="true"]::before, .prep-actor.prep-dragging::before { outline: 2px solid var(--ice); }
+.prep-actor.ally:focus-visible { outline: 2px solid var(--ice); outline-offset: -4px; }
+.prep-actor.prep-dragging { cursor: grabbing; z-index: 200 !important; }
+.prep-actor.prep-invalid { opacity: .55; }
+.prep-actor.prep-invalid::before { outline-color: var(--danger); }
+.prep-help { margin: 0; padding: 8px 12px; font-size: 12px; background: var(--surface); }
 .ex-page .enemy-row { display: grid; gap: 4px; padding: 9px 0; }
 .ex-rules, .ex-retreat { padding: 12px 0; font-size: 13px; }
 .ex-page summary { cursor: pointer; padding: 5px 0; color: #d6b89f; }
 .ex-combat .ex-combat-top { border: 0; border-bottom: 1px solid var(--ex-edge); background: none; margin: 0; padding: 0 0 12px; }
 .ex-combat-top h1 { font-size: clamp(22px, 2.6vw, 34px); margin-right: 12px; }
-.ex-battle-layout { align-items: stretch; }
-.ex-field, .ex-battle-layout > *, .ex-page .battle-bars > * { min-width: 0; }
 .ex-combat .battle-stage { border-color: var(--ex-edge); }
 .ex-combat .battle-actions { margin-top: 10px; }
 .ex-combat .battle-bars { margin: 0; }
 .ex-combat .side { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,117px),1fr)); gap: 6px; margin-top: 8px; }
-.ex-feed { display: flex; flex-direction: column; }
-.ex-feed .battle-log { flex: 1; max-height: clamp(150px,18vw,260px); background: none; border: 0; padding: 0; }
-.ex-feed .lg { border-bottom: 1px solid #2a3740; padding: 4px 0; line-height: 1.5; }
-.ex-feed .lg.warn { border-left: 2px solid #e4ad77; padding-left: 6px; font-weight: 600; }
 .ex-page .ex-reward-line { margin-top: 12px; font-size: 16px; }
 .ex-offers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 14px; }
 .ex-part { background: var(--ex-metal); border: 1px solid var(--ex-edge); display: flex; flex-direction: column; }
@@ -101,19 +114,12 @@
 .ex-part-info p { color: #c4ced2; font-size: 14px; line-height: 1.7; flex: 1; margin: 8px 0 14px; }
 .ex-event .choice { padding: 14px 18px; }
 @media (max-width: 900px) {
-  .ex-map-layout, .ex-battle-layout { grid-template-columns: 1fr; }
-  .ex-manifest { display: grid; grid-template-columns: 1.3fr 1fr; gap: 0 20px; }
-  .ex-manifest > h2, .ex-crew { grid-column: 1; }
   .ex-pack { grid-column: 2; grid-row: 1 / 3; }
-  .ex-feed .battle-log { max-height: 100px; }
   .ex-prep { grid-template-columns: 1fr; }
   .ex-prep .enemy-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); gap: 12px; }
 }
 @media (max-width: 600px) {
   .ex-page { gap: 14px; }
-  .ex-depth { margin-top: -14px; }
-  .ex-depth li { flex-direction: column; gap: 2px; align-items: center; padding: 7px 0; }
-  .ex-depth b { font-size: 15px; }
   .ex-fork h2 { text-align: left; }
   .ex-paths { grid-template-columns: 1fr; gap: 8px; padding: 12px 0 0 16px; }
   .ex-paths::before { left: 2px; top: 4px; bottom: 48px; width: 1px; height: auto; }
@@ -122,7 +128,6 @@
   .ex-road::before { top: 50%; left: -15px; width: 14px; height: 1px; border: 0; background: #9f7960; }
   .ex-road-image { aspect-ratio: auto; border: 0; }
   .ex-road-info { padding: 10px 12px; gap: 3px; }
-  .ex-manifest { display: block; }
   .ex-header-text { padding: 16px; }
   .ex-header p { font-size: 13px; }
   .ex-combat-top h1 { width: 100%; }
@@ -217,7 +222,12 @@
 
 .pack-grid { isolation:isolate; position:relative; }
 .pack-footprint { position:absolute; inset:0; container-type:size; pointer-events:none; display:grid; place-items:center; min-width:0; min-height:0; z-index:1; }
-.pack-footprint .rune-thumb { width:100%; height:100%; display:block; }
+.rune-footprint { display:block; width:100%; height:100%; }
+.rune-footprint .etch-relief { image-rendering:pixelated; }
+.rune-footprint-rim { stroke:var(--accent); stroke-width:3px; stroke-opacity:.68; }
+:is(.pack-footprint.is-selected,.pack-footprint.is-pointed,.ground-item:not(:disabled):is(:hover,:focus-visible)) .rune-footprint-rim {
+  stroke:var(--text); stroke-opacity:1;
+}
 .pack-footprint .catalogue-icon { width:min(84cqw,84cqh); height:min(84cqw,84cqh); mix-blend-mode:lighten; }
 .pack-grid .pack-slot { isolation:auto; }
 .pack-grid .pack-slot small { z-index:2; }
@@ -247,7 +257,6 @@
 .ground-face * { pointer-events:none; }
 .ground-item:not([data-scan="revealed"]) :is(.ground-face,.ground-quantity) { visibility:hidden; }
 .ground-face .catalogue-icon { width:min(84cqw,84cqh); height:min(84cqw,84cqh); mix-blend-mode:lighten; }
-.ground-face .rune-thumb { display:block; width:100%; height:100%; }
 .ground-quantity { position:absolute; bottom:1px; right:2px; padding:1px 2px; font:10px var(--font-mono); background:#232623; color:#eddbb7; pointer-events:none; }
 .ground-register { margin-top:10px; }
 .loot-ground .ground-note { display:block; min-width:0; position:relative; border-bottom:1px solid #484840; padding:5px 0; }
@@ -297,7 +306,7 @@
 .loot-drop-ghost i { position:absolute; box-sizing:border-box; border:2px solid #d9c494; background:#5c5745ee; }
 .loot-drop-ghost .ground-face { visibility:visible; }
 .loot-drop-ghost.bad-fit i { border-color:#e39b85; background:#704a42ee; }
-.loot-drop-ghost .rune-thumb { width:100%; height:100%; }
+.loot-drop-ghost.bad-fit .rune-footprint-rim { stroke:var(--danger); stroke-opacity:1; }
 
 .chapter-itinerary { margin:0 0 14px; color:#cbbda3; font-size:13px; }
 .chapter-itinerary summary { cursor:pointer; width:fit-content; padding:5px 0; }

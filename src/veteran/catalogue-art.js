@@ -16,10 +16,6 @@
       'pearlSlices shrimpReed kelpGriddle pearGrain mossShrimp pearFlank marrowGrain sproutCap cressShank saltMillet morelSnail chestnutMillet earCress crabLeaf peaMorel lichenBud blackGarlic plumPepper ashPearls mistPepper',
       'jellyBean pollenPlum grubMash honeyFin pearlMist threeReeds shankPacket crabMillet threeEar darkHotpot gateCustard deepFeast glassRice chardPocket doubleMarrow wraithParcel hiveBell',
     ],
-    rune: [
-      'straight elbow splitter capacitor threshold ember rivet long tee cross jack rail dogleg hairpin kneejoint',
-      'crook clevis spillway wishbone bellowsCell coil cistern ampoule pinValve sluice reed flint fuse brazier wickbend',
-    ],
     etching: [
       'spark corridor5 ember12 wide14 flurry twinflow inverse needle ward ripple cinder pursuit bulwark torrent razor tide pulse sunder bloodrush sentinel',
       'echo rivet wick suture shrapnel bellows quench awl crucible tinThread fileTooth leadSeal tinderMesh anneal silverTap slagHook ironJaw coreDrill bronzeGong splitAnvil',
@@ -30,18 +26,23 @@
   const positions = new Map();
   for (const [kind, pages] of Object.entries(sheets)) {
     const columns = 5;
-    const rows = kind === 'rune' ? 3 : 4;
+    const rows = 4;
     pages.forEach((ids, page) => {
       ids.split(' ').forEach((id, slot) => {
         positions.set(kind + '/' + id, {
-          src: `assets/art/catalogue-v1/${kind === 'rune' ? 'engraved' : kind}-${page}.webp`, columns, rows,
+          src: `assets/art/topology-v4/catalogue/${kind}-${page}.webp`, columns, rows,
           x: slot % columns, y: Math.floor(slot / columns),
         });
       });
     });
   }
-  function lookup(kind, id) { return positions.get(kind + '/' + id); }
+  function lookup(kind, id) {
+    if (kind !== 'rune') return positions.get(kind + '/' + id);
+    const art = A.Art.getArt('rune.' + id);
+    return art ? { src: art.src, columns: 1, rows: 1, x: 0, y: 0 } : undefined;
+  }
   function icon(kind, id) {
+    if (kind === 'rune') return A.Art.imgTag('rune.' + id, 'catalogue-icon');
     const tile = lookup(kind, id);
     if (!tile) return '';
     const { src, columns, rows, x, y } = tile;

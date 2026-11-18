@@ -6,26 +6,44 @@
   const D = () => V.Data;
   const ST = () => V.State;
 
-  /** 有效属性：共同基数 + 已装蚀刻法阶位 + 本局生命修正，经典板兼容旧值。 */
+  /** 有效属性：形态派生基数 + 已装蚀刻法阶位 + 瘢痕 + 本局生命修正。 */
+  /**
+   * 战斗面板（v4.0）：全部来自拓扑编译，不再有「阶位属性膨胀」。
+   *
+   * 顺序：Circuit.compile 出裸面板 → 叠激活瘢痕 → 乘本局生命修正。
+   * 编译失败（草稿非法 / 板面越界）时退回心核基座，界面不会因为拖到一半就显示 NaN。
+   */
   function stats(st, unit, placements) {
-    if (!unit) return { maxHp: 1, atk: 0, def: 0, spd: 1 };
+    if (!unit) return { maxHp: 1, atk: 0, def: 0, shieldCap: 0, spd: 1 };
     const body = D().body(unit.bodyPreset);
-    const base = V.Circuit.plateOf(unit).generated ? D().DESIGN.metalBase : body;
-    const rarity = Math.max(1, ...ST().manuscriptsOf(unit).map(m => m.rarity || 1)) - 1;
-    const rs = D().DESIGN.rarityStat;
+    const chassis = V.Derive.chassis(body);
+    let panel = { maxHp: chassis.maxHp, atk: chassis.atk, def: chassis.def, shieldCap: chassis.shieldCap, spd: chassis.spd, loops: 0, usedCells: 0, coverage: 0 };
+    /* preview 不像 manuscriptState 那样自己回落：不传 placements 就是「空板面」。
+       所以这里必须显式给出场上布局 → 存档布局 → 板面布局。漏了这一步，所有人的
+       maxHp 都会退成 25 的心核基座（面板编译拿不到任何占格）。 */
+    const layoutNow = placements
+      || (st.run && st.run.fieldLayouts && st.run.fieldLayouts[unit.id])
+      || unit.board.placements;
+    const cc = V.Circuit.compile(st, unit.id, layoutNow);
+    if (cc.ok && cc.value.panel) panel = cc.value.panel;
+
     const bonus = { maxHp: 0, atk: 0, def: 0 };
-    V.Circuit.scarState(st, unit, placements).filter((s) => s.active).forEach((s) => {
+    V.Circuit.scarState(st, unit, layoutNow).filter((s) => s.active).forEach((s) => {
       Object.keys(bonus).forEach((key) => { bonus[key] += s.effect[key] || 0; });
     });
     const mod = (st.run && st.run.maxHpModifiers && st.run.maxHpModifiers[unit.id]) || 1;
     return {
-      maxHp: Math.max(1, Math.round((base.hp + bonus.maxHp) * mod * (1 + rarity * rs.hp))),
-      atk: Math.max(1, Math.round((base.atk + bonus.atk) * (1 + rarity * rs.atk))),
-      def: Math.max(0, Math.round((base.def + bonus.def) * (1 + rarity * rs.def))),
-      spd: base.spd,
+      maxHp: Math.max(1, Math.round((panel.maxHp + bonus.maxHp) * mod)),
+      atk: Math.max(1, panel.atk + bonus.atk),
+      def: Math.max(0, panel.def + bonus.def),
+      /* 电容缓冲：没有储能纹路就是 0，也就是「护盾这东西得自己刻出来」 */
+      shieldCap: Math.max(0, panel.shieldCap),
+      spd: panel.spd,
       loadCap: V.Circuit.loadCap(unit),
       blocked: body.blocked,
       mod,
+      /* 拓扑事实：界面要显示「几个闭环 / 占了几格 / 覆盖率」 */
+      panel,
     };
   }
 
@@ -55,8 +73,9 @@
 
     const offers = [];
     for (let i = 0; i < 3 && available.length; i++) {
-      const bodyIds = Object.keys(D().BODIES);
-      const bi = A.Random.int(next.rngState, 0, bodyIds.length - 1);
+      /* 形态不再随机：由这位来客自己的金属决定。这里保留一次抽签只为不改动
+         随机序列——改了的话整局地图、掉落、遭遇全部跟着错位，存档对不上。 */
+      const bi = A.Random.int(next.rngState, 0, 0x0FFFFFFF);
       next.rngState = bi.state;
       const si = A.Random.int(next.rngState, 0, available.length - 1);
       next.rngState = si.state;
@@ -70,10 +89,11 @@
       const skin = available.splice(si.value, 1)[0];
       offers.push({
         id: 'rc' + next.nextId + '_' + i,
-        bodyPreset: bodyIds[bi.value],
+        bodyPreset: skin.metal,
         skinId: skin.id,
         name: skin.name,
-        plateSeed: wi.value,
+        /* 板面 seed 从 skinId 派生：预览与招入后必须是同一块铁 */
+        plateSeed: ST().plateSeedFor(skin.id),
         price: pi.value,
       });
     }
@@ -95,7 +115,7 @@
 
     const unit = ST().makeUnit(next, {
       name: offer.name, skinId: offer.skinId, bodyPreset: offer.bodyPreset,
-      plateSeed: offer.plateSeed == null ? A.Random.seedFrom(offer.id) : offer.plateSeed,
+      plateSeed: offer.plateSeed,
     });
     /* 招募的人也不带蚀刻法：蚀刻法靠掉落与祭坛 */
     ST().equipPreset(next, unit, 'basic');
@@ -122,13 +142,13 @@
     const unit = st.roster.find((u) => u.id === unitId);
     if (!unit) return ST().fail(st, 'no_unit', '找不到角色');
     const part = st.itemsById[itemId];
-    if (!part || part.kind !== 'weapon') return ST().fail(st, 'bad_item', '不是主手');
-    if (st.run) return ST().fail(st, 'in_run', '远征中不能换主手');
+    if (!part || part.kind !== 'weapon') return ST().fail(st, 'bad_item', '不是武器');
+    if (st.run) return ST().fail(st, 'in_run', '远征中不能换武器');
 
     const holder = st.roster.find((x) => x.weaponId === itemId);
     const inStash = st.stash.includes(itemId);
     if (!inStash && !holder) {
-      return ST().fail(st, 'not_owned', '这件主手不在仓库里，也没有人拿着');
+      return ST().fail(st, 'not_owned', '这件武器不在仓库里，也没有人拿着');
     }
 
     const next = ST().clone(st);

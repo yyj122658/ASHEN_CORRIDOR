@@ -1,10 +1,125 @@
 'use strict';
-/* 四位线性身位：slot0 最靠近敌方。swap / insertFront / anchored 与三种主手 mod。
+/* 战场二维坐标与按接敌方向排列的作战号位。
    位置变化本身不再触发位置变化；不赠送行动；不改 gauge。 */
 (function (A) {
   'use strict';
   const V = (A.Veteran ||= {});
   const D = () => V.Data;
+  const ARENA = { width: 320, height: 172, ground: 116, depthScale: .72,
+    minX: 24, maxX: 148, minY: -63, maxY: 52, spacing: 18 };
+
+  const profiles = {
+    blade: ['melee', 'slash', '剑'], warden: ['melee', 'bash', '盾'],
+    ranger: ['ranged', 'arrow', '弓'], warlock: ['ranged', 'spell', '术印'],
+    cleric: ['ranged', 'spell', '灯'], rogue: ['melee', 'slash', '匕首'],
+    wanderer0: ['melee', 'bash', '杖'], wanderer1: ['melee', 'slash', '短刀'],
+    wanderer2: ['ranged', 'spell', '钟杖'], wanderer3: ['ranged', 'spell', '术典'],
+    wanderer4: ['ranged', 'spell', '线圈'], wanderer5: ['ranged', 'spell', '卷轴'],
+    wanderer6: ['melee', 'thrust', '长矛'], wanderer7: ['melee', 'slash', '短刀'],
+    bone: ['melee', 'slash'], boneBell: ['ranged', 'spell'],
+    hound: ['melee', 'thrust'], houndLean: ['melee', 'thrust'],
+    hulk: ['melee', 'bash'], hulkSlag: ['melee', 'bash'],
+    shuffler: ['melee', 'thrust'], shufflerDragger: ['melee', 'thrust'],
+    wraith: ['ranged', 'spell'], wraithChoir: ['ranged', 'spell'],
+    stoker: ['ranged', 'spell'], gatekeeper: ['melee', 'bash'],
+    memoryEater: ['ranged', 'spell'], furnaceHeart: ['melee', 'bash'],
+  };
+  const styles = Object.fromEntries(Object.entries(profiles).map(([id, [mode, effect, label]]) =>
+    [id, { mode, effect, label }]));
+  const fallbackStyle = { mode: 'melee', effect: 'bash' };
+  const reachByWeapon = { slash: 23, bash: 23, thrust: 29, spell: 108, arrow: 150 };
+
+  function style(u) {
+    const id = u?.skinId || u?.cls || u?.enemyType;
+    return Object.hasOwn(styles, id) ? styles[id] : fallbackStyle;
+  }
+
+  const homeX = u => u.side === 'enemy' ? 202 + (u.slot || 0) * 29 : u.deployment?.x ?? 118 - (u.slot || 0) * 29;
+  const homeY = u => u.side === 'enemy' ? -(u.slot % 2 || 0) * 22 : u.deployment?.y ?? 0;
+  const projectY = y => ARENA.ground + y * ARENA.depthScale;
+
+  function validDeployment(p) {
+    return !!p && Number.isInteger(p.x) && Number.isInteger(p.y) && p.x >= ARENA.minX && p.x <= ARENA.maxX
+      && p.y >= ARENA.minY && p.y <= ARENA.maxY;
+  }
+
+  function deploymentProblem(party, uid, point) {
+    if (!party.some(u => u.uid === uid)) return '这位队员还未入场';
+    if (!validDeployment(point)) return '落点需要在己方布阵区内';
+    if (party.some(u => u.uid !== uid && Math.hypot(homeX(u) - point.x, homeY(u) - point.y) < ARENA.spacing)) {
+      return '与队友距离太近';
+    }
+    return '';
+  }
+
+  function fieldX(b, u) { return b.field?.[u.id] ?? homeX(u); }
+  function fieldY(b, u) { return b.fieldY?.[u.id] ?? homeY(u); }
+
+  function initialField(b, coordinate = homeX) {
+    return Object.fromEntries([...b.allies, ...b.enemies].map(u => [u.id, coordinate(u)]));
+  }
+
+  function nearestFoe(b, u) {
+    const foes = u.side === 'ally' ? b.enemies : b.allies;
+    return foes.filter(f => f.alive !== false && f.hp > 0).sort((a, c) =>
+      distanceBetween(b, u, a) - distanceBetween(b, u, c) || a.slot - c.slot)[0] || null;
+  }
+
+  function distanceBetween(b, u, target) {
+    return Math.hypot(fieldX(b, target) - fieldX(b, u), fieldY(b, target) - fieldY(b, u));
+  }
+
+  function attackRange(u, target) {
+    const weapon = style(u);
+    const base = reachByWeapon[weapon.effect];
+    return weapon.mode === 'ranged' ? base : base + (target?.isBoss ? 7 : 0) + (u.slot || 0) * 2;
+  }
+
+  function inReach(b, u, target) {
+    return !target || distanceBetween(b, u, target) <= attackRange(u, target) + 1e-8;
+  }
+
+  function approach(b, u, target, x, y, stride, steps) {
+    const distance = distanceBetween(b, u, target);
+    const gap = distance - attackRange(u, target);
+    const ratio = Math.min(stride, gap, Math.ceil(gap / steps)) / distance;
+    x[u.id] = fieldX(b, u) + (fieldX(b, target) - fieldX(b, u)) * ratio;
+    y[u.id] = fieldY(b, u) + (fieldY(b, target) - fieldY(b, u)) * ratio;
+  }
+
+  function applyFormation(b, side, units) {
+    const previous = b[side];
+    if (b.field && previous !== units) {
+      b.fieldY ||= initialField(b, homeY);
+      const vacated = previous.filter(u => !bySlot(units, u.slot)).sort((a, c) => a.slot - c.slot);
+      for (const u of units) {
+        if (byId(previous, u.id)?.slot === u.slot) continue;
+        if (side === 'allies') {
+          const oldOccupant = bySlot(previous, u.slot) || vacated.shift();
+          if (oldOccupant) u.deployment = { x: homeX(oldOccupant), y: homeY(oldOccupant) };
+        }
+        b.field[u.id] = homeX(u);
+        b.fieldY[u.id] = homeY(u);
+      }
+    }
+    b[side] = units;
+  }
+
+  function advanceField(b, targetFor) {
+    const units = [...b.allies, ...b.enemies].filter(u => u.alive !== false && u.hp > 0);
+    const targets = new Map(units.map(u => [u.id, targetFor(u)]));
+    const x = { ...(b.field || initialField(b)) };
+    const y = { ...(b.fieldY || initialField(b, homeY)) };
+    for (const u of units) {
+      const target = targets.get(u.id);
+      if (!target || inReach(b, u, target)) continue;
+      const steps = targets.get(target.id)?.id === u.id && !inReach(b, target, u) ? 2 : 1;
+      const stride = 26 + Math.min(12, Math.floor((u.spd || 10) / 2));
+      approach(b, u, target, x, y, stride, steps);
+    }
+    b.field = x;
+    b.fieldY = y;
+  }
 
   function cloneUnits(units) { return units.map((u) => ({ ...u })); }
 
@@ -98,7 +213,7 @@
     return units.filter((x) => x.slot < beforeSlot).map((x) => x.id);
   }
 
-  // 旧档中的拓片尚无阵形动作字段，按谱号从现行谱目补取。
+  // 旧档中的蚀刻法尚无阵形动作字段，按谱号从现行蚀刻法补取。
   function hasMove(actor, id) {
     return actor.modId === id || [actor.ms, ...(actor.extraMs || [])].some(ms =>
       ms?.spec && (ms.spec.modId === id || D().manuscript(ms.spec.id)?.modId === id));
@@ -205,5 +320,7 @@
   V.Positions = {
     swap, insertFront, resolveAfterAction, describe,
     byId, bySlot, aliveOf, hpPct, slotProblem,
+    ARENA, projectY, validDeployment, deploymentProblem,
+    style, homeX, homeY, fieldX, fieldY, initialField, nearestFoe, attackRange, inReach, advanceField, applyFormation,
   };
 })(globalThis.Ashen ||= {});
