@@ -20,7 +20,7 @@ const { chromium } = require('playwright');
         s.run.nodes = [{ ...V.Data.nodeType('chest'), id:'packChest', type:'chest', consumed:false }];
         s = E.chooseNode(s, 'packChest').state;
         const [id] = s.run.pendingLoot;
-        for (const partId of s.run.pendingLoot) s.itemsById[partId].templateId = 'crook';
+        for (const partId of s.run.pendingLoot) s.itemsById[partId].templateId = 'tee';
         const shape = E.packShape(s,'part:'+id);
         const limit = E.foodPack('boneCap').limit;
         s.run.ingredients = { boneCap:limit-1, houndShank:2, lampKelp:3 };
@@ -38,14 +38,41 @@ const { chromium } = require('playwright');
       assert.notEqual(await mist.getAttribute('data-scan'), 'revealed');
       assert.ok(await mist.isDisabled());
       await ground.locator('[data-ground-item][data-token="food:mistJelly"][data-scan="revealed"]').waitFor();
+      async function drawnCells(item) {
+        const art = item.locator('.rune-footprint');
+        assert.equal(await art.count(), 1, '地面和背包应使用实形贴图');
+        return art.evaluate(svg => {
+          const {width, height} = svg.viewBox.baseVal;
+          const path = svg.querySelector('clipPath path');
+          const cells = [];
+          for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+            if (path.isPointInFill(new DOMPoint(x + .5, y + .5))) cells.push([x, y]);
+          }
+          return cells;
+        });
+      }
+      assert.deepEqual(await drawnCells(take), shape, '宝箱中 T 形纹路的绘制范围应与实际占格一致');
+      if (width === 1440) {
+        const {x, y, width: w, height: h} = await take.boundingBox();
+        await page.mouse.move(x + w / 2, y + h / 2);
+        await page.mouse.down();
+        await page.mouse.move(x + w / 2 - 12, y + h / 2);
+        const ghost = page.locator('.loot-drop-ghost');
+        assert.deepEqual(await drawnCells(ghost), shape, '抓起时保持原朝向与空角');
+        await page.keyboard.press('r');
+        assert.deepEqual(await drawnCells(ghost), [[1,0],[0,1],[1,1],[1,2]], '拖动中旋转时贴图与缺口一起转动');
+        await page.keyboard.press('Escape');
+        await page.mouse.up();
+      }
       await take.click();
       assert.equal(await mist.getAttribute('data-scan'), 'revealed');
       const rune = dialog.locator('[data-token="part:'+id+'"][data-pack-slot]');
       const indices = await rune.evaluateAll(els=>els.map(el=>Number(el.dataset.packSlot)));
       assert.equal(indices.length, cost);
       const x = Math.min(...indices.map(i=>i%6)), y = Math.floor(indices[0]/6);
-      assert.deepEqual(indices.map(i=>[i%6-x, Math.floor(i/6)-y]).sort(), shape.sort());
+      assert.deepEqual(indices.map(i=>[i%6-x, Math.floor(i/6)-y]).sort(), [...shape].sort());
       assert.equal(await dialog.locator('[data-pack-art="part:'+id+'"]').count(),1);
+      assert.deepEqual(await drawnCells(dialog.locator('[data-pack-art="part:'+id+'"]')), shape, '进包后应保留 T 形缺口');
       const artBounds = await dialog.locator('[data-pack-art="part:'+id+'"]').boundingBox();
       const firstBounds = await slot(indices[0]).boundingBox(), lastBounds = await slot(indices.at(-1)).boundingBox();
       assert.ok(Math.abs(artBounds.y-firstBounds.y) < 2 && Math.abs(artBounds.y+artBounds.height-lastBounds.y-lastBounds.height) < 2);

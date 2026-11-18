@@ -34,12 +34,15 @@ function duel(seed, opts) {
 
 /** 直接建一场只有木桩的战斗（绕过遭遇生成，避免随机编成） */
 function sandbox(seed, build, templates) {
-  const { A, V, st } = boot(seed);
+  const { A, V, st } = boot(seed, { generated: build !== false });
   let base = fullTeam(V, st);
   const u = base.roster[0];
   if (build !== false) {
-    V.State.equipManuscript(base, u, 'corridor5');
-    autoRouteBoard(A, base, u, { style: styleOf(templates) });
+    const style = styleOf(templates);
+    const id = style === 'straight' ? 'corridor5' : 'bloodrush';
+    V.State.equipManuscript(base, u, id);
+    assert.equal(u.manuscript?.id, id, '夹具蚀刻法必须完整装下');
+    autoRouteBoard(A, base, u, { style });
   }
   const run = V.Expedition.start(base, { seed }).state;
   const units = [{
@@ -52,6 +55,16 @@ function sandbox(seed, build, templates) {
   const ally = b.allies.find((a) => a.sourceUnitId === u.id);
   return { A, V, D: V.Data, I: V.Combat._internal, st: cr.state, b, ally, unit: u };
 }
+
+test('伤害招式的蓄力与攻击结果携带同一招式标记', () => {
+  const { I, b, ally } = sandbox(702);
+  const skill = ally.skillList.find(sk => !sk.effect?.heal);
+  assert.ok(skill);
+  I.startCast(b, ally, skill);
+  assert.ok(b.logs.some(l => l.type === 'cast' && l.strike && l.skillId === skill.id));
+  I.finishCast(b, ally);
+  assert.ok(b.logs.some(l => ['hit', 'crit', 'miss'].includes(l.type) && l.strike && l.skillId === skill.id));
+});
 
 /* ---------------- ① 拓扑编译 ---------------- */
 
@@ -221,6 +234,7 @@ test('Step3 外围熔断：单次 >15 的非穿刺直击被整下挡掉，穿刺
   const fused0 = (ally.fusedNodes || []).length;
   I.applyDamage(b, b.enemies[0], ally, 40, {});
   assert.equal(ally.hp, hp0, '熔断应完全抵消这一击');
+  assert.ok(b.logs.some(l => l.targetId === ally.id && l.effect === 'fuse'));
   assert.equal((ally.fusedNodes || []).length, fused0 + 1, '应烧掉一枚外围纹路');
 
   /* 穿刺不吃熔断 */
@@ -369,7 +383,7 @@ test('打断重铸：准备窗口内挨到 >=20 的脉冲就断，并震碎护�
   I.applyDamage(b, ally, boss, 20, {});
   assert.equal(boss.charging, null, '重铸应被打断');
   assert.equal(boss.shield, 0, '护盾应一并震碎');
-  assert.ok(b.logs.some((l) => l.type === 'disrupt' && l.text.includes('打断')), '要留下打断记录');
+  assert.ok(b.logs.some((l) => l.type === 'disrupt' && l.effect === 'interrupt' && l.text.includes('打断')), '要留下打断记录');
   assert.ok(boss.hp <= hp0);
 
   /* 不够重（<20）不该打断 */
@@ -413,7 +427,7 @@ test('电容满溢：缓冲顶到上限后，下一次出手整仓放电 ×2.5',
   const hit = (shield) => {
     foe.hp = foe.maxHp;
     const before = foe.hp;
-    const a = { ...ally, crit: 0, hits: 1, stress: 0, buffs: [], pulseAmp: 1, shieldCap: 40, shield };
+    const a = { ...ally, crit: 0, hits: 1, stress: 0, buffs: [], pulseAmp: 1, kineticGain: 0, shieldCap: 40, shield };
     I.doBasicAttack(b, a, foe.id, { mult: 1 });
     return { dmg: before - foe.hp, shield: a.shield };
   };
@@ -463,6 +477,7 @@ test('相位护膜：够重的脉冲被吃掉八成并剥层，细脉冲从膜�
   I.applyDamage(b, ally, boss, 12, {});
   assert.equal(boss.hp, 476, '细脉冲应原样打进去');
   assert.equal(boss.membrane.left, 1, '细脉冲不该磨损护膜');
+  assert.ok(b.logs.some(l => l.targetId === boss.id && l.effect === 'membrane'));
 });
 
 test('炉壁重甲：薄脉冲额外衰减 40%，20 点以上重击贯穿', () => {

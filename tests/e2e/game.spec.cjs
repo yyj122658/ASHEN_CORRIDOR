@@ -330,17 +330,8 @@ async function launch() {
   }
 
   /* B12：仓库里的蚀刻法要能像纹路一样「抓起来拖到板面上」 */
-  const revert = page.locator('[data-act="wsRevert"]');
-  if (await revert.count()) {
-    await page.locator('.layout-tools summary').click();
-    await revert.click();
-    ok('B14b 还原布局后草稿与存档一致', await ev(() => {
-      const V = Ashen.Veteran;
-      const u = V.State.unitById(V.App.state, V.App.ui.wsUnit);
-      return JSON.stringify(V.App.ui.wsDraft) === JSON.stringify(u.board.placements);
-    }));
-  }
   const vaultChip = '.ms-chip[data-source="vault"][data-id="rivet"]';
+  if (!await page.locator(vaultChip).isVisible()) await click('[data-act="wsMsVault"]');
   await page.locator(vaultChip).scrollIntoViewIfNeeded();
   const msDrag = await ev(() => {
     const A = window.Ashen.Veteran;
@@ -504,13 +495,10 @@ async function launch() {
   ok('D1 重新整备回到战前', (await snap()).screen === 'prebattle');
   ok('D2 敌人没有重新生成', await ev(() => JSON.stringify(window.Ashen.Veteran.App.state.run.encounter.enemyBlueprint)) === bp1);
 
-  await click('[data-act="prepPick"][data-id="0"]');
-  const swapTarget = await ev(() => {
-    const f = window.Ashen.Veteran.App.state.run.encounter.preparation.formation;
-    return f[1] || f[0];
-  });
-  await click(`[data-act="prepSwap"][data-a="0"][data-uid="${swapTarget}"]`);
-  ok('D3 阵型可调整', (await ev(() => window.Ashen.Veteran.App.state.run.encounter.preparation.formation[0])) === swapTarget);
+  const lead = page.locator('[data-prep-unit]').first();
+  const uid = await lead.getAttribute('data-prep-unit');
+  await lead.press('ArrowUp');
+  ok('D3 阵形可调整', await ev(id => Ashen.Veteran.App.state.run.party.find(p => p.uid === id).deployment?.y === -8, uid));
 
   await click('[data-act="startAttempt"]');
   await waitBattle(60000);

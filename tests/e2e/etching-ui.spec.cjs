@@ -12,12 +12,15 @@ const { chromium } = require('playwright');
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(pathToFileURL(path.resolve(__dirname, '../../index.html')).href);
     await page.locator('[data-act=titleStart]').click();
-    /* 3.0 起新游戏只由两位传奇（铁鸦、灰烬）出发，旧断言写的是 4 位。 */
+    /* 新游戏由周岳和巴图尔出发。 */
     assert.equal(await page.locator('.metal-party .legend-portrait').count(), 2);
     assert.equal(await page.locator('.metal-party .metal-portrait').count(), 0);
     assert.ok(!/功法|构件|刻印/.test(await page.locator('body').innerText()));
     await page.locator('#nav [data-v=workshop]').click();
     assert.equal(await page.locator('.ws-left .panel-h').first().innerText(), '蚀刻法');
+    assert.equal(await page.locator('.layout-tools').count(), 0);
+    assert.ok(await page.getByRole('button', {name:/蚀刻法库存/}).isVisible());
+    assert.match(await page.locator('.plate-readout span').first().getAttribute('title'), /生命上限/);
     assert.match(await page.locator('.ws-right .panel-h').first().innerText(), /纹路/);
     /* A3：208px 左栏用短标签，全称只留在宽处（图鉴） */
     const narrowText = await page.locator('.ws-left').innerText();
@@ -35,10 +38,27 @@ const { chromium } = require('playwright');
     assert.equal(termCount, await page.evaluate(() => Ashen.Veteran.Terms.ENTRIES.length), '词条应全部渲染');
     assert.match(await termsBlock.innerText(), /共鸣增幅/, '术语页要能看到词条解释');
     await page.locator('[data-act=wsCodex]').click();
-    assert.ok(await page.locator('.ms-chip .catalogue-icon').first().isVisible());
+    await page.evaluate(() => Ashen.Veteran.App.dispatch({type:'wsMsPick', id:'inverse'}));
+    assert.match(await page.locator('[data-ms-reason]').innerText(), /轮廓不兼容/);
+    await page.locator('.ms-chip[data-source=board]').first().click();
+    assert.ok(await page.locator('.ms-chip .ms-skeleton').first().isVisible());
+    const help = page.getByRole('button', {name:'蚀刻法规则'});
+    await help.focus();
+    const helpTip = page.locator('#ws-etch-hint');
+    assert.ok(await helpTip.isVisible());
+    assert.match(await helpTip.innerText(), /贯通需要/);
     const rune = page.locator('.ws-right [data-stash="1"]').first();
-    assert.ok(await rune.locator('.catalogue-icon').isVisible());
+    const blueprint = await rune.locator('svg.rune-blueprint').boundingBox();
+    assert.deepEqual([blueprint.width, blueprint.height], [44, 44]);
     assert.ok(await rune.locator('.mini-shape .rune-port-cut').count() >= 2);
+    assert.ok(await rune.locator('.ws-rune-quantity').isVisible());
+    const placedRow = page.locator('.ws-right [data-watch-rune]').first();
+    const placedId = await placedRow.getAttribute('data-watch-rune');
+    const boardRune = page.locator(`svg.board [data-act=wsGrab][data-id="${placedId}"]`);
+    await placedRow.hover();
+    assert.match(await boardRune.getAttribute('class'), /is-row-hovered/);
+    await placedRow.locator('.ws-rune-select').focus();
+    assert.match(await boardRune.getAttribute('class'), /is-row-focused/);
     assert.equal(await page.locator('.scar-list').count(), 0);
 
     const expectedMembrane = (id, rotation, mirrorY) => page.evaluate(({id, rotation, mirrorY}) => {
@@ -54,7 +74,16 @@ const { chromium } = require('playwright');
     const markId = await installedMark.getAttribute('data-ms-shape');
     const originalPose = await installedMark.locator('.layer-ms-hit').evaluate(el => [Number(el.dataset.rot), el.dataset.mir === '1']);
     assert.deepEqual(await drawnMembrane(installedMark), await expectedMembrane(markId, ...originalPose));
-    assert.equal(await page.locator('svg.board .layer-manuscript image, svg.board .rune image[href*="rune-set-"]').count(), 0);
+    assert.equal(await installedMark.locator('.wax-membrane .ms-field').count(), 1);
+    assert.equal(await installedMark.locator('.wax-membrane .wax-grain').count(), 1);
+    assert.ok(await installedMark.locator('.wax-membrane mask path[stroke="black"]').getAttribute('d'));
+    assert.equal(await installedMark.locator('.etch-groove, rect.ms-field').count(), 0);
+    assert.ok(await page.locator('svg.board .beacon-entry image').count() > 0);
+    assert.ok(await page.locator('svg.board .beacon-exit image').count() > 0);
+    assert.equal(await page.locator('svg.board .layer-runes text, svg.board .rune image[href*="rune-set-"], svg.board .part-label').count(), 0);
+    await page.locator('svg.board [data-rune-tooltip]').first().focus();
+    assert.match(await page.locator('.rune-tooltip').innerText(), /系 · 负荷 \d+/);
+    await page.keyboard.press('Escape');
     const reliefs = page.locator('svg.board .rune .etch-relief image');
     assert.equal(await reliefs.count(), await page.locator('svg.board .rune .etched-grain').count());
     await reliefs.evaluateAll(images => Promise.all(images.map(node => {
@@ -64,59 +93,28 @@ const { chromium } = require('playwright');
     })));
     assert.ok(await page.locator('svg.board .rune .etched-grain').count() > 0);
 
-    // 检查真实 SVG 曲线的端点和线身；成对笔尖才算跨格连续，未开口的外沿必须留白。
+    // 确认旋转后的烘焙外形、接口与最小矢量降级使用同一套膜格。
     const etchedShapes = await page.evaluate(() => {
-      const V = Ashen.Veteran, dirs = { N: [0,-1], S: [0,1], E: [1,0], W: [-1,0] };
-      const opposite = { N: 'S', S: 'N', E: 'W', W: 'E' };
+      const V = Ashen.Veteran;
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      const samples = [...Object.values(V.Data.MANUSCRIPTS), {
-        id: 'holes', cells: [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2],[4,0]],
-        veins: { '0,1': ['E'] }, io: { clock: { cell: [0,0], dir: 'N' }, main: { cell: [2,2], dir: 'S' } },
-      }];
-      let count = 0;
+      const samples = Object.values(V.Data.MANUSCRIPTS);
       for (const spec of samples) for (const rotation of [0,1,2,3]) for (const mirror of [false,true]) {
         const m = V.Manuscript.orient(V.Manuscript.normalize(spec), rotation, mirror);
-        const occupied = new Set(m.cells.map(c => c.join(',')));
-        const ports = new Set(Object.values(m.io).map(p => p.cell.join(',') + '/' + p.dir));
-        const joins = new Set();
-        svg.innerHTML = V.UI.membraneEngraving(m, 60);
-        for (const path of svg.querySelectorAll('.etch-cut')) {
-          const cell = path.closest('[data-etch-cell]').dataset.etchCell;
-          const end = path.getPointAtLength(path.getTotalLength());
-          const side = Object.entries(dirs).find(([, [dx,dy]]) => Math.hypot(end.x-dx*30,end.y-dy*30) < .01)?.[0];
-          if (path.dataset.join) {
-            if (side !== path.dataset.join) throw Error(spec.id + ' 跨格笔尖偏离真实格边');
-            joins.add(cell + '/' + side);
-          } else if (side && !ports.has(cell + '/' + side)) throw Error(spec.id + ' 画出了虚假开口');
-          for (const fraction of [.2,.4,.6,.8]) {
-            const point = path.getPointAtLength(path.getTotalLength()*fraction);
-            if (Math.max(Math.abs(point.x),Math.abs(point.y)) >= 30) throw Error(spec.id + ' 刀痕越界');
-          }
+        svg.innerHTML = V.UI.membraneEngraving(m, 60, {catalogue: true});
+        const drawn = [...svg.querySelectorAll('[data-etch-cell]')].map(el => el.dataset.etchCell);
+        if (drawn.join(';') !== m.cells.map(c => c.join(',')).join(';')) throw Error(spec.id + ' 膜格不符');
+        if (svg.querySelectorAll('.etch-asset').length !== 1 || svg.querySelector('text')) throw Error(spec.id + ' 缺少美术或出现金属刻字');
+        if (svg.querySelectorAll('[data-etch-terminal]').length !== m.exits.length + 1) throw Error(spec.id + ' 起止端不符');
+        svg.innerHTML = V.UI.membraneEngraving(m, 60, {terminals: false});
+        const film = svg.querySelector('path.ms-field');
+        if (!film || film.getAttribute('d') !== V.RuneArt.contourPath(m.cells, 60) || svg.querySelector('.etch-groove')) {
+          throw Error(spec.id + ' 蜡膜轮廓不完整');
         }
-        function flood(cell, engraved) {
-          const visited = new Set([cell]);
-          for (const key of visited) {
-            const [x,y] = key.split(',').map(Number);
-            for (const [dir,[dx,dy]] of Object.entries(dirs)) {
-              const next = (x+dx) + ',' + (y+dy);
-              if (engraved && !joins.has(key + '/' + dir)) continue;
-              if (engraved && !joins.has(next + '/' + opposite[dir])) throw Error(spec.id + ' 相邻刻线没有接合');
-              if (occupied.has(next)) visited.add(next);
-            }
-          }
-          return visited;
-        }
-        const remaining = new Set(occupied);
-        for (const cell of remaining) {
-          const component = flood(cell, false);
-          if (flood(cell, true).size !== component.size) throw Error(spec.id + ' 膜层断在了格间');
-          component.forEach(k => remaining.delete(k));
-        }
-        count++;
+        if (svg.querySelector('.wax-membrane').classList.contains('arcane') !== (spec.rarity >= 5)) throw Error(spec.id + ' 蜡膜颜色不符');
       }
-      return { count, expected: samples.length*8 };
+      return samples.length;
     });
-    assert.equal(etchedShapes.count, etchedShapes.expected);
+    assert.equal(etchedShapes, 80);
 
     // 高度受限时 SVG 存在留白，拖拽仍须使用实际变换后的格子尺寸。
     for (const width of [1440, 768, 390]) {
@@ -147,40 +145,47 @@ const { chromium } = require('playwright');
     });
     const membrane = page.locator('[data-act=wsMsGrab]').first();
     await membrane.scrollIntoViewIfNeeded();
+    const grabOffset = await membrane.evaluate(el => {
+      const [x, y] = el.dataset.id.split(',').map(Number);
+      const { msOx, msOy } = el.closest('.layer-ms-hit').dataset;
+      return [x - Number(msOx), y - Number(msOy)];
+    });
     const membraneBox = await membrane.boundingBox();
     await page.mouse.move(membraneBox.x + membraneBox.width / 2, membraneBox.y + membraneBox.height / 2);
     await page.mouse.down();
     await page.mouse.move(membraneBox.x + membraneBox.width / 2 + 12, membraneBox.y + membraneBox.height / 2 + 12, { steps: 3 });
-    assert.equal(await page.locator('.drag-ghost i').count(), 2, '已装蚀刻法也有真实格子拖影');
     const dragId = await membrane.getAttribute('data-ms-id');
+    const cellCount = await page.evaluate(id => Ashen.Veteran.Manuscript.normalize(Ashen.Veteran.Data.manuscript(id)).cells.length, dragId);
+    assert.equal(await page.locator('.drag-ghost i').count(), cellCount, '已装蚀刻法也有真实格子拖影');
     const beforeRotate = await page.locator('.drag-ghost').boundingBox();
     await page.keyboard.press('r');
     const afterRotate = await page.locator('.drag-ghost').boundingBox();
     assert.ok(Math.abs(beforeRotate.width - afterRotate.height) < 0.6);
     assert.ok(Math.abs(beforeRotate.height - afterRotate.width) < 0.6);
     await page.keyboard.press('f');
-    assert.equal(await page.locator('.drag-ghost i').count(), 2);
+    assert.equal(await page.locator('.drag-ghost i').count(), cellCount);
     assert.deepEqual(await drawnMembrane(page.locator('.drag-ghost')), await expectedMembrane(dragId, 1, true));
-    const landing = await page.evaluate(() => {
+    const landing = await page.evaluate(([grabDx, grabDy]) => {
       const V = Ashen.Veteran, u = V.App.state.roster.find((u) => u.id === V.App.ui.wsUnit);
       const ms = V.Manuscript.orient(V.Manuscript.normalize(u.manuscript), 1, true);
       const [x, y] = V.Manuscript.placements(ms, V.Circuit.plateOf(u).cellsList)[0];
       const svg = document.querySelector('svg.board'), pt = svg.createSVGPoint();
-      pt.x = Number(svg.dataset.gx) + (x + 0.5) * Number(svg.dataset.cell);
-      pt.y = Number(svg.dataset.gy) + (y + 0.5) * Number(svg.dataset.cell);
+      pt.x = Number(svg.dataset.gx) + (x + grabDx + 0.5) * Number(svg.dataset.cell);
+      pt.y = Number(svg.dataset.gy) + (y + grabDy + 0.5) * Number(svg.dataset.cell);
       const screen = pt.matrixTransform(svg.getScreenCTM());
-      return { x: screen.x, y: screen.y };
-    });
+      return { x: screen.x, y: screen.y, ox: x, oy: y };
+    }, grabOffset);
     await page.mouse.move(landing.x, landing.y, { steps: 6 });
     assert.deepEqual(await drawnMembrane(page.locator('svg.board .drop-ghost')), await expectedMembrane(dragId, 1, true));
+    assert.equal(await page.locator('svg.board .drop-ghost-cell.bad').count(), 0);
     await page.mouse.up();
     assert.equal(await page.evaluate(() => Ashen.Veteran.App.ui.wsMsRot), 1);
     assert.equal(await page.evaluate(() => Ashen.Veteran.App.ui.wsMsMir), true);
     await page.locator('[data-act=wsSave]').click();
     assert.deepEqual(await page.evaluate(() => {
       const V = Ashen.Veteran, m = V.App.state.roster.find((u) => u.id === V.App.ui.wsUnit).manuscript;
-      return { rotation: m.rotation, mirrorY: m.mirrorY };
-    }), { rotation: 1, mirrorY: true });
+      return { x: m.x, y: m.y, rotation: m.rotation, mirrorY: m.mirrorY };
+    }), { x: landing.ox, y: landing.oy, rotation: 1, mirrorY: true });
 
     const copies = await page.evaluate(() => {
       const V = Ashen.Veteran, st = V.App.state, u = st.roster.find((u) => u.id === V.App.ui.wsUnit);
@@ -197,7 +202,11 @@ const { chromium } = require('playwright');
       return V.State.manuscriptsOf(unit).map(({id, x, y, rotation, mirrorY}) => ({id, x, y, rotation, mirrorY}));
     });
     const [primary] = await equipped();
-    const pick = (id) => page.locator(`.ms-chip[data-id="${id}"]`).click();
+    const pick = async (id) => {
+      const option = page.locator(`.ms-chip[data-id="${id}"]`);
+      if (!await option.isVisible()) await page.locator('[data-act=wsMsVault]').click();
+      await option.click();
+    };
     await pick('rivet');
     await page.locator('[data-act=wsMsEquip]').click();
     const installed = await equipped();
@@ -264,9 +273,9 @@ const { chromium } = require('playwright');
     assert.ok(await page.locator('.recruit-card .legend-portrait img, .recruit-card .legend-portrait svg').count() > 0);
     const atlas = await page.evaluate(() => new Promise((resolve) => {
       const img = new Image(); img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-      img.onerror = () => resolve(null); img.src = 'assets/art/portraits-v2/wanderers.png';
+      img.onerror = () => resolve(null); img.src = Ashen.Art.getArt('portrait.wanderer0').src;
     }));
-    assert.ok(atlas && atlas.w === atlas.h && atlas.w >= 1024);
+    assert.ok(atlas && atlas.w === atlas.h && atlas.w === 96);
     const touch = await browser.newPage({ viewport: { width: 390, height: 900 }, hasTouch: true });
     await touch.goto(pathToFileURL(path.resolve(__dirname, '../../index.html')).href);
     await touch.locator('[data-act=titleStart]').click();
@@ -295,22 +304,27 @@ const { chromium } = require('playwright');
     // 还原同心纹跨两门蚀刻法的存档，从正常工坊入口读取左栏。
     await page.evaluate(() => {
       const V = Ashen.Veteran, st = V.State.create(42), u = st.roster[0];
-      const square = {cells:[[0,0],[1,0],[0,1],[1,1]]};
-      const [[x,y]] = V.Manuscript.placements(square,V.Circuit.plateOf(u).cellsList);
+      // 77 格底盘上的两套 8 格谱互不重叠，同心纹横跨它们的交界。
       for (const p of u.board.placements) st.stash.push(p.itemId);
       const item = V.State.makePart(st,{templateId:'capacitor'});
       st.itemsById[item.id] = item;
-      u.board.placements = [{itemId:item.id,x,y,rotation:0,mirrorY:false}];
-      u.manuscript = {...V.Data.manuscript('spark'),x,y};
-      u.extraManuscripts = [{...V.Data.manuscript('rivet'),x,y:y+1}];
+      u.board.placements = [{itemId:item.id,x:4,y:3,rotation:0,mirrorY:false}];
+      u.manuscript = {...V.Data.manuscript('spark'),x:1,y:3};
+      u.extraManuscripts = [{...V.Data.manuscript('rivet'),x:5,y:3}];
+      const validation = V.State.validate(st);
+      if (!validation.ok) throw new Error(validation.errors.join(', '));
       V.App.setState(st);
     });
     await page.reload();
     await page.locator('[data-act=titleStart]').click();
     await page.locator('#nav [data-v=workshop]').click();
     await page.locator('.ms-chip[data-id=rivet]').click();
-    assert.match(await page.locator('[data-ms-cov]').innerText(), /2\/2 · 100%/);
-    assert.equal(await page.locator('.ms-live-benefit b').innerText(), '+14%');
+    const lockTags = page.locator('.ws-skill .ws-effect-tags');
+    assert.match(await lockTags.getByText('[普攻 ×3]', {exact: true}).getAttribute('title'), /累计普攻至少 3 次/);
+    assert.match(await lockTags.getByText('伤害 75%', {exact: true}).getAttribute('title'), /自身幅值的 75%/);
+    assert.match(await lockTags.getByText('护盾 12%', {exact: true}).getAttribute('title'), /自身生命上限的 12%/);
+    assert.equal(await page.locator('[data-ms-cov]').innerText(), '1/8 · 13%');
+    assert.equal(await page.locator('.ms-live-benefit b').innerText(), '+0%');
     assert.equal(await page.locator('[data-ms-route]').innerText(), '未贯通');
     assert.deepEqual(errors, []);
     console.log('通过：并装、切换草稿、选中轮廓、冲突回滚、主修交换、读档与单独卸下，术语、左右布局、3种宽度拖拽比例、延迟/键盘瘢痕提示、人物立绘与图集加载。');

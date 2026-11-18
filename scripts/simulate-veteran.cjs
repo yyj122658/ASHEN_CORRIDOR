@@ -65,7 +65,8 @@ function memberAt(preset, i) {
 function presetTag(preset) {
   if (preset.members.length === 1) {
     const m = preset.members[0];
-    return `底盘 ${m.body} · 主修 ${D.MANUSCRIPTS[m.ms].name} · 布线 ${m.style}`;
+    const actual = loadout(preset, 1).roster[0].manuscript;
+    return `底盘 ${D.bodyStyle(m.body)} · 主修 ${actual?.name || '无'} · 布线 ${m.style}`;
   }
   return preset.members.map((m, i) => `${i + 1}号 ${m.role}(${m.style})`).join(' / ');
 }
@@ -86,12 +87,15 @@ function compose(preset, seed, floor) {
     });
     st.roster.push(u);
     st.team.push(u.id);
-    for (let s = 1; !u.manuscript && s < 200; s++) {
-      V.State.equipManuscript(st, u, mb.ms);
-      if (!u.manuscript) u.plateSeed = s;
+    const preferred = D.manuscript(mb.ms);
+    const alternatives = Object.values(D.MANUSCRIPTS)
+      .filter(ms => ms.id !== preferred.id && ms.rarity <= preferred.rarity)
+      .sort((a, b) => b.rarity - a.rarity);
+    for (const ms of [preferred, ...alternatives]) {
+      V.State.equipManuscript(st, u, ms.id);
+      if (u.manuscript) break;
     }
     /* 蚀刻法先落位，再交给端口图布线器：它会重新摆姿态、铺通路、填余格 */
-    V.State.manuscriptsOf(u).forEach((m) => { V.State.placeManuscript(st, u, m.id); });
     const routed = autoRouteBoard(A, st, u, {
       style: mb.style,
       overload: mb.overload || 0,
@@ -108,11 +112,17 @@ function compose(preset, seed, floor) {
   return st;
 }
 
+const composed = new Map();
+function loadout(preset, floor) {
+  const key = preset.id + ':' + partySizeFor(floor);
+  if (!composed.has(key)) composed.set(key, compose(preset, 0, floor));
+  return composed.get(key);
+}
+
 function fightOne(preset, seed, floor, bossId) {
-  let st = compose(preset, seed, floor);
-  const started = V.Expedition.start(st, { seed });
+  const started = V.Expedition.start(loadout(preset, floor), { seed });
   if (!started.ok) return null;
-  st = started.state;
+  const st = started.state;
   st.run.floor = floor;
   const kind = floor >= 49 ? 'boss' : (floor === 22 || floor === 36) ? 'elite' : 'battle';
   st.run.nodes = [{ id: 'n', type: kind, consumed: false }];

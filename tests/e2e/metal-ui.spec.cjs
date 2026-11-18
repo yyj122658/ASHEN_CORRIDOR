@@ -14,6 +14,43 @@ const { chromium } = require('playwright');
     await page.goto(pathToFileURL(path.resolve(__dirname, '../../index.html')).href);
     await page.locator('[data-act="titleStart"]').click();
     assert.equal(await page.locator('.metal-party .metal-card').count(), 4);
+    assert.deepEqual(await page.locator('.camp-party .slot-index').allTextContents(), ['1 号位', '2 号位', '3 号位', '4 号位']);
+    assert.doesNotMatch(await page.locator('.camp-party').innerText(), /前锋|中阵|后阵/);
+    assert.match(await page.locator('.camp-party').innerText(), /近战 · 剑[\s\S]*远程 · 弓/);
+    await page.locator('.camp-party .metal-card').nth(3).getByRole('button', {name: '选择队员'}).click();
+    assert.match(await page.locator('.formation-layout .picker').innerText(), /4 号位/);
+    await page.locator('#nav [data-v="camp"]').click();
+    await page.getByRole('button', {name: '设置', exact: true}).click();
+    const settings = page.getByRole('dialog', {name: '设置与存档'});
+    await settings.getByText('存档管理', {exact: true}).click();
+    await settings.getByRole('button', {name: '生成导出文本'}).click();
+    assert.equal(JSON.parse(await settings.getByLabel('存档文本').inputValue()).ruleset, 'veteran');
+    await settings.getByRole('button', {name: '✕'}).click();
+    const forgedForms = await page.evaluate(() => {
+      const V = Ashen.Veteran, state = V.State.create(42), unit = state.roster[0];
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;left:-2400px;width:800px';
+      document.body.append(probe);
+      try {
+        for (const preset of Object.keys(V.Data.BODIES)) {
+          unit.bodyPreset = preset;
+          const plate = V.Circuit.plateOf(unit);
+          probe.innerHTML = V.UI.boardSvg(state, unit.id, []);
+          const svg = probe.querySelector('svg.board'), slab = svg.querySelector('.plate-metal-slab');
+          const {gx, gy, cell, n} = svg.dataset;
+          for (let y = 0; y < Number(n); y++) for (let x = 0; x < Number(n); x++) {
+            const center = new DOMPoint(Number(gx) + (x + .5) * cell, Number(gy) + (y + .5) * cell);
+            if (slab.isPointInFill(center) !== plate.cells.has(x + ',' + y)) {
+              throw Error(preset + ' 底板覆盖错误 ' + x + ',' + y);
+            }
+          }
+        }
+        return Object.keys(V.Data.BODIES).length;
+      } finally {
+        probe.remove();
+      }
+    });
+    assert.equal(forgedForms, 14);
     const selectedId = await page.locator('.metal-card [data-v="workshop"]').nth(1).getAttribute('data-id');
     await page.locator('.metal-card [data-v="workshop"]').nth(1).click();
     assert.equal(await page.evaluate(() => Ashen.Veteran.App.ui.wsUnit), selectedId);
@@ -40,7 +77,8 @@ const { chromium } = require('playwright');
     assert.match(await page.locator('.scar-key').innerText(), /瘢痕 2/);
     await page.locator('[data-act="wsFilmView"]').click();
     assert.ok(await page.locator('.film-view .ms-contour.focused').isVisible());
-    assert.ok(Number(await page.locator('.film-view .ms-field').first().evaluate(el => getComputedStyle(el).fillOpacity)) >= 0.7);
+    const waxOpacity = Number(await page.locator('.film-view .ms-field').first().evaluate(el => getComputedStyle(el).fillOpacity));
+    assert.ok(waxOpacity >= .28 && waxOpacity <= .35);
     await page.locator('svg.board .scar-cell.active').focus();
     assert.match(await page.locator('#scar-tooltip').innerText(), /生效/);
     if (process.env.METAL_PREVIEW) await page.locator('.ws-board').screenshot({path:process.env.METAL_PREVIEW});
@@ -100,6 +138,11 @@ const { chromium } = require('playwright');
         await page.locator(`#nav [data-v="${screen}"]`).click();
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
         assert.ok(overflow <= 1, `${screen} 在 ${width}px 横溢出 ${overflow}px`);
+        if (screen === 'camp') {
+          const cards = page.locator('.camp-party .metal-card');
+          const [first, second] = await Promise.all([cards.nth(0).boundingBox(), cards.nth(1).boundingBox()]);
+          assert.equal(first.y === second.y, width >= 768, `前哨席位布局 @ ${width}px`);
+        }
       }
     }
     await page.setViewportSize({ width: 1440, height: 1000 });

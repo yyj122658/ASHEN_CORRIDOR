@@ -11,11 +11,10 @@ const { autoRouteBoard } = require('../helpers/veteran-run.cjs');
 
 const A = loadVeteran();
 const V = A.Veteran;
-const D = V.Data;
 
 const PRESETS = [
-  { style: 'straight', body: 'agile', ms: 'flurry', label: 'A 高频直导' },
-  { style: 'elbow', body: 'corner', ms: 'inverse', label: 'B 九曲线圈炮' },
+  { style: 'straight', body: 'sturdy', ms: 'flurry', label: 'A 高频直导' },
+  { style: 'elbow', body: 'sturdy', ms: 'inverse', label: 'B 九曲线圈炮' },
   { style: 'ember', body: 'waist', ms: 'ember12', label: 'C 高温余烬' },
 ];
 
@@ -29,13 +28,8 @@ function buildUnit(preset, seed) {
   });
   st.roster.push(u);
   st.team.push(u.id);
-  /* 高阶层的大卷在窄底盘上可能放不下：换盘面种子直到装得上 */
-  u.manuscript = null;
-  for (let s = 1; !u.manuscript && s < 200; s++) {
-    V.State.equipManuscript(st, u, preset.ms);
-    if (!u.manuscript) u.plateSeed = s;
-  }
-  V.State.manuscriptsOf(u).forEach((m) => { V.State.placeManuscript(st, u, m.id); });
+  V.State.equipManuscript(st, u, preset.ms);
+  assert.equal(u.manuscript?.id, preset.ms, `${preset.label} 应装下完整蚀刻法`);
   const routed = autoRouteBoard(A, st, u, {
     style: preset.style,
     overload: preset.style === 'ember' ? 0.35 : 0,
@@ -128,12 +122,8 @@ test('接通之后，战斗里的单位真的带着路径与派生参数', () =>
     });
     st.roster.push(u);
     st.team.push(u.id);
-    u.manuscript = null;
-    for (let s = 1; !u.manuscript && s < 200; s++) {
-      V.State.equipManuscript(st, u, preset.ms);
-      if (!u.manuscript) u.plateSeed = s;
-    }
-    V.State.manuscriptsOf(u).forEach((m) => { V.State.placeManuscript(st, u, m.id); });
+    V.State.equipManuscript(st, u, preset.ms);
+    assert.equal(u.manuscript?.id, preset.ms, `${preset.label} 应装下完整蚀刻法`);
     assert.ok(autoRouteBoard(A, st, u, {
       style: preset.style, overload: preset.style === 'ember' ? 0.35 : 0,
     }).ok, `${preset.label} 布线失败`);

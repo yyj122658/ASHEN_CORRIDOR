@@ -100,14 +100,12 @@ test('负荷上限只由格数派生：经典夹具 14 格 8 点，异形 77 格
 
   const fresh = V.State.create(42);
   fresh.roster.forEach((u) => {
-    const cells = V.Circuit.plateOf(u).cells.size;
+    const { cells: boardCells, archetype } = V.Circuit.plateOf(u);
+    const cells = boardCells.size;
     assert.equal(cells, V.PlateGen.PLATE_TARGET, `${u.name} 应拿到 77 格`);
-    /* 异形板面走自己的系数：44 点太宽，装满 4 门也触发不了超载，负荷系统会整条空转 */
-    /* 无相包容（厚铸躯壳）的母板负荷 +35%，其余相走基准 */
-    const sturdy = D.body(u.bodyPreset).innate.id === 'sturdy';
-    const expect = Math.round(Math.round(cells * D.DESIGN.generatedCapPerCell) * (sturdy ? 1.35 : 1));
+    const expect = Math.round(cells * D.DESIGN.generatedCapPerCell) + (archetype === 'hundun' ? 12 : 0);
     assert.equal(V.Circuit.loadCap(u), expect, `${u.name}（${D.body(u.bodyPreset).innate.id}）负荷上限不符`);
-    assert.equal(V.Roster.stats(fresh, u).loadCap, expect, '77 格 → 20 点（厚铸为 27）');
+    assert.equal(V.Roster.stats(fresh, u).loadCap, expect, '77 格 → 55 点（浑沌未凿为 67）');
   });
 
   /* 两套系数必须分开存在：合回一个数，夹具和真游戏就会互相污染 */
@@ -129,11 +127,10 @@ test('14 位传奇一人一型，金属互不重复', () => {
   });
 });
 
-test('营地里东西两边的人都有：族属齐全、两边都不少于五人、叫法跟着族属走', () => {
+test('营地里东西两边的人都有，相名统一使用《铁相录》正名', () => {
   const east = D.SKINS.filter((s) => s.culture === 'east');
   const west = D.SKINS.filter((s) => s.culture === 'west');
   D.SKINS.forEach((s) => {
-    /* 族属只有两种，且必须明确——没有「两边都算」的人，否则界面不知道给他哪套叫法 */
     assert.ok(s.culture === 'east' || s.culture === 'west', `${s.name} 的族属是「${s.culture}」`);
     assert.ok(s.origin && s.origin.length >= 4, `${s.name} 没有出身地，立绘就没法定服饰`);
   });
@@ -142,18 +139,15 @@ test('营地里东西两边的人都有：族属齐全、两边都不少于五�
   assert.ok(east.length >= 5, `东边只有 ${east.length} 人，太少`);
   assert.ok(west.length >= 5, `西边只有 ${west.length} 人，太少`);
 
-  /* 同一块板，两边的人叫法不同；而且每个人报出来的必须是自己那套 */
   D.SKINS.forEach((s) => {
     const c = D.cultureOf(s.id);
     assert.equal(c, s.culture, `${s.name} 的族属查表不一致`);
-    const own = D.bodyStyle(s.metal, c);
-    const other = c === 'east' ? D.bodyWest(s.metal).zh : D.bodyStyle(s.metal);
-    assert.ok(own && own.length >= 2, `${s.name} 报不出自己那套相名`);
-    assert.notEqual(own, other, `${s.name} 两套叫法撞在一起了：「${own}」`);
+    const style = V.PlateGen.ARCHETYPES[D.body(s.metal).archetype].name;
+    assert.equal(D.bodyStyle(s.metal, c), style);
+    assert.notEqual(D.bodyWest(s.metal).zh, style);
   });
 
-  /* 不传族属时退回东土那套，老调用点不能因此拿到空字符串 */
-  assert.equal(D.bodyStyle('sturdy'), V.PlateGen.ARCHETYPES.full.name);
+  assert.equal(D.bodyStyle('sturdy'), '浑沌未凿');
   assert.equal(D.cultureOf('不存在的皮肤'), 'east');
 });
 

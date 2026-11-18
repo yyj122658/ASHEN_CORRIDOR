@@ -92,15 +92,15 @@ test('rewind 保留上次阵型与指令供修改', () => {
   s = setNodes(A, s, ['battle']);
   s = V.Encounter.open(s, s.run.nodes[0].id).state;
 
-  const formation = s.run.encounter.preparation.formation.slice().reverse();
-  const edit = V.Encounter.editPreparation(s, { formation });
+  const uid = s.run.party[0].uid;
+  const move = {uid, x: 51, y: -36};
+  const edit = V.Encounter.editPreparation(s, { move });
   assert.ok(edit.ok, JSON.stringify(edit.error));
   s = edit.state;
 
   const rw = V.Encounter.rewind(s);
-  assert.deepEqual(rw.state.run.encounter.preparation.formation, formation, '阵型要保留');
-  const slots = rw.state.run.party.map((p) => p.slot).sort();
-  assert.deepEqual(slots, [2, 3], 'party 按阵型重排且槽位连续');
+  assert.deepEqual(rw.state.run.party, edit.state.run.party, '阵形和落点要保留');
+  assert.equal(rw.state.run.party[1].uid, uid, '落点比队友靠后');
 });
 
 test('attemptNumber 增加但不推进养成', () => {

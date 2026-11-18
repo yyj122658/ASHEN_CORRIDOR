@@ -26,6 +26,35 @@ const STATE = fakeState();
 const IDS = Object.keys(RA.RUNES);
 const IN_DATA = IDS.filter((id) => Data.TEMPLATES[id]);
 
+test('蜡膜按集合合并边界，保留内孔并分开对角相触的区域', () => {
+  assert.match(RA.contourPath([[0, 0], [1, 0]], 60), /^M0 0L120 0L120 60L0 60Z$/);
+  assert.equal(RA.contourPath([[0, 0], [0, 0]], 60), RA.contourPath([[0, 0]], 60));
+  const ring = [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]];
+  assert.equal((RA.contourPath(ring, 60).match(/Z/g) || []).length, 2);
+  assert.equal((RA.contourPath([[0, 0], [1, 1]], 60).match(/Z/g) || []).length, 2);
+});
+
+test('管道双态与信标、战损图集通过美术注册表寻址', () => {
+  for (const id of IDS) {
+    const idle = A.Art.getArt('conduit.idle.' + id);
+    const powered = A.Art.getArt('conduit.powered.' + id);
+    const hot = A.Art.getArt('conduit.hot.' + id);
+    assert.ok(idle?.src.endsWith('/idle/' + id + '.png'), id);
+    assert.ok(powered?.src.endsWith('/powered/' + id + '.png'), id);
+    assert.ok(hot?.src.endsWith('/hot/' + id + '.png'), id);
+    const {cols, rows} = RA.rune(id);
+    for (const {src} of [idle, powered, hot]) {
+      const bytes = fs.readFileSync(path.join(ROOT, src));
+      assert.equal(bytes.toString('ascii', 1, 4), 'PNG', src);
+      assert.equal(bytes.readUInt32BE(16), cols * 64, src);
+      assert.equal(bytes.readUInt32BE(20), rows * 64, src);
+    }
+    assert.ok(RA.image(id).includes(idle.src), id);
+  }
+  assert.match(RA.conduitTile(32, 0, 0, 64), /conduit\/blueprint\.png/);
+  assert.match(RA.conduitOverlay('fuse', 32, 32, 64), /conduit\/overlays\.png/);
+});
+
 test('已在 data.js 的纹路，格数与模板一致', () => {
   assert.ok(Data.TEMPLATE_ORDER.length >= 30);
   assert.deepEqual(IN_DATA.slice().sort(), Data.TEMPLATE_ORDER.slice().sort());
@@ -87,7 +116,7 @@ test('sizeFor 与实际占用包围盒一致', () => {
 test('板面、旋转预览和缩略图共用凹刻笔画，不请求管件切片', () => {
   for (const id of IDS) {
     const shape = RA.rune(id);
-    const texture = fs.readFileSync(path.join(ROOT, 'assets/art/etch-depth', id + '.webp'));
+    const texture = fs.readFileSync(path.join(ROOT, 'assets/art/topology-v4/relief', id + '.webp'));
     assert.equal(texture.toString('ascii', 8, 12), 'WEBP');
     const flat = RA.image(id, { x: 34, y: 26, cell: 60 });
     const turned = RA.image(id, { rotation: 1, mirrorY: true });
@@ -96,48 +125,46 @@ test('板面、旋转预览和缩略图共用凹刻笔画，不请求管件切�
     for (const svg of [flat, turned, RA.thumb(id)]) {
       assert.ok(svg.includes(shape.engraving) && svg.includes('etched-grain'), id);
       assert.doesNotMatch(svg, /rune-set-/);
-      assert.ok(svg.includes(`assets/art/etch-depth/${id}.webp`), id);
+      assert.ok(svg.includes(`assets/art/topology-v4/conduit/idle/${id}.png`), id);
     }
-    assert.ok(turned.includes(`viewBox="${shape.cols} ${shape.rows} ${shape.cols} ${shape.rows}"`));
+    assert.ok(turned.includes(`width="${shape.cols}" height="${shape.rows}"`));
 
   }
   assert.equal(RA.thumb('nope'), '');
   assert.equal(RA.image('nope', {}), '');
 });
 
-test('每条连接的三道刻线及亮缘连续、贴齐接缝且全程位于真实占格内', () => {
-  const sides = { W: [-1,0], E: [1,0], N: [0,-1], S: [0,1] };
+test('纹路烘焙轨迹在所有朝向匹配结算使用的内部连通链', () => {
+  const M = A.Veteran.Manuscript;
+  const centerLine = chain => {
+    const [dx1, dy1] = M.ORTH[chain.inDir];
+    const [dx2, dy2] = M.ORTH[chain.outDir];
+    const centers = chain.cells.map(c => [c.x + .5, c.y + .5]);
+    const [ax, ay] = centers[0], [bx, by] = centers.at(-1);
+    return [[ax + dx1/2, ay + dy1/2], ...centers, [bx + dx2/2, by + dy2/2]];
+  };
   for (const tpl of Object.values(Data.TEMPLATES)) {
-    const paths = [...RA.rune(tpl.id).engraving.matchAll(/<path d="([^"]+)"/g)].map(m => m[1]);
-    const cells = new Set(tpl.cells.map(c => c.join(',')));
-    assert.equal(paths.length, tpl.links.length * 6);
-    paths.forEach((d,index) => {
-      const link = tpl.links[Math.floor(index / 3) % tpl.links.length];
-      const ports = link.map(id => tpl.ports.find(p => p.id === id));
-      const lane = [-.085,0,.085][index % 3];
-      assert.match(d, /^M[-.\d ]+( C[-.\d ]+)+$/, tpl.id);
-      const nums = d.match(/-?[\d.]+/g).map(Number);
-      const xy = (p,end) => {
-        const [dx,dy] = sides[p.dir], shift = end ? lane : -lane;
-        return [p.cell[0]+.5+dx*.5-dy*shift, p.cell[1]+.5+dy*.5+dx*shift];
-      };
-      function near(a,b) { assert.ok(Math.abs(a-b)<.0011, tpl.id+' '+a+' != '+b); }
-      const start = xy(ports[0],false), end = xy(ports[1],true);
-      start.forEach((n,i) => near(n,nums[i]));
-      end.forEach((n,i) => near(n,nums[nums.length-2+i]));
-      // 起笔和收笔均垂直于接缝，旋转接续时不会形成折角。
-      const firstAxis = sides[ports[0].dir][0] ? 1 : 0;
-      const lastAxis = sides[ports[1].dir][0] ? 1 : 0;
-      near(nums[firstAxis],nums[2+firstAxis]);
-      near(nums.at(-2+lastAxis),nums.at(-4+lastAxis));
-      for (let i=2;i<nums.length;i+=6) {
-        for (let step=1;step<20;step++) {
-          const t=step/20, u=1-t;
-          const pt=[0,1].map(k=>Math.floor(u**3*nums[i-2+k]+3*u*u*t*nums[i+k]+3*u*t*t*nums[i+2+k]+t**3*nums[i+4+k]));
-          assert.ok(cells.has(pt.join(',')), tpl.id+' 穿过空格 '+pt);
-        }
-      }
-    });
+    for (const rot of [0, 1, 2, 3]) for (const mirror of [false, true]) {
+      const t = Circuit.transformTemplate(tpl, rot, mirror);
+      const matrix = RA.matrixFor(tpl.id, rot, mirror);
+      const [a, b, c, d, e, f] = matrix;
+      const artwork = RA.rune(tpl.id).traces.map(trace =>
+        trace.map(([x, y]) => [a*x + c*y + e, b*x + d*y + f]));
+      assert.deepEqual(artwork, M.internalChains(t.cells, t.ports).map(centerLine), tpl.id);
+    }
+  }
+});
+
+test('固定蚀刻法有实际烘焙资产，裁切变体不会借用原谱的图', () => {
+  const M = A.Veteran.Manuscript;
+  assert.equal(Object.keys(RA.ETCHINGS).length, 80);
+  for (const base of Object.values(RA.ETCHINGS)) {
+    const src = `assets/art/topology-v4/etch-relief/${base.id}.webp`;
+    assert.ok(fs.existsSync(path.join(ROOT, src)));
+    for (const rot of [0, 1, 2, 3]) {
+      assert.ok(RA.etchImage(M.orient(base, rot, true), 60).includes(src), base.id);
+    }
+    assert.equal(RA.etchImage({...base, cells: base.cells.slice(1)}, 60), '');
   }
 });
 

@@ -3,33 +3,17 @@
 (function (A) {
   'use strict';
 
-  const BASE = 'assets/art/battle-v1/';
-  const PRIORITY = { idle: 0, attack: 1, cast: 1, move: 1, guard: 2, dodge: 2, hurt: 2, death: 3 };
+  const EFFECTS = ['pulse', 'overheat', 'corrosion', 'impact', 'impactHot', 'impactCrack',
+    'fuse', 'shield', 'membrane', 'interrupt', 'brazier',
+    'arrow', 'arrowHot', 'arrowCrack', 'slash', 'slashHot', 'slashCrack',
+    'spell', 'spellHot', 'spellCrack', 'bash', 'bashHot', 'bashCrack', 'thrust', 'thrustHot', 'thrustCrack'];
+  const EFFECT_ART = 'vfx.topology';
+  const EFFECT_SIZE = 48;
+  const EFFECT_FRAMES = 8;
+  const PRIORITY = { idle: 0, attack: 1, charge: 1, release: 1, cast: 1, move: 1, run: 0, guard: 2, dodge: 2, hurt: 2, death: 3 };
+  const strikeTravel = { attack: [0, -.12, 1, .38, .04, 0], release: [-.12, 1, .38, .04, 0] };
+  const ease = t => t * t * (3 - 2 * t);
 
-  // 脚底为原点。三个关键姿势依次为预备、出手、收势，单位为格宽的百分之一及角度。
-  const choreography = {
-    blade:     ['sweep','#d5bc91', [-8,0,-9], [22,-4,14], [7,0,5]],
-    warden:    ['ring','#b0b9ae', [-4,3,-6], [11,3,9], [4,2,2]],
-    ranger:    ['shaft','#d9b578', [2,1,5], [-9,-2,-9], [-3,0,-2]],
-    warlock:   ['coil','#a993c9', [-2,-3,-5], [4,-13,7], [2,-5,2]],
-    cleric:    ['ring','#f5ca83', [0,2,4], [3,-8,-4], [1,-3,-2]],
-    rogue:     ['shaft','#a3bcb9', [-12,4,-12], [32,-7,19], [9,2,8]],
-    wanderer0: ['sweep','#cfb48a', [-5,4,-15], [17,-6,20], [6,1,9]],
-    wanderer1: ['ring','#97b5c4', [-4,4,-8], [9,5,13], [5,1,6]],
-    wanderer2: ['shaft','#c6b5a3', [-8,1,-4], [22,0,9], [4,0,1]],
-    wanderer3: ['coil','#c5b9ba', [-7,-3,-6], [9,-7,10], [-2,-2,-3]],
-    wanderer4: ['sweep','#a4aac9', [-6,1,-9], [15,-14,15], [6,-5,5]],
-    wanderer5: ['ring','#d0af77', [0,-7,-8], [9,5,14], [3,2,7]],
-    wanderer6: ['shaft','#add7d8', [4,-3,6], [-6,-5,-8], [0,-2,-2]],
-    wanderer7: ['sweep','#d78e6d', [-9,4,-13], [16,3,22], [8,2,10]],
-    wanderer8: ['ring','#bcd2ab', [-4,1,-4], [2,-10,5], [-1,-3,0]],
-    wanderer9: ['coil','#c7afd1', [-4,-2,-7], [7,-5,8], [3,-1,3]],
-    wanderer10:['sweep','#b2bdcc', [-7,3,-8], [25,-18,18], [10,-5,8]],
-    wanderer11:['coil','#a4bd8e', [-5,3,-9], [9,0,12], [4,1,6]],
-    wanderer12:['ring','#b5b4d1', [-5,-5,-10], [8,-2,13], [3,-3,3]],
-    wanderer13:['coil','#edab75', [-7,2,-10], [14,-6,16], [5,-2,6]],
-    wanderer14:['shaft','#e0d8b7', [-4,3,-6], [26,-2,11], [6,1,4]],
-  };
   const reactions = {
     move:[[0,1,-5],[0,-7,7],[0,-2,2]],
     dodge:[[-2,2,-6],[-19,-4,-17],[-6,1,-5]],
@@ -37,39 +21,17 @@
     cast:[[0,2,-5],[-2,-7,-7],[3,-2,5]],
   };
 
-  function drawGesture(ctx, anim, score, time, scale) {
-    const poses = reactions[anim] || (anim === 'attack' && score.slice(2));
+  function drawGesture(ctx, anim, time, scale) {
+    const poses = reactions[anim];
     if (!poses) return;
     const stops = [0,.27,.54,.77,1], rest = [0,0,0];
     const i = time < stops[1] ? 0 : time < stops[2] ? 1 : time < stops[3] ? 2 : 3;
     const a = poses[i-1] || rest, b = poses[i] || rest;
     const t = (time - stops[i]) / (stops[i+1] - stops[i]);
-    const ease = t*t*(3-2*t);
-    const value = k => a[k] + (b[k]-a[k])*ease;
+    const value = k => a[k] + (b[k]-a[k])*ease(t);
     ctx.translate(value(0)*scale, value(1)*scale);
     ctx.rotate(value(2)*Math.PI/180);
-    if ((anim !== 'attack' && anim !== 'cast') || time < .26 || time > .86) return;
-    const p = (time-.26)/.6;
-    ctx.save();
-    ctx.scale(scale,scale);
-    ctx.globalAlpha *= Math.sin(p*Math.PI)*.9;
-    ctx.strokeStyle = score[1];
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const kind = anim === 'cast' ? 'ring' : score[0];
-    if (kind === 'sweep') {
-      ctx.arc(7,-43,32,-1.5+p*.6,-1.4+p*2.8);
-    } else if (kind === 'shaft') {
-      ctx.moveTo(16+p*28,-45+p*3);
-      ctx.lineTo(23+p*57,-48+p*3);
-    } else if (kind === 'ring') {
-      ctx.ellipse(12,-36,9+p*25,5+p*13,-.3,0,2*Math.PI);
-    } else {
-      ctx.moveTo(8,-32);
-      ctx.bezierCurveTo(24,-64+p*20,33,-18-p*16,25+p*34,-45);
-    }
-    ctx.stroke();
-    ctx.restore();
+
   }
 
   let atlas = null;
@@ -78,30 +40,37 @@
   const states = Object.create(null);
 
   function characterStrip(id, facing) {
-    const size = 192;
-    const sheet = '../battle-v3/' + id + '.webp';
+    const size = 64;
+    const sheet = A.Art.BASE + 'actors/' + id + '.png';
     function sequence(poses, durations, loop, impactFrame) {
       return { sheet, loop, impactFrame, frameCount: poses.length,
-        frames: poses.map((pose, i) => ({
-          rect: { x: pose * size, y: 0, w: size, h: size },
-          pivot: { x: 96, y: 184 }, durationMs: durations[i],
-        })),
+        frames: poses.map((pose, i) => {
+          const weaponPose = pose >= 6;
+          const width = weaponPose ? 80 : size;
+          return {
+            rect: { x: weaponPose ? 6 * size + (pose - 6) * width : pose * size, y: 0, w: width, h: width },
+            pivot: { x: width / 2, y: weaponPose ? 74 : 60 }, durationMs: durations[i],
+          };
+        }),
       };
     }
     return { facing, frameSize: size, animations: {
       idle: sequence([0, 1], [610, 410], true),
-      attack: sequence([1, 2, 3, 0], [80, 130, 180, 75], false, 2),
+      attack: sequence([6, 7, 8, 9, 0], [80, 100, 116, 105, 65], false, 2),
+      charge: sequence([6, 7], [115, 110], false),
+      release: sequence([7, 8, 9, 0], [24, 116, 105, 65], false, 1),
+      run: sequence([10, 11, 12, 13, 14, 15, 16, 17], [38, 42, 38, 42, 38, 42, 38, 42], true),
+      move: sequence([10, 12, 14, 16], [52, 66, 65, 58], false),
+      cast: sequence([6, 7, 8, 9], [95, 140, 150, 85], false),
       hurt: sequence([4, 0], [170, 75], false),
-      death: sequence([4, 5], [145, 260], false),
+      death: sequence([4, 4, 5, 5, 5, 5], [50, 95, 65, 65, 65, 65], false),
     } };
   }
 
   function init() {
     if (atlas) return true;
-    const raw = typeof window !== 'undefined' ? window.ASHEN_BATTLE_ATLAS : null;
-    if (!raw || !raw.characters) return false;
-    const characters = { ...raw.characters };
-    A.Veteran.Data.SKINS.forEach(({id}) => { if (!characters[id]) characters[id] = characterStrip(id, 'right'); });
+    const characters = {};
+    A.Veteran.Data.SKINS.forEach(({id}) => { characters[id] = characterStrip(id, 'right'); });
     A.Veteran.Data.SKINS.forEach(({id}) => {
       const c = characters[id], clips = c.animations;
       const gesture = (source, indices, durations) => ({
@@ -109,16 +78,12 @@
         frames:indices.map((index,i) => ({...source.frames[Math.min(index,source.frames.length-1)], durationMs:durations[i]})),
       });
       characters[id] = {...c, animations:{...clips,
-        cast:gesture(clips.attack,[0,1,2,1],[95,140,150,85]),
-        move:gesture(clips.idle,[0,1,0],[70,100,80]),
         guard:gesture(clips.hurt,[0,0,1],[75,105,90]),
         dodge:gesture(clips.idle,[1,0,1],[65,90,75]),
       }};
     });
-    for (const {id,sprite} of Object.values(A.Veteran.Data.ENEMIES)) {
-      if (!characters[id]) characters[id] = characters[sprite] || characterStrip(sprite || id, 'left');
-    }
-    atlas = { ...raw, characters };
+    for (const id of Object.keys(A.Veteran.Data.ENEMIES)) characters[id] = characterStrip(id, 'left');
+    atlas = { characters };
     return true;
   }
 
@@ -129,7 +94,7 @@
       const img = new Image();
       img.onload = () => { sheets.set(sheet, img); resolve(true); };
       img.onerror = () => resolve(false);
-      img.src = BASE + sheet;
+      img.src = sheet;
     });
     loading.set(sheet, job);
     job.then(() => loading.delete(sheet));
@@ -150,7 +115,25 @@
     }));
   }
 
+  function preloadEffects() {
+    return A.Art.preloadArt([EFFECT_ART]).then(({failed}) => !failed.length);
+  }
+
+  function drawEffect(ctx, kind, progress, x, y, width, height) {
+    const row = EFFECTS.indexOf(kind);
+    const img = A.Art.getImage(EFFECT_ART);
+    if (row < 0 || !img) return false;
+    const frame = Math.max(0, Math.min(EFFECT_FRAMES - 1, Math.floor(progress * EFFECT_FRAMES)));
+    ctx.drawImage(img, frame * EFFECT_SIZE, row * EFFECT_SIZE, EFFECT_SIZE, EFFECT_SIZE,
+      Math.round(x - width / 2), Math.round(y - height / 2), width, height);
+    return true;
+  }
+
   function isReady() { return sheets.size > 0; }
+
+  function weaponFor(u) {
+    return u ? A.Veteran.Positions.style(u).effect : null;
+  }
 
   function charIdFor(u) {
     if (!u || !init()) return null;
@@ -159,10 +142,7 @@
       return A.Veteran.Data.SKINS.some((skin) => skin.id === id) ? id : null;
     }
     if (u.side !== 'enemy' || !Object.hasOwn(A.Veteran.Data.ENEMIES, u.enemyType)) return null;
-    /* 亚种复用同族立绘：sprites 只在 identity 上分身，动作表还是那一套 */
-    const want = A.Veteran.Data.ENEMIES[u.enemyType].sprite || u.enemyType;
-    if (Object.hasOwn(atlas.characters, want)) return want;
-    return Object.hasOwn(atlas.characters, u.enemyType) ? u.enemyType : null;
+    return u.enemyType;
   }
 
   function supports(u) {
@@ -196,20 +176,67 @@
     const force = !!(opts && opts.force);
 
     if (st.anim === 'death' && anim !== 'death') return false;
+    if (!force && anim !== 'death' && (st.cues?.length || st.anim === 'charge' && (u.casting || u.charging))) return false;
     if (!force && st.anim === anim && !st.done) return false;
     if (!force && PRIORITY[anim] < PRIORITY[st.anim] && !st.done) return false;
 
+    const pending = st.cues || [];
+    st.cues = null;
     st.anim = anim;
     st.frame = 0;
     st.elapsed = 0;
     st.done = false;
+    for (const cue of pending) cue(false);
     return true;
+  }
+
+  function strike(u, cue, prepared) {
+    const st = ensure(u);
+    if (st.cues) {
+      st.cues.push(cue);
+      return false;
+    }
+    const action = prepared && st.anim === 'charge' ? 'release' : 'attack';
+    if (!supports(u) || !play(u, action, { force: true })) {
+      cue(false);
+      return false;
+    }
+    st.cues = [cue];
+    return true;
+  }
+
+  function reach(u) {
+    const st = states[u.id];
+    const path = strikeTravel[st?.anim];
+    if (!path) return 0;
+    const frame = atlas.characters[charIdFor(u)].animations[st.anim].frames[st.frame];
+    const t = ease(Math.min(1, st.elapsed / frame.durationMs));
+    return path[st.frame] + (path[st.frame + 1] - path[st.frame]) * t;
+  }
+
+  function face(u, dx, dt) {
+    const st = ensure(u);
+    const next = Math.abs(dx) > 2 ? dx > 0 : st.facingRight ?? u.side === 'ally';
+    if (st.facingRight !== undefined && st.facingRight !== next && u.alive !== false) st.turnMs = 85;
+    else st.turnMs = Math.max(0, (st.turnMs || 0) - dt);
+    if (u.alive !== false || st.facingRight === undefined) st.facingRight = next;
+    return st.facingRight;
+  }
+
+  function run(u, moving, dt = 0) {
+    const state = ensure(u);
+    state.runCarry = moving ? 55 : Math.max(0, (state.runCarry || 0) - dt);
+    if (moving && state.anim === 'idle') play(u, 'run');
+    if (!moving && !state.runCarry && state.anim === 'run') play(u, 'idle');
   }
 
   /** 恢复战斗时按存活状态初始化，不重放历史事件。 */
   function syncFromBattle(b) {
     Object.keys(states).forEach((k) => { delete states[k]; });
-    if (b) [...(b.allies || []), ...(b.enemies || [])].forEach(ensure);
+    if (b) for (const u of [...(b.allies || []), ...(b.enemies || [])]) {
+      ensure(u);
+      if (u.alive !== false && ((u.casting && !u.pendingSkill?.effect?.heal) || u.charging?.mult > 0)) play(u, 'charge');
+    }
   }
 
   /* ---------- 推进 ---------- */
@@ -224,7 +251,7 @@
       if (!charIdFor(u)) return;
       const st = ensure(u);
       if (st.done) return;
-      const prevFrame = st.frame;
+      if (st.anim === 'charge' && !u.casting && !u.charging) play(u, 'idle', { force: true });
       const cid = charIdFor(u);
       const anim = atlas.characters[cid].animations[st.anim];
       if (!anim) return;
@@ -239,8 +266,17 @@
 
         if (st.frame < anim.frameCount - 1) {
           st.frame += 1;
+          if (st.frame === anim.impactFrame) {
+            const pending = st.cues || [];
+            st.cues = null;
+            for (const cue of pending) cue(true);
+            hooks?.onAttackImpact?.(u);
+          }
         } else if (anim.loop) {
           st.frame = 0;
+        } else if (st.anim === 'charge') {
+          st.elapsed = 0;
+          break;
         } else if (st.anim === 'death') {
           st.frame = anim.frameCount - 1;
           st.done = true;
@@ -255,11 +291,6 @@
         }
       }
 
-      // 攻击出手帧：只触发表现（剑光/音效），不产生任何数值影响
-      if (hooks && hooks.onAttackImpact && st.anim === 'attack' && st.frame !== prevFrame) {
-        const cur = atlas.characters[charIdFor(u)].animations.attack;
-        if (cur && cur.impactFrame != null && st.frame === cur.impactFrame) hooks.onAttackImpact(u);
-      }
     });
   }
 
@@ -274,7 +305,7 @@
    * 在 footX/footY 处绘制（逻辑坐标，已由调用方设定好世界变换）。
    * @returns true 表示已用动画绘制，false 表示应回退原绘制
    */
-  function draw(ctx, u, footX, footY, cellPx, reduceMotion = false) {
+  function draw(ctx, u, footX, footY, cellPx, reduceMotion = false, facingRight = u.side === 'ally') {
     if (!supports(u)) return false;
     const cid = charIdFor(u);
     const st = ensure(u);
@@ -284,26 +315,26 @@
     const img = sheets.get(anim.sheet);
     if (!img || !f) return false;
 
-    const s = cellPx / (c.frameSize || atlas.frameSize[0]);
-    const wantRight = u.side === 'ally';
+    const s = cellPx / c.frameSize;
     const artRight = c.facing === 'right';
-    const flip = wantRight !== artRight;
+    const flip = facingRight !== artRight;
 
     ctx.save();
     ctx.translate(footX, footY);
-    if (flip) ctx.scale(-1, 1);
-    if (!reduceMotion && u.side === 'ally' && (st.anim === 'attack' || reactions[st.anim])) {
+    const turn = reduceMotion ? 0 : (st.turnMs || 0) / 85;
+    if (flip || turn) ctx.scale((flip ? -1 : 1) * (1 - .26 * turn), 1);
+    if (!reduceMotion && strikeTravel[st.anim]) {
+      const push = reach(u);
+      const melee = A.Veteran.Positions.style(u).mode === 'melee';
+      ctx.rotate((artRight ? 1 : -1) * push * (melee ? .09 : -.055));
+    }
+    if (!reduceMotion && u.side === 'ally' && reactions[st.anim]) {
       let elapsed = st.elapsed, duration = 0;
       anim.frames.forEach((frame,i) => {
         if (i < st.frame) elapsed += frame.durationMs;
         duration += frame.durationMs;
       });
-      drawGesture(ctx, st.anim, choreography[cid], Math.min(1,elapsed/duration), cellPx/100);
-    }
-    /* 亚种靠色调与主人区分：叠加在已有的受击亮化之上，不改任何数值 */
-    if (u.filter) {
-      const prev = ctx.filter && ctx.filter !== 'none' ? ctx.filter + ' ' : '';
-      ctx.filter = prev + u.filter;
+      drawGesture(ctx, st.anim, Math.min(1,elapsed/duration), cellPx/100);
     }
     ctx.drawImage(
       img,
@@ -322,7 +353,7 @@
     const st = ensure(u);
     const anim = atlas.characters[cid].animations[st.anim];
     if (!anim || anim.impactFrame == null) return false;
-    return st.anim === 'attack' && st.frame === anim.impactFrame;
+    return st.frame === anim.impactFrame;
   }
 
   function stateOf(unitId) { return states[unitId] || null; }
@@ -332,8 +363,8 @@
   }
 
   A.SpriteAnim = {
-    init, preload, isReady, supports, charIdFor,
-    play, update, draw, syncFromBattle, stateOf, isImpactFrame, reset,
+    init, preload, preloadEffects, drawEffect, isReady, supports, charIdFor,
+    play, strike, weaponFor, reach, face, run, update, draw, syncFromBattle, stateOf, isImpactFrame, reset,
     get atlas() { return atlas; },
   };
 })(globalThis.Ashen ||= {});

@@ -508,6 +508,7 @@
       pendingSkill: null,
       side: 'ally',
       slot: partyEntry.slot,
+      deployment: { x: V.Positions.homeX(partyEntry), y: V.Positions.homeY(partyEntry) },
       skinId: unit.skinId,
       enemyType: null,
       name: unit.name,
@@ -538,7 +539,7 @@
       gauge: 0,
       casting: null,
       castTimer: 0,
-      shield: 0,
+      shield: panel.twinShield || 0,
       buffs: [],
       /* 八标：余烬通路穿过余烬件的人带着「炉温」入场。
          没有这一条，余烬的温控在 1.1s 节奏下永远爬不进高热区（见 circuit.js 的 emberWarm 注释）。 */
@@ -597,7 +598,7 @@
       if (t > 0) mult *= (1 + t * 0.18) / (1 + t * 0.12);
     }
     if (innate === 'throat') mult += Math.min(0.6, ((panel && panel.loops) || 0) * 0.10);
-    if (innate === 'crucible' && crucibleOn && pulse && pulse.split && !pulse.looped) {
+    if (innate === 'crucible' && crucibleOn && pulse && pulse.split && !pulse.looped && !pulse.cleanSplit) {
       mult *= 1 / V.Circuit.PULSE.split;
     }
     return Math.round(mult * 100) / 100;
@@ -706,6 +707,8 @@
       stats: { damage: 0, healing: 0, taken: 0, kills: 0, rounds: 0 },
     };
 
+    next.run.battle.field = V.Positions.initialField(next.run.battle);
+    next.run.battle.fieldY = V.Positions.initialField(next.run.battle, V.Positions.homeY);
     log(next.run.battle, { type: 'note', text: `遭遇开始：${enemies.map((e) => e.name).join('、')}` });
     /* 开局就顶着满压进来的人（重载 + 上一场没安抚）：一样要过这道悬崖，别让他白拿 100 压 */
     allies.forEach((a) => {
@@ -761,14 +764,15 @@
       if ((u.outerNodes || 0) > 0) {
         u.outerNodes -= 1;
         u.def = Math.max(0, (u.def || 0) - 2);
-        log(b, { type: 'blocked', targetId: u.id, amount: 0,
+        log(b, { type: 'blocked', effect: 'fuse', targetId: u.id, amount: 0,
           text: `${u.name} 的外围节点被打爆一层（还剩 ${u.outerNodes} 层）` });
         return true;
       }
       return false;
     }
     u.fusedNodes = u.fusedNodes || [];
-    const alive = u.circuit.placements.filter((p) => !u.fusedNodes.includes(p.itemId));
+    const alive = u.circuit.placements.filter((p) => !u.fusedNodes.includes(p.itemId)
+      && !u.circuit.protectedNodes?.includes(p.itemId));
     if (!alive.length) return false;
     const pick = alive[Math.floor(rngValue(b) * alive.length) % alive.length];
     u.fusedNodes.push(pick.itemId);
@@ -776,7 +780,7 @@
     u.shieldCap = Math.max(0, (u.shieldCap || 0) - V.Circuit.PULSE.capShieldPerCell);
     u.shield = Math.min(u.shield || 0, u.shieldCap);
     u.pulseAmp = Math.round(Math.max(0.5, (u.pulseAmp || 1) * 0.95) * 100) / 100;
-    log(b, { type: 'blocked', targetId: u.id, amount: 0,
+    log(b, { type: 'blocked', effect: 'fuse', targetId: u.id, amount: 0,
       text: `${u.name} 的 ${pick.itemId} 熔断，挡下这一击（本场报废）` });
     return true;
   }
@@ -810,7 +814,7 @@
       const broken = tgt.shield || 0;
       tgt.shield = 0;
       log(b, {
-        type: 'disrupt', targetId: tgt.id, amount: broken,
+        type: 'disrupt', effect: 'interrupt', targetId: tgt.id, amount: broken,
         text: `${tgt.name} 的${name}被打断${broken > 0 ? `，护盾一并震碎 ${broken}` : ''}`,
       });
     }
@@ -924,6 +928,10 @@
       absorbed = Math.min(tgt.shield, pool);
       tgt.shield -= absorbed;
       dmg -= absorbed;
+      if (absorbed > 0 && tgt.shield === 0) {
+        log(b, { type: 'blocked', effect: 'bufferBreak', targetId: tgt.id, amount: absorbed,
+          text: tgt.name + ' 的缓冲耗尽' });
+      }
     }
 
     /* ---- Step 3：外围节点熔断 ----
@@ -957,7 +965,7 @@
       dmg = Math.max(0, Math.round(dmg * (1 - tgt.membrane.reduce)));
       tgt.membrane.left -= 1;
       log(b, {
-        type: 'blocked', targetId: tgt.id, amount: (before - dmg),
+        type: 'blocked', effect: 'membrane', targetId: tgt.id, amount: (before - dmg),
         text: `${tgt.name} 的${tgt.membrane.name}吃下 ${before - dmg} 点（剩 ${tgt.membrane.left} 层）`,
       });
     }
@@ -999,7 +1007,7 @@
         src.stats.kills += 1;
         if (b.stats) b.stats.kills += 1;
       }
-      log(b, { type: 'death', actorId: src ? src.id : null, targetId: tgt.id, text: `${tgt.name} 倒下了` });
+      log(b, { type: 'death', actorId: src ? src.id : null, targetId: tgt.id, strike: !!o.strike, text: `${tgt.name} 倒下了` });
       if (tgt.side === 'enemy') {
         deathBurst(b, tgt);
         checkBossPhase(b, tgt);
@@ -1089,6 +1097,11 @@
   }
 
   function hasDot(u, kind) { return dotsOf(u, kind).length > 0; }
+
+  function addDotStacks(tgt, dot, pulse) {
+    tgt.buffs.push(dot);
+    if (pulse?.dotStacks === 2) tgt.buffs.push({ ...dot });
+  }
 
   /** 追加一跳指定异常：和自然跳伤同一套算法（吃 dotMult/引爆倍率以外的加成不动） */
   function tickDot(b, src, tgt, dot, note) {
@@ -1244,8 +1257,13 @@
     const targets = targetsFor(b, actor, targetId);
     if (!targets.length) return { dealtDamage: false, hits: 0 };
     const tgt = targets[0];
+    const pulse = o.pulse || actor.pulse;
+    if (pulse?.waistPressure && !o.isDot && !o.aoe && !o.repeatedPulse) {
+      addStress(b, actor, pulse.waistPressure);
+      if (actor.alive === false || tgt.alive === false) return { dealtDamage: false, hits: 0 };
+    }
     if (!rngChance(b, clamp(actor.hits - tgt.dodge, 0.05, 1))) {
-      log(b, { type: 'miss', actorId: actor.id, targetId: tgt.id, text: `${actor.name} 落空` });
+      log(b, { type: 'miss', actorId: actor.id, targetId: tgt.id, strike: true, skillId: o.skillId, text: `${actor.name} 落空` });
       return { dealtDamage: false, hits: 0 };
     }
     /* 流血被动：对流血目标更容易出暴击——先割开，再补刀 */
@@ -1256,13 +1274,13 @@
     /* ---- 拓扑脉冲（v4.0）----
        普攻与招式走同一套：先把主修路径的幅值乘进来，再叠动态元件。
        pulseAmp 在 buildAlly 里编译好（弯折 / 分流 / 闭环 / 相性改写），这里只乘。 */
-    let amp = actor.pulseAmp || 1;
+    let amp = (actor.pulseAmp || 1) * ((pulse?.anchorAmp || 1) / (actor.pulse?.anchorAmp || 1));
     /* 「放大」类增益走加算：闸门与两截同时开时是 +90%，不是 ×1.45×1.45=×2.10。
        连乘会让「高热 + 缓冲 + 两截」三件事叠成一张秒杀票 —— F49 两回合推平就是这么来的。 */
     let ampAdd = 0;
     /* 闸系：高热（压力 ≥50）或身上有缓冲时，闸门打开，脉冲放大 */
-    if (actor.gateRune && ((actor.stress || 0) >= 50 || (actor.shield || 0) > 0)) {
-      ampAdd += V.Circuit.PULSE.gate - 1;
+    if ((actor.gateRune || pulse?.gateBonus) && ((actor.stress || 0) >= 50 || (actor.shield || 0) > 0)) {
+      ampAdd += V.Circuit.PULSE.gate - 1 + (pulse?.gateBonus || 0);
     }
     /* 余烬温控（v4.0 三标）：低压时主动蓄热、接近失控才泄压。
        以前「每次吸 2 点」是个只会降温的负反馈，余烬流永远进不了高热区；
@@ -1299,10 +1317,11 @@
     const dmg = raw * (1 - mitigation(defUse)) * (crit ? 1.75 : 1);
     /* 单次脉冲够重（>=22）就自带破甲：阻抗按半价算 */
     const res = applyDamage(b, actor, tgt, dmg, {
-      aoe: !!o.aoe, armorPierce: raw >= 22, pulse: raw * (crit ? 1.75 : 1),
+      aoe: !!o.aoe, armorPierce: raw >= 22, pulse: raw * (crit ? 1.75 : 1), strike: true,
     });
     log(b, {
       type: crit ? 'crit' : 'hit', actorId: actor.id, targetId: tgt.id, amount: res.dealt,
+      strike: true, skillId: o.skillId, defeated: res.died,
       text: `${actor.name} ${o.label || '攻击'} ${tgt.name}${crit ? '（暴击）' : ''} -${res.dealt}`,
     });
     /* 九标 · A 流派防御轴：直导通路的每次命中都给一层薄盾（每 2 格直导 +1 点）。
@@ -1324,7 +1343,7 @@
       log(b, { type: 'hit', actorId: actor.id, targetId: tgt.id, amount: extra, text: `${tgt.name} 锈毒顺刃加深 ${extra}` });
     }
     if (o.ember && res.dealt > 0) {
-      tgt.buffs.push({ k: 'burn', v: Math.max(2, Math.round(actor.atk * 0.18 * (1 + (actor.dotMult || 0)))), hits: 2 });
+      addDotStacks(tgt, { k: 'burn', v: Math.max(2, Math.round(actor.atk * 0.18 * (1 + (actor.dotMult || 0)))), hits: 2 }, pulse);
       log(b, { type: 'ember', actorId: actor.id, targetId: tgt.id, text: `${tgt.name} 被余烬点燃` });
     }
     return { dealtDamage: res.dealt > 0, hits: 1 };
@@ -1338,6 +1357,7 @@
   function gambitPlan(b, actor) {
     let targetId = null;
     let action = 'main';
+    let nearest = true;
     try {
       const ctx = {
         self: { id: actor.id, slot: actor.slot, hp: actor.hp, maxHp: actor.maxHp, alive: actor.alive },
@@ -1352,6 +1372,9 @@
       if (d) {
         targetId = d.targetIds && d.targetIds[0];
         action = d.action || 'main';
+        const rule = actor.gambits?.find(r => r.id === d.ruleId);
+        nearest = !rule || (rule.id === 'g1' && rule.target === 'frontFoe'
+          && (rule.conditions || []).every(c => c.type === 'always'));
       }
     } catch (e) { /* 指令异常不影响战斗，退回默认目标 */ }
 
@@ -1359,7 +1382,9 @@
     if (b.tactic === 'safe') return { targetId: alive(b.enemies).find((u) => u.charging)?.id || frontOf(b.enemies)?.id || null, action: 'main' };
 
     if (action === 'guard') return { targetId: actor.id, action };
-    const foe = byId(b.enemies, targetId) ? targetId : frontOf(b.enemies)?.id || null;
+    const fallback = V.Positions.style(actor).mode === 'melee' ? V.Positions.nearestFoe(b, actor) : frontOf(b.enemies);
+    const selected = byId(b.enemies, targetId);
+    const foe = nearest || !selected || selected.alive === false ? fallback?.id || null : selected.id;
     return { targetId: foe, action: 'main' };
   }
 
@@ -1478,6 +1503,7 @@
     actor.pendingSkill = sk;
     log(b, {
       type: 'cast', actorId: actor.id, skillId: sk.id, slot: sk.slot || 1, tag: sk.tag || '',
+      strike: !sk.effect?.heal,
       text: `${actor.name} 起手「${sk.name}」`,
     });
     /* 流血：一进入引导就被撕一次。这是「流血」轴对引导大招的唯一制衡，
@@ -1497,6 +1523,7 @@
     if (!tgt) return;
     const eff = sk.effect || {};
     const source = sk.group ? actor.extraMs[sk.group - 1].effects : null;
+    const pulse = sk.group ? actor.extraMs[sk.group - 1].pulse : actor.pulse;
     const skillMult = source ? (1 + source.boost.skillMult) * source.mainMult : (actor.skillMult || 1);
     const supportMult = source ? source.supportMult : (actor.supportMult || 1);
     const healMult = source ? (source.boost.healMult || 0) : (actor.healMult || 0);
@@ -1518,13 +1545,17 @@
     } else {
       const foes = alive(actor.side === 'ally' ? b.enemies : b.allies).sort((a, c) => a.slot - c.slot);
       const targets = eff.pierce ? foes.slice(0, eff.pierce) : [tgt];
+      let pulses = 0;
       targets.forEach((target) => {
         for (let i = 0; i < (eff.hits || 1) && target.alive !== false; i++) {
-          doBasicAttack(b, actor, target.id, { mult: (eff.mult || 1.4) * skillMult * dotBonus * innateDmg, label });
+          const repeatedPulse = i < pulses;
+          pulses = Math.max(pulses, i + 1);
+          doBasicAttack(b, actor, target.id, { mult: (eff.mult || 1.4) * skillMult * dotBonus * innateDmg, label, skillId: sk.id,
+            pulse, repeatedPulse });
         }
       });
       if (eff.splash) foes.filter((u) => !targets.includes(u)).forEach((target) => {
-        doBasicAttack(b, actor, target.id, { mult: (eff.mult || 1.4) * skillMult * dotBonus * eff.splash * innateDmg, label: label + '余波', aoe: true });
+        doBasicAttack(b, actor, target.id, { mult: (eff.mult || 1.4) * skillMult * dotBonus * eff.splash * innateDmg, label: label + '余波', aoe: true, skillId: sk.id, pulse });
       });
     }
     /* 盾击：把自己身上的护盾折成伤害。护盾轴的攻守转换就靠这一条 */
@@ -1540,11 +1571,11 @@
     /* 挂异常：类型由 eff.dot.k 决定（缺省灼烧，兼容老数据） */
     if (eff.dot && tgt.alive !== false) {
       const kind = eff.dot.k || 'burn';
-      tgt.buffs.push({
+      addDotStacks(tgt, {
         k: kind,
         v: Math.max(2, Math.round(actor.atk * (eff.dot.dmgMult || 0.2) * (1 + dotMult))),
         hits: eff.dot.hits || 2,
-      });
+      }, pulse);
       log(b, { type: 'dot', actorId: actor.id, targetId: tgt.id, kind, text: `${tgt.name} 染上${DOT_LABEL[kind] || kind}` });
     }
     /* 引爆：把剩余异常一次倒出来。引爆系数吃被动加成 */
@@ -1685,12 +1716,12 @@
       }
       if (!(sk.mult > 0)) return;
       if (!rngChance(b, hitChance(e, tgt))) {
-        log(b, { type: 'miss', actorId: e.id, targetId: tgt.id, text: `${e.name} 的${sk.name}落空` });
+        log(b, { type: 'miss', actorId: e.id, targetId: tgt.id, strike: true, skillId: sk.id, text: `${e.name} 的${sk.name}落空` });
         return;
       }
       const dmg = e.atk * (e.pulseAmp || 1) * sk.mult * (1 - mitigation(tgt.def));
-      const r = applyDamage(b, e, tgt, dmg, { aoe: list.length > 1, pierce: !!sk.pierce });
-      log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, text: `${e.name} 的${sk.name}命中 ${tgt.name} -${r.dealt}` });
+      const r = applyDamage(b, e, tgt, dmg, { aoe: list.length > 1, pierce: !!sk.pierce, strike: true });
+      log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, strike: true, skillId: sk.id, defeated: r.died, text: `${e.name} 的${sk.name}命中 ${tgt.name} -${r.dealt}` });
       if (sk.lifesteal && r.dealt > 0) healUnit(b, e, e, r.dealt * sk.lifesteal);
       if (sk.dot && tgt.alive !== false) tgt.buffs.push({ ...sk.dot });
     });
@@ -1790,7 +1821,7 @@
     if (sk.healSelf) healUnit(b, e, e, e.maxHp * sk.healSelf);
     if (sk.selfShield) {
       const got = addShield(e, e.maxHp * sk.selfShield);
-      if (got > 0) log(b, { type: 'shield', actorId: e.id, text: `${e.name} 结起 ${got} 点硬壳` });
+      if (got > 0) log(b, { type: 'shield', actorId: e.id, targetId: e.id, amount: got, text: `${e.name} 结起 ${got} 点硬壳` });
     }
   }
 
@@ -1809,7 +1840,7 @@
       if (last) {
         const r = V.Positions.insertFront(b.allies, last.id);
         if (r.ok && r.event) {
-          b.allies = r.units;
+          V.Positions.applyFormation(b, 'allies', r.units);
           log(b, {
             type: 'disrupt', actorId: e.id, targetId: last.id,
             text: `${e.name} 把 ${last.name} 推到最前`,
@@ -1821,6 +1852,7 @@
       }
     }
 
+    if (!inActionRange(b, e)) return 'waiting';
     const foesOf = (sk) => enemyFoesOf(b, sk);
 
     /* 预告中的招式：这次真的打出去（带 castTime 的已经由计时器结算，走不到这里） */
@@ -1841,12 +1873,12 @@
       const tgt = frontOf(b.allies);
       if (tgt) {
         if (!rngChance(b, hitChance(e, tgt))) {
-          log(b, { type: 'miss', actorId: e.id, targetId: tgt.id, text: `${e.name} 落空` });
+          log(b, { type: 'miss', actorId: e.id, targetId: tgt.id, strike: true, text: `${e.name} 落空` });
           return 'basic';
         }
         const dmg = e.atk * (e.pulseAmp || 1) * 1.0 * (1 - mitigation(tgt.def));
-        const r = applyDamage(b, e, tgt, dmg, {});
-        log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, text: `${e.name} 撕咬 ${tgt.name} -${r.dealt}` });
+        const r = applyDamage(b, e, tgt, dmg, { strike: true });
+        log(b, { type: 'hit', actorId: e.id, targetId: tgt.id, amount: r.dealt, strike: true, defeated: r.died, text: `${e.name} 攻击 ${tgt.name} -${r.dealt}` });
       }
       return 'basic';
     }
@@ -1859,7 +1891,7 @@
       e.chargeTimer = sk.castTime || null;
       e.intent = { skillId: sk.id, name: sk.name, target: sk.target };
       log(b, {
-        type: 'telegraph', actorId: e.id,
+        type: 'telegraph', actorId: e.id, strike: sk.mult > 0,
         text: sk.castTime
           ? `${e.name} 正在准备：${sk.name}（${sk.castTime.toFixed(2)}s）`
           : `${e.name} 正在引导：${sk.name}`,
@@ -1914,6 +1946,23 @@
     return false;
   }
 
+  function aimTarget(b, actor, singleTarget = false) {
+    if (actor.side === 'ally') {
+      const skill = actor.pendingSkill || readySkill(b, actor);
+      if (skill) return skill.effect?.heal ? null : pickTarget(b, actor, skill.target);
+      const plan = gambitPlan(b, actor);
+      return plan.action === 'guard' ? null : byId(b.enemies, plan.targetId);
+    }
+    const skill = actor.charging || pickEnemySkill(b, actor);
+    if (skill && !(skill.mult > 0)) return null;
+    if (skill && skill.target !== 'allFoe') return enemyFoesOf(b, skill)[0] || null;
+    return skill ? (singleTarget ? null : V.Positions.nearestFoe(b, actor)) : frontOf(b.allies);
+  }
+
+  function inActionRange(b, actor) {
+    return V.Positions.inReach(b, actor, aimTarget(b, actor, true));
+  }
+
   /** 一步 = 一个 tick。 */
   function step(st) {
     if (!st.run || !st.run.battle) return ST().fail(st, 'no_battle', '没有进行中的战斗');
@@ -1943,7 +1992,10 @@
            补满 5 层等于「只要还活着就永远有膜」，高频流剥层的努力全被抹掉。 */
         if (e.alive !== false && e.membrane) {
           const regrow = e.membrane.regrow == null ? 2 : e.membrane.regrow;
-          e.membrane.left = Math.min(e.membrane.layers, (e.membrane.left || 0) + regrow);
+          const before = e.membrane.left || 0;
+          e.membrane.left = Math.min(e.membrane.layers, before + regrow);
+          if (e.membrane.left > before) log(b, { type: 'shield', effect: 'shield', targetId: e.id,
+            text: e.name + ' 的相位护膜重新展开' });
         }
       });
       /* 八标 · 首领软狂暴时钟：第 10 回合之后每回合 +12% 脉冲幅值、+1 速度。
@@ -1966,6 +2018,8 @@
       tickBuffs(b);
       if (endCheck(b)) return ST().ok(next, [{ type: 'round', meta: { round: b.round } }, { type: 'over' }]);
     }
+
+    V.Positions.advanceField(b, u => aimTarget(b, u, V.Positions.style(u).mode === 'ranged'));
 
     /* ---- 时间推进：冷却按秒走，余裕自然恢复，施法到点结算 ---- */
     const dt = D().DESIGN.stepSeconds;
@@ -1993,14 +2047,14 @@
 
       /* 敌方的按秒准备窗口：到点就结算，中途打断由 applyDamage 负责 */
       if (u.charging && u.chargeTimer != null) {
-        u.chargeTimer -= dt;
-        if (u.chargeTimer <= 0) resolveEnemyCharge(b, u);
+        u.chargeTimer = Math.max(0, u.chargeTimer - dt);
+        if (u.chargeTimer === 0 && inActionRange(b, u)) resolveEnemyCharge(b, u);
       }
 
       const ratio = dt * ((effSpd(u) || baseSpd) / baseSpd);
       if (u.casting) {
-        u.castTimer -= dt;
-        if (u.castTimer <= 0) finishCast(b, u);
+        u.castTimer = Math.max(0, u.castTimer - dt);
+        if (u.castTimer === 0 && (!u.pendingSkill || inActionRange(b, u))) finishCast(b, u);
       } else {
         u.atkTimer = (u.atkTimer || 0) + ratio;
       }
@@ -2018,7 +2072,7 @@
       /* 施法期间不出手，但节拍照走 */
       const actDue = !u.casting && u.atkTimer >= iv;
       if (actDue) u.atkTimer -= iv;
-      if (actDue || dotDue) due.push({ u, act: actDue });
+      if (actDue || dotDue) due.push({ u, act: actDue, dot: dotDue });
     });
 
     /* 稳定排序：先到者先，其次我方先，再按 slot，再按 ID */
@@ -2036,6 +2090,10 @@
       const actor = list.find((x) => x.id === pending.u.id);
       if (!actor) continue;
       if (actor.alive === false) continue;
+      if (!pending.dot && !inActionRange(b, actor)) {
+        actor.atkTimer = pulseInterval(actor);
+        continue;
+      }
 
       /* 出手前：中毒 / 灼烧 / 流血先跳；死在毒上，这一拍到此为止 */
       if (!resolveDots(b, actor, 'pre')) {
@@ -2043,7 +2101,9 @@
         continue;
       }
 
-      if (pending.act) {
+      const canAct = pending.act && inActionRange(b, actor);
+      if (pending.act && !canAct) actor.atkTimer = pulseInterval(actor);
+      if (canAct) {
         beginAction(b, actor);
 
         let rootAction;
@@ -2057,6 +2117,7 @@
           };
         } else {
           const action = enemyTurn(b, actor);
+          if (action === 'waiting') actor.atkTimer = pulseInterval(actor);
           rootAction = { actorId: actor.id, side: 'enemy', action, dealtDamage: action === 'main' || action === 'basic' };
         }
 
@@ -2065,8 +2126,8 @@
 
         /* 根行动 → 伤害/死亡 → 主动换位 → 援护 */
         const pos = V.Positions.resolveAfterAction(b, rootAction);
-        b.allies = pos.battle.allies;
-        b.enemies = pos.battle.enemies;
+        V.Positions.applyFormation(b, 'allies', pos.battle.allies);
+        V.Positions.applyFormation(b, 'enemies', pos.battle.enemies);
         for (const ev of pos.events) {
           events.push(ev);
           if (ev.type === 'move') applyMove(b, ev);
@@ -2198,7 +2259,7 @@
   }
 
   V.Combat = {
-    generateEncounter, create, step, report, prepareResult, setTactic,
+    generateEncounter, create, step, report, prepareResult, setTactic, aimTarget,
     TICK_LIMIT, pressureRegenMultiplier, pressureDamageMultiplier, energyRegen, heatConducting,
     resolveConfig,
     _internal: {

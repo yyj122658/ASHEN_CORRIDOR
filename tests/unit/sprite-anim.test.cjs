@@ -31,10 +31,7 @@ test('所有传奇与敌人按真实身份选图，换位不换外观', async ()
   for (const result of await Promise.all([first, second])) assert.equal(result.failed,0);
   const paths = new Set();
   for (const u of units) {
-    /* 亚种复用同族立绘：外观键是 sprite（没有 sprite 才是自己的 id） */
-    const look = u.side === 'enemy'
-      ? (A.Veteran.Data.ENEMIES[u.enemyType].sprite || u.enemyType)
-      : u.id;
+    const look = u.side === 'enemy' ? u.enemyType : u.id;
     assert.equal(SA.charIdFor({...u,slot:3}),look);
     assert.equal(SA.supports(u),true);
     const anim = SA.atlas.characters[look].animations;
@@ -43,8 +40,7 @@ test('所有传奇与敌人按真实身份选图，换位不换外观', async ()
     SA.syncFromBattle({allies:[{...u,alive:false}]});
     assert.equal(SA.stateOf(u.id).frame,anim.death.frames.length-1);
   }
-  const bodies = new Set(Object.values(A.Veteran.Data.ENEMIES).map(e => e.sprite || e.id));
-  assert.equal(paths.size, heroes.length + bodies.size);
+  assert.equal(paths.size, heroes.length + enemies.length);
   assert.equal(SA.charIdFor(fakeUnit({side:'enemy',enemyType:null,name:'骸骨兵'})),null);
   assert.equal(SA.charIdFor(fakeUnit({skinId:'unknown'})),null);
 });
@@ -150,4 +146,49 @@ test('isImpactFrame：只识别攻击动画的出手帧', () => {
     SA.update([u], 16, { onAttackImpact: () => { fired += 1; } });
   }
   assert.equal(fired, 1, '一次攻击只应触发一次出手回调，实际 ' + fired);
+});
+
+test('灰烬与铁鸦用专属攻击帧，蓄力等待招式结算后才出手', () => {
+  for (const skinId of ['ranger', 'blade']) {
+    const u = fakeUnit({ id: skinId, skinId, casting: 'test' });
+    SA.reset();
+    const clips = SA.atlas.characters[skinId].animations;
+    assert.ok(clips.attack.frames.slice(0, 4).every(frame => frame.rect.x >= 384));
+    assert.equal(SA.play(u, 'charge'), true);
+    SA.update([u], 800);
+    assert.equal(SA.stateOf(u.id).anim, 'charge');
+    assert.equal(SA.stateOf(u.id).frame, 1);
+    u.casting = null;
+    let hits = 0;
+    SA.strike(u, () => { hits += 1; }, true);
+    SA.strike(u, () => { hits += 1; }, true);
+    assert.equal(SA.stateOf(u.id).anim, 'release');
+    assert.equal(hits, 0);
+    assert.equal(SA.play(u, 'guard'), false);
+    SA.update([u], 500);
+    assert.equal(hits, 2);
+    SA.update([u], 500);
+    assert.equal(hits, 2);
+  }
+});
+
+test('面向左后的短距离重合保留方向，拉开距离才重新转身', () => {
+  const u = fakeUnit({ id: 'turn' });
+  SA.reset();
+  assert.equal(SA.face(u, -35, 16), false);
+  assert.equal(SA.face(u, 0, 16), false);
+  assert.equal(SA.face(u, 1, 16), false);
+  assert.equal(SA.face(u, 14, 16), true);
+});
+
+test('攻击向命中帧连续前冲，减速收势', () => {
+  const u = fakeUnit({ id: 'forward' });
+  SA.reset();
+  SA.play(u, 'attack');
+  SA.update([u], 120);
+  assert.ok(SA.reach(u) > 0 && SA.reach(u) < 1);
+  SA.update([u], 60);
+  assert.equal(SA.reach(u), 1);
+  SA.update([u], 55);
+  assert.ok(SA.reach(u) < 1 && SA.reach(u) > .5);
 });

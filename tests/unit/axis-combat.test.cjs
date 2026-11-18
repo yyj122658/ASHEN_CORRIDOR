@@ -302,9 +302,10 @@ test('跨功法连携：放完带 tag 的招，另一门的 afterTag 招才算�
 });
 
 test('共鸣阶解锁：覆盖率没拼到二阶，第二招一直不亮', () => {
-  const { V, st } = battle(613);
+  const { V, st } = boot(613, { generated:true });
   const u = st.roster[0];
   V.State.equipManuscript(st, u, 'corridor5');
+  assert.equal(u.manuscript.id, 'corridor5');
   /* 完全没有纹路覆盖 → tierIndex 0，minTier 的招不该就绪 */
   const bare = V.Circuit.manuscriptState(st, u.id, []);
   assert.equal(bare.tierIndex, 0, '无覆盖时没有共鸣阶');

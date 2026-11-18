@@ -1,6 +1,5 @@
 'use strict';
-/* 板面从「固定 4x4」换成「按 seed 生成的异形金属」后必须仍然成立的几条：
-   seed 稳定、格数命中、终端在板面上、放不下的位置要报对原因。 */
+/* 固定金属相的坐标、经典板面兼容性与落位检查。 */
 const test = require('node:test');
 const assert = require('node:assert');
 const { loadVeteran } = require('../helpers/load-veteran.cjs');
@@ -8,9 +7,7 @@ const { loadVeteran } = require('../helpers/load-veteran.cjs');
 const A = loadVeteran();
 const V = A.Veteran;
 
-const key = (c) => c[0] + ',' + c[1];
-
-test('新开档走异形板面，每个单位都有自己的 plateSeed', () => {
+test('新开档使用各自的固定金属相，并保留旧存档所需的 plateSeed', () => {
   const st = V.State.create(4242);
   assert.equal(st.plateMode, 'plate');
   const shapes = new Set();
@@ -25,11 +22,13 @@ test('新开档走异形板面，每个单位都有自己的 plateSeed', () => {
   assert.equal(shapes.size, st.roster.length, '每个单位的板面都该不一样');
 });
 
-test('同一单位重复取板面结果一致（seed 稳定，可存档）', () => {
+test('同一金属相读档后坐标一致，不随旧 plateSeed 改变', () => {
   const st = V.State.create(777);
   const u = st.roster[0];
   const a = [...V.Circuit.plateOf(u).cells].sort().join('|');
-  const b = [...V.Circuit.plateOf(JSON.parse(JSON.stringify(u))).cells].sort().join('|');
+  const loaded = JSON.parse(JSON.stringify(u));
+  loaded.plateSeed += 1;
+  const b = [...V.Circuit.plateOf(loaded).cells].sort().join('|');
   assert.equal(a, b);
 });
 
@@ -45,8 +44,9 @@ test('开局自带一阶微蚀刻法，仓库另有可换的蚀刻法', () => {
   const bare = Object.assign({}, u, { manuscript: null });
   assert.equal(V.Circuit.plateOf(bare).terminals, undefined, '接线模型已删，板面不带端子');
 
-  V.State.equipManuscript(st, u, st.manuscriptVault[0].id);
-  assert.ok(u.manuscript, '换上后应持有蚀刻法');
+  const alternate = st.manuscriptVault[0].id;
+  V.State.equipManuscript(st, u, alternate);
+  assert.equal(u.manuscript.id, alternate, '换上后应持有新的蚀刻法');
 
   const plate = V.Circuit.plateOf(u);
   assert.ok(plate.cells.size > 0, '板面应仍有可用格');
@@ -65,7 +65,7 @@ test('板面外的位置报「不在板面上」，不再说屏蔽格', () => {
   const st = V.State.create(2468);
   const u = st.roster[0];
   const plate = V.Circuit.plateOf(u);
-  /* 找一个肯定不在板面上的格：板面装在 12×12 包围盒里，73% 的格子是空的 */
+  /* 找一个仍在 12×12 网格内、但不属于金属轮廓的格。 */
   let outside = null;
   for (let y = 0; y < plate.size && !outside; y++) {
     for (let x = 0; x < plate.size && !outside; x++) {

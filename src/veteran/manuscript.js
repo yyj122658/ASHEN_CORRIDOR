@@ -142,10 +142,20 @@
     const out = [];
     for (let oy = -1; oy <= V.PlateGen.SIZE; oy++) {
       for (let ox = -1; ox <= V.PlateGen.SIZE; ox++) {
-        if (fits(oriented, plateCells, ox, oy)) out.push([ox, oy]);
+        if (oriented.cells.every(([x, y]) => plate.has(key(x + ox, y + oy)))) out.push([ox, oy]);
       }
     }
     return out;
+  }
+
+  function hasPlacement(base, plateCells) {
+    if (!base || base.cells.length > plateCells.length) return false;
+    for (const mirror of [false, true]) {
+      for (let rotation = 0; rotation < 4; rotation++) {
+        if (placements(orient(base, rotation, mirror), plateCells).length) return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -355,134 +365,5 @@
     return { dirs, occupied };
   }
 
-  /**
-   * 把一张膜浇铸到给定板面上。
-   *
-   * 宽底盘（11×7 的满板、双瓣）上原样放得下就用原样；
-   * 窄底盘（环、脊、之字这些最大矩形只有 2~5 格宽的）上放不下，
-   * 就按「重叠最多」的落点裁一刀，只留**含入口的连通块** ——
-   * 语义是「这块金属刻不下整卷，只刻得下它压得住的那一段」，
-   * 而不是让装配直接失败（那会让大卷在窄底盘上永远不可用）。
-   *
-   * @param {object} spec       蚀刻法定义（含 cells/veins/entry/exits）
-   * @param {Array<[number,number]>} plateCells 板面格
-   * @returns {{cells:Array, veins:object, entry:Array, exits:Array, clipped:boolean}|null}
-   */
-  function fitToPlate(spec, plateCells) {
-    const base = normalize(spec);
-    if (!base || !plateCells || !plateCells.length) return null;
-    const plate = new Set(plateCells.map(cellKey));
-
-    /* ① 原样能放下 */
-    for (let rot = 0; rot < 4; rot += 1) {
-      for (const mir of [false, true]) {
-        if (placements(orient(base, rot, mir), plateCells).length) {
-          return {
-            cells: base.cells, veins: base.veins, entry: base.entry, exits: base.exits, clipped: false,
-          };
-        }
-      }
-    }
-
-    /* ② 裁：先按「重叠格数」粗筛落点，再按「含入口的连通块大小」精挑。
-       只按重叠数挑会踩坑：一块 54 格的骨架压到 2 格宽的环板上，
-       重叠最多的落点可能被切成七零八落，反而拼不出一块能刻的空地。 */
-    const xs = base.cells.map((c) => c[0]);
-    const ys = base.cells.map((c) => c[1]);
-    const w = Math.max.apply(null, xs) + 1;
-    const h = Math.max.apply(null, ys) + 1;
-    const span = V.PlateGen.SIZE + w;
-    const ranked = [];
-    for (let oy = -h + 1; oy < span; oy += 1) {
-      for (let ox = -w + 1; ox < span; ox += 1) {
-        const kept = base.cells.filter((c) => plate.has(key(c[0] + ox, c[1] + oy)));
-        if (kept.length >= 3) ranked.push({ ox, oy, kept });
-      }
-    }
-    if (!ranked.length) return null;
-    ranked.sort((a, b) => b.kept.length - a.kept.length);
-
-    const componentsOf = (k) => {
-      const keptSet = new Set(k.kept.map((c) => key(c[0] + k.ox, c[1] + k.oy)));
-      const seen = new Set();
-      const comps = [];
-      keptSet.forEach((start) => {
-        if (seen.has(start)) return;
-        const queue = [start];
-        const comp = [];
-        seen.add(start);
-        while (queue.length) {
-          const cur = queue.shift();
-          comp.push(cur);
-          const [x, y] = unkey(cur);
-          Object.keys(ORTH).forEach((d) => {
-            const nk = key(x + ORTH[d][0], y + ORTH[d][1]);
-            if (!keptSet.has(nk) || seen.has(nk)) return;
-            seen.add(nk);
-            queue.push(nk);
-          });
-        }
-        comps.push(comp);
-      });
-      return comps;
-    };
-
-    let best = null;
-    ranked.slice(0, 30).forEach((k) => {
-      const comps = componentsOf(k);
-      const entryAbs = key(base.entry[0] + k.ox, base.entry[1] + k.oy);
-      const main = comps.find((c) => c.includes(entryAbs))
-        || comps.slice().sort((a, b) => b.length - a.length)[0];
-      if (!main) return;
-      if (!best || main.length > best.main.length) best = { ...k, main };
-    });
-    if (!best || best.main.length < 3) return null;
-    const main = best.main;
-
-    const absCells = main.map((k) => unkey(k));
-    const minX = Math.min(...absCells.map((c) => c[0]));
-    const minY = Math.min(...absCells.map((c) => c[1]));
-    const rel = absCells.map((c) => [c[0] - minX, c[1] - minY]);
-
-    /* 入口：原来的入口还在就用它；否则取离原入口最近的一格 */
-    const pickNearest = (targetAbs, list) => list.slice().sort((a, b) => (
-      Math.abs(a[0] + minX - targetAbs[0]) + Math.abs(a[1] + minY - targetAbs[1])
-      - (Math.abs(b[0] + minX - targetAbs[0]) + Math.abs(b[1] + minY - targetAbs[1]))
-    ))[0];
-    const hasAbs = (p) => main.includes(key(p[0], p[1]));
-    const entryRel = hasAbs([base.entry[0] + best.ox, base.entry[1] + best.oy])
-      ? [base.entry[0] + best.ox - minX, base.entry[1] + best.oy - minY]
-      : pickNearest([base.entry[0] + best.ox, base.entry[1] + best.oy], rel);
-    const exitsRel = base.exits
-      .filter((p) => hasAbs([p[0] + best.ox, p[1] + best.oy]))
-      .map((p) => [p[0] + best.ox - minX, p[1] + best.oy - minY]);
-    if (!exitsRel.length) {
-      /* 出口被裁掉了：取离入口最远的那一格当新出口 */
-      const far = rel.slice().sort((a, b) => (
-        (Math.abs(b[0] - entryRel[0]) + Math.abs(b[1] - entryRel[1]))
-        - (Math.abs(a[0] - entryRel[0]) + Math.abs(a[1] - entryRel[1]))
-      ))[0];
-      exitsRel.push(far);
-    }
-
-    /* 刻线：保留还能对上的；入口/出口改成朝外的方向 */
-    const relSet = new Set(rel.map((c) => key(c[0], c[1])));
-    const veins = {};
-    rel.forEach((c) => {
-      const src = base.veins[key(c[0] + minX - best.ox, c[1] + minY - best.oy)] || [];
-      veins[key(c[0], c[1])] = src.filter((d) => relSet.has(key(c[0] + ORTH[d][0], c[1] + ORTH[d][1])))
-        .slice(0, 1);
-      if (!veins[key(c[0], c[1])].length) veins[key(c[0], c[1])] = ['E'];
-    });
-    const outward = (p) => {
-      const free = Object.keys(ORTH).filter((d) => !relSet.has(key(p[0] + ORTH[d][0], p[1] + ORTH[d][1])));
-      return free[0] || 'W';
-    };
-    veins[key(entryRel[0], entryRel[1])] = [outward(entryRel)];
-    exitsRel.forEach((p) => { veins[key(p[0], p[1])] = [outward(p)]; });
-
-    return { cells: rel, veins, entry: entryRel, exits: exitsRel, clipped: true };
-  }
-
-  V.Manuscript = { normalize, orient, fits, placements, coverage, route, pieceIndex, internalChains, fitToPlate, ORTH };
+  V.Manuscript = { normalize, orient, fits, placements, hasPlacement, coverage, route, pieceIndex, internalChains, ORTH };
 })(globalThis.Ashen ||= {});

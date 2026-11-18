@@ -13,28 +13,21 @@ function fightAt(seed, floor, msId, opts) {
   let st = fullTeam(V, V.State.create(20261112 + Math.ceil(floor / 7)));
   st.roster.slice(0, 4).forEach((u, i) => {
     u.manuscript = null;
-    /* v4.0：面板与输出都来自装配。纯护持型的门（如「重铸阔卷」）只有盾与治疗，
-       四个都装它就没人打得动首领 —— 所以前两位用本阶的门，后两位配一门输出门。
-       所以队形是「一位本阶 + 三位输出」——「带上对应阶位的蚀刻法仍能打赢」这个意图不变。 */
-    /* 队形是「一位本阶 + 三位输出」：输出门用**落后一阶**的伤害型蚀刻法。
-       这样测的仍然是「本阶的门带得动这一章」，而不是「四门同阶硬碰」或者
-       「用第七阶的门碾压第一章」。 */
-    /* 默认「整队只带这一门」（一阶门能不能通关就靠这个口径）；
-       mixed 模式下是「一位本阶 + 三位同阶输出」，用来验证*护持型*门不会拖垮队伍。 */
-    const dpsId = V.Data.MANUSCRIPT_ORDER[Math.min(V.Data.MANUSCRIPT_ORDER.length - 1, floor - 1)];
-    const id = opts && opts.mixed && i > 0 ? dpsId : msId;
-    /* 高阶层的大卷在窄底盘上可能放不下：换盘面种子试，再不行退一档 */
-    const tryEquip = (want) => {
-      for (let seed = 1; !u.manuscript && seed < 200; seed++) {
-        V.State.equipManuscript(st, u, want);
-        if (!u.manuscript) u.plateSeed = seed;
-      }
-      return !!u.manuscript;
-    };
-    if (!tryEquip(id)) tryEquip('corridor5');
-    assert.ok(u.manuscript, id);
-    /* v4.0：面板来自拓扑编译，只装蚀刻法就是 25 点裸心核 —— 上阵前把板面铺起来 */
+    u.board.placements.forEach((p) => st.stash.push(p.itemId));
+    u.board.placements = [];
+    /* 固定三位输出，检验每一阶的蚀刻法都能在实战队伍里发挥作用。 */
+    const id = opts && opts.mixed && i > 0 ? 'inverse' : msId;
+    V.State.equipManuscript(st, u, id);
+    if (!u.manuscript) {
+      u.bodyPreset = 'sturdy';
+      V.State.equipManuscript(st, u, id);
+    }
+    assert.equal(u.manuscript?.id, id);
+    const route = V.Circuit.autoLoadout(st, u);
+    assert.ok(route, `${id} 应有合法起手布线`);
+    u.board.placements = route;
     buildBoard({ Veteran: V }, st, u);
+    assert.ok(V.Circuit.manuscriptState(st, u.id).routed, `${id} 应在实板贯通`);
   });
   st = V.Expedition.start(st, { seed }).state;
   st.run.floor = floor;
@@ -62,17 +55,16 @@ test('七套蚀刻法都在，且阶位连续 1~7', () => {
 
 test('一阶蚀刻法占地足够小，任何板面都塞得下', () => {
   const spark = V.Data.MANUSCRIPTS.spark;
-  /* 六标：面积阶梯是 R1 6~9 格 / 负荷 2。一阶不再是「2 格小片」，
-     但仍然是最小的一档，任何板面都塞得下（靠浇铸裁剪兜底）。 */
   assert.ok(spark.cells.length >= 6 && spark.cells.length <= 9,
     `一阶蚀刻法应在 6~9 格（实际 ${spark.cells.length}）`);
   assert.equal(spark.load, 2, '一阶蚀刻法负荷 2');
-  for (let seed = 1; seed <= 20; seed++) {
-    const st = V.State.create(seed * 37);
-    const u = st.roster[0];
+  const st = V.State.create(37);
+  const u = st.roster[0];
+  for (const body of Object.values(V.Data.BODIES)) {
+    u.bodyPreset = body.id;
     u.manuscript = null;
     V.State.equipManuscript(st, u, 'spark');
-    assert.ok(u.manuscript, `seed ${seed * 37} 的板面塞不下一阶蚀刻法`);
+    assert.deepEqual(u.manuscript?.cells, spark.cells, `${body.id} 应装下完整的星火`);
   }
 });
 
@@ -139,6 +131,7 @@ test('平A 间隔与回能可以被蚀刻法改写', () => {
     const st = V.State.create(20261112);
     const u = st.roster[0];
     u.manuscript = null;
+    u.bodyPreset = 'sturdy';
     V.State.equipManuscript(st, u, id);
     return V.Circuit.manuscriptState(st, u.id);
   };

@@ -25,7 +25,7 @@ body.vet { background: radial-gradient(ellipse at 80% 0, rgba(87, 166, 167, .10)
 .atelier-head, .archive-head {
   display: flex; align-items: center; justify-content: space-between; gap: 20px;
   margin: 22px 0 16px; padding: 20px clamp(16px, 2vw, 32px); border: 1px solid #685744;
-  background: linear-gradient(95deg, #181a1df5, #232326b8 44%, #22222632), url('../assets/art/veteran-v1/scenes/workshop.png') 50% 55% / cover;
+  background: linear-gradient(95deg, #181a1df5, #232326b8 44%, #22222632), url('../assets/art/topology-v4/scenes/workshop.png') 50% 55% / cover;
 }
 .atelier-head h1, .archive-head h1 { color: #f7e6c8; font-family: var(--font-title); font-size: clamp(23px, 2.3vw, 34px); line-height: 1.2; letter-spacing: .09em; font-weight: 500; margin: 0 0 10px; }
 .ws-unit-picker { gap: 5px; }
@@ -49,8 +49,8 @@ body.vet { background: radial-gradient(ellipse at 80% 0, rgba(87, 166, 167, .10)
 .plate-readout { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; margin: 4px 0 14px; font-size: 12px; color: var(--text-muted); }
 .plate-readout b { color: var(--text); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .atelier-tools { padding: 10px 0 0; border-top: 1px solid var(--border-soft); }
-.layout-tools, .move-reference, .manuscript-index { margin-top: 10px; font-size: 12px; }
-.layout-tools summary, .move-reference summary, .manuscript-index summary { cursor: pointer; min-height: 32px; padding-block: 6px; color: var(--accent-bright); }
+.move-reference, .manuscript-index { margin-top: 10px; font-size: 12px; }
+.move-reference summary, .manuscript-index summary { cursor: pointer; min-height: 32px; padding-block: 6px; color: var(--accent-bright); }
 .ws-left .ms-chip, .part-item { background: #22282c; border: 1px solid #404647; border-radius: 3px; }
 .ws-left .ms-chip.is-active, .part-item.on { background: #37312a; border-color: #c5a375; }
 .ws-left .ms-chip { font-size: 13px; }.ms-chip-meta, .part-meta { color: var(--text-muted); }
@@ -78,12 +78,10 @@ body.vet { background: radial-gradient(ellipse at 80% 0, rgba(87, 166, 167, .10)
 .codex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(268px, 100%), 1fr)); gap: 10px; }
 .codex-card { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 12px; text-align: left; font: inherit; color: var(--text); background: #22282c; border: 1px solid #404647; border-radius: 3px; cursor: pointer; }
 .codex-card:hover { background: #37312a; border-color: #c5a375; }
-.codex-shape { display: flex; align-items: center; justify-content: center; width: 84px; height: 76px; padding: 6px; background: #14191c; border: 1px solid #46413a; }
+.codex-art { display: grid; align-content: start; justify-items: center; gap: 4px; }
+.codex-art .catalogue-icon { width: 64px; border-radius: 0; }
+.codex-shape { display: flex; align-items: center; justify-content: center; width: 84px; height: 48px; padding: 4px; background: var(--ink); border: 1px solid var(--border-soft); }
 .codex-shape .etch-mark { width: 100%; height: 100%; }
-.codex-shape .etch-mark .etch-lip, .codex-shape .etch-mark .etch-cut { stroke-width: 4.4; }
-.codex-shape .etch-mark .etch-lip { stroke: #d3bd97; }
-.codex-shape .etch-mark .etch-cut { stroke: #16110c; }
-.codex-shape .etch-mark .ms-field { fill: #9a8465; fill-opacity: .16; }
 .codex-info { display: grid; gap: 3px; min-width: 0; }
 .codex-title { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .codex-title .tag { padding: 1px 6px; font-size: 10px; color: var(--text-dim); }
@@ -97,7 +95,7 @@ body.vet { background: radial-gradient(ellipse at 80% 0, rgba(87, 166, 167, .10)
 .manuscript-index[open] { max-height: 300px; overflow-y: auto; }
 .archive-head { margin-bottom: 20px; min-height: 104px; }
 .archive-head h1 { margin: 0; }
-.chronicle-head { background-image: linear-gradient(90deg,#15191df2,#1b1c2190,transparent), url('../assets/art/veteran-v1/scenes/recovery.png'); }
+.chronicle-head { background-image: linear-gradient(90deg,#15191df2,#1b1c2190,transparent), url('../assets/art/topology-v4/scenes/camp.png'); }
 .archive-shelves { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; }
 .archive-entry { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border-soft); }
 .archive-entry:last-child { border: 0; }

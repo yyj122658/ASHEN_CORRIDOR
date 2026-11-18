@@ -61,7 +61,7 @@ function makeUnit(body, ids, opts = {}) {
     }
     assert.ok(posed, '找不到能放下转向后蚀刻法的位置');
   }
-  coverBoard(st, u);
+  if (!opts.stubRoute) coverBoard(st, u);
   return { st, u };
 }
 
@@ -113,13 +113,12 @@ test('十四相的四维面板没有因为相性改过一个数', () => {
 
 /* ---------------- ② 十四个相性各自的生效点 ---------------- */
 
-test('厚铸躯壳 · 无相包容：母板负荷上限 +35%', () => {
-  /* v4.0：这条从「辅修份额」改成「母板更厚」——能压的维持量多三成半。 */
+test('浑沌未凿：固定板面负荷上限 +12', () => {
   const sturdy = makeUnit('sturdy', [MAIN, SUB]);
   const conduit = makeUnit('conduit', [MAIN, SUB]);
   const capA = V.Circuit.loadCap(sturdy.u);
   const capB = V.Circuit.loadCap(conduit.u);
-  assert.equal(capA, Math.round(capB * 1.35), `${capA} 应是 ${capB} 的 1.35 倍`);
+  assert.equal(capA, capB + 12);
   /* 共享比例回到基准：无相包容不再动它 */
   assert.equal(fight(sturdy.st, sturdy.u).ally.innateMods.subShare, 0.5);
 });
@@ -161,7 +160,7 @@ test('十字枢 · 四达并存：横 + 纵都贯通时，分流系数 0.65 → 
   V.Circuit.manuscriptState = stub;
   try {
     /* 主修转 90°（4×2 → 2×4，纵向），辅修保持横向 */
-    const turned = makeUnit('crucible', [MAIN, SUB], { rotate: 0 });
+    const turned = makeUnit('crucible', [MAIN, SUB], { rotate: 0, stubRoute: true });
     const a1 = fight(turned.st, turned.u).ally;
     assert.equal(a1.innateMods.crucibleOn, true, '应有横有纵');
 
@@ -181,7 +180,7 @@ test('十字枢 · 四达并存：横 + 纵都贯通时，分流系数 0.65 → 
       const h = Math.max(...cells.map((c) => c[1])) - Math.min(...cells.map((c) => c[1])) + 1;
       return w >= h ? 'wide' : 'tall';
     });
-    const flat = makeUnit('crucible', [MAIN, SUB]);
+    const flat = makeUnit('crucible', [MAIN, SUB], { stubRoute: true });
     const a2 = fight(flat.st, flat.u).ally;
     const flatSpans = spansOf(flat.u);
     const flatExpect = flatSpans.includes('wide') && flatSpans.includes('tall');
@@ -273,6 +272,7 @@ test('折角板 · 三隅稳固：转折增益 1.5×（+18%/折），每次转�
   /* 放招时按转向数补缓冲：每次 4 点，最多 3 次 */
   ally.shieldCap = 200;   /* 抬高上限，专门看补偿量，不看容量 */
   ally.shield = 0;
+  ally.kineticGain = 0;
   const turns = ally.pulse.turns;
   assert.ok(turns > 0, `夹具路径应有转折（turns=${turns}）`);
   ally.pendingSkill = { ...ally.skillList[0], cost: 0, effect: { mult: 0.1, heal: null } };
@@ -371,7 +371,7 @@ test('棘轮 · 齿咬碎纹：每件 ≤2 格纹路 +0.08 回裕（上限 0.48�
 });
 
 test('弧月 · 孤弧锋锐：满覆盖 + 贯通时无视 25% 防御，引爆 +20%', () => {
-  const { st, u } = makeUnit('arc', [MAIN]);
+  const { st, u } = makeUnit('arc', [SUB]);
   const { state, battle, ally } = fight(st, u);
   assert.equal(ally.innateMods.arcOn, true);
   /* 同一只靶子、同一场战斗，只切 arcOn 开关，比「防御被削」这一项 */

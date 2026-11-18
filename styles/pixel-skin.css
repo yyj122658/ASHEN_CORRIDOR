@@ -74,7 +74,7 @@ svg image,
 .ex-page .choice,
 .ex-page .contribution-card {
   border: 6px solid transparent;
-  border-image: url("../assets/art/curated/ui/panel_frame.png") 12 fill stretch;
+  border-image: url("../assets/art/topology-v4/ui/panel_frame.png") 12 fill stretch;
   border-color: var(--border-soft);
   background: var(--surface);
 }
@@ -85,7 +85,7 @@ svg image,
 .ex-page .unit-bar,
 .modal-card .setting-row + .setting-row {
   border: 5px solid transparent;
-  border-image: url("../assets/art/curated/ui/panel_sub.png") 10 fill stretch;
+  border-image: url("../assets/art/topology-v4/ui/panel_sub.png") 10 fill stretch;
   border-color: var(--border-soft);
   background: var(--surface-raised);
 }
@@ -96,7 +96,7 @@ svg image,
   border-width: 5px 8px;
   /* 不加 fill：btn_secondary 的中间格是石板灰 #4F5968，fill 会把每个次要按钮
      刷成一块灰板，和 --surface 的深底打架。只取边框，底色交给 background。 */
-  border-image: url("../assets/art/curated/ui/btn_secondary.png") 10 14 stretch;
+  border-image: url("../assets/art/topology-v4/ui/btn_secondary.png") 10 14 stretch;
   border-color: var(--border-soft);
   background: var(--surface-raised);
   color: var(--text);
@@ -119,7 +119,7 @@ svg image,
 [data-act="startRun"],
 [data-act="titleStart"],
 [data-act="wsFilmView"].on {
-  border-image-source: url("../assets/art/curated/ui/btn_primary.png");
+  border-image-source: url("../assets/art/topology-v4/ui/btn_primary.png");
   color: var(--ink);
   background: var(--accent-bright);
   border-color: var(--accent);
@@ -137,7 +137,7 @@ svg image,
 .btn.danger,
 .btn.ghost.danger,
 .btn.gold.danger {
-  border-image-source: url("../assets/art/curated/ui/btn_danger.png");
+  border-image-source: url("../assets/art/topology-v4/ui/btn_danger.png");
   color: var(--text);
   background: var(--danger);
   border-color: var(--danger);
@@ -170,7 +170,7 @@ svg image,
 .vet-slot,
 .ground-slot {
   border: 6px solid transparent;
-  border-image: url("../assets/art/curated/ui/slot_empty.png") 12 fill stretch;
+  border-image: url("../assets/art/topology-v4/ui/slot_empty.png") 12 fill stretch;
   border-color: var(--border-soft);
   background: var(--surface);
   border-radius: 0;
@@ -188,7 +188,7 @@ svg image,
 .formation-layout .vet-slot,
 .ex-page .ex-road {
   border: 6px solid transparent;
-  border-image: url("../assets/art/curated/ui/slot_empty.png") 12 fill stretch;
+  border-image: url("../assets/art/topology-v4/ui/slot_empty.png") 12 fill stretch;
   border-color: var(--border-soft);
   background: var(--surface);
   box-shadow: 2px 2px 0 var(--ink);
@@ -203,7 +203,7 @@ svg image,
 .ms-chip.is-active,
 .codex-card.on,
 .recruit-card.sold {
-  border-image-source: url("../assets/art/curated/ui/slot_active.png");
+  border-image-source: url("../assets/art/topology-v4/ui/slot_active.png");
   background: var(--surface-raised);
 }
 
@@ -215,7 +215,7 @@ svg image,
 .bar {
   height: 12px;
   border: 2px solid transparent;
-  border-image: url("../assets/art/curated/ui/bar_frame.png") 8 fill stretch;
+  border-image: url("../assets/art/topology-v4/ui/bar_frame.png") 8 fill stretch;
   border-color: var(--border-soft);
   background: var(--ink);
   border-radius: 0;
@@ -240,7 +240,7 @@ svg image,
   right: 0;
   bottom: -3px;
   height: 6px;
-  background: url("../assets/art/curated/ui/header_banner.png") repeat-x 0 50% / auto 6px;
+  background: url("../assets/art/topology-v4/ui/header_banner.png") repeat-x 0 50% / auto 6px;
   image-rendering: pixelated;
   opacity: .8;
   pointer-events: none;
@@ -259,7 +259,7 @@ svg image,
   right: 0;
   bottom: 0;
   height: 4px;
-  background: url("../assets/art/curated/ui/divider_ornate.png") repeat-x 0 50% / auto 4px;
+  background: url("../assets/art/topology-v4/ui/divider_ornate.png") repeat-x 0 50% / auto 4px;
   image-rendering: pixelated;
   opacity: .55;
   pointer-events: none;
@@ -278,20 +278,6 @@ svg image,
    这里压暗、去饱和，只留凿痕的高光，网格线与蚀刻纹才浮得出来。 */
 .metal-surface-texture {
   filter: grayscale(1) sepia(.22) brightness(.88) contrast(1.18);
-}
-
-.plate-metal-slab {
-  stroke: var(--border-soft);
-  filter: drop-shadow(2px 2px 0 var(--ink));
-}
-
-.plate-cell-bed {
-  fill: rgba(15, 17, 26, .18);
-  stroke: rgba(122, 131, 143, .16);
-}
-
-.plate-edge-rim {
-  stroke: rgba(188, 140, 80, .34);
 }
 
 .grid {
@@ -394,3 +380,433 @@ svg image,
 .panel.art-broken {
   border-color: var(--border);
 }
+
+/* 遗迹舞台与工作台 */
+body.vet { background: var(--ink); }
+body.vet :is(.panel, .modal-card, .topology-panel, .ws-board) {
+  position: relative;
+  border: 2px solid var(--border);
+  border-image: none;
+  border-radius: 0;
+  background-color: var(--surface);
+  box-shadow: 2px 2px 0 var(--surface);
+}
+body.vet :is(.panel, .modal-card, .topology-panel, .ws-board)::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: -2px;
+  pointer-events: none;
+  background: linear-gradient(var(--accent), var(--accent)) 2px 2px,
+    linear-gradient(var(--accent), var(--accent)) calc(100% - 2px) 2px,
+    linear-gradient(var(--accent), var(--accent)) 2px calc(100% - 2px),
+    linear-gradient(var(--accent), var(--accent)) calc(100% - 2px) calc(100% - 2px);
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+}
+body.vet :is(.panel, .modal-card, .topology-panel, .ws-board) {
+  clip-path: polygon(0 2px, 2px 2px, 2px 0, calc(100% - 2px) 0,
+    calc(100% - 2px) 2px, 100% 2px, 100% calc(100% - 2px),
+    calc(100% - 2px) calc(100% - 2px), calc(100% - 2px) 100%,
+    2px 100%, 2px calc(100% - 2px), 0 calc(100% - 2px));
+}
+.legend-portrait { border-radius: 0; }
+.ex-combat { gap: 10px; }
+.ex-combat .ex-combat-top {
+  background: var(--surface);
+  border: 2px solid var(--border-soft);
+  padding: 4px 10px;
+}
+.ex-combat-top h1 { font-size: clamp(19px, 2vw, 24px); color: var(--accent); }
+.ex-combat .battle-stage { overflow: hidden; }
+.topology-console {
+  display: grid;
+  grid-template-columns: minmax(0, 25fr) minmax(0, 48fr) minmax(0, 27fr);
+  gap: 10px;
+}
+.topology-console > section, .topology-console > aside { padding: 12px; min-width: 0; }
+.topology-console h2, .ex-fork.topology-panel h2 {
+  font: 600 16px var(--font-title);
+  color: var(--accent);
+  padding: 1px 2px 7px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.topology-console h3 { margin-top: 10px; font-size: 13px; color: var(--accent); }
+.topology-crew-list { display: grid; gap: 7px; margin-top: 9px; }
+.topology-crew-card {
+  padding: 3px;
+  color: var(--text);
+  text-align: left;
+  display: grid;
+  grid-template-columns: 47px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 53px;
+  background: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  cursor: pointer;
+}
+.topology-crew-card[aria-pressed="true"] { border-color: var(--ice); box-shadow: inset 2px 0 var(--ice); }
+.topology-crew-card .legend-portrait { width: 47px; height: 50px; border: 1px solid var(--border-soft); }
+.topology-crew-card .portrait-img { filter: none; }
+.topology-plate-medal { width: 28px; height: 28px; object-fit: contain; }
+.topology-crew-info { min-width: 0; }
+.topology-crew-info strong { font-size: 13px; }
+.topology-crew-info .topology-role { margin-inline-start: 4px; color: var(--ice); font-size: 9px; }
+.topology-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 5px; margin-top: 3px; }
+.topology-stats span { color: var(--text-muted); font-size: 10px; }
+.topology-stats b { color: var(--text); font: 600 10px var(--font-mono); }
+.topology-vacant {
+  min-height: 45px;
+  border: 1px dashed var(--border-soft);
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.topology-board-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 10px; border-bottom: 1px solid var(--border-soft); }
+.topology-board-title h2 { border: 0; }
+.topology-board-title span { color: var(--text-muted); font-size: 11px; }
+.topology-assembly .board-stack { background: var(--surface); margin-top: 8px; }
+.topology-assembly .board { max-height: 408px; }
+.topology-key { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; color: var(--text); }
+.topology-key span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; background: var(--accent); }
+.topology-key span:nth-child(2)::before { background: var(--ice); }
+.topology-key span:nth-child(3)::before { background: var(--danger); }
+.topology-diagnostics dl { margin: 4px 0 10px; }
+.topology-diagnostics dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  color: var(--text-muted);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 11px;
+}
+.topology-diagnostics dd { margin: 0; color: var(--text); font-family: var(--font-mono); text-align: right; }
+.topology-diagnostics .topology-extract { display: block; width: 100%; min-height: 40px; }
+.topology-record { margin-top: 6px; font-size: 12px; }
+.topology-record .battle-log { max-height: 130px; margin-top: 4px; }
+[data-battle-status] { display: grid; gap: 4px; max-height: 260px; overflow: auto; }
+.topology-track {
+  --medal: min(31px, 100%);
+  position: relative;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: 13px 0 18px;
+  padding: 0;
+  text-align: center;
+}
+.topology-track::before {
+  content: "";
+  position: absolute;
+  top: 13px;
+  height: 2px;
+  inset-inline: 7%;
+  background: var(--accent);
+}
+.track-medal {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 28px;
+  max-width: 30px;
+  margin-inline: auto;
+}
+.track-medal i { width: 8px; height: 8px; transform: rotate(45deg); background: var(--surface); border: 1px solid var(--accent); }
+.track-emblem { width: var(--medal); max-height: 28px; object-fit: contain; }
+.track-emblem:not(.art-broken) + i { display: none; }
+.topology-track .passed i { background: var(--accent); }
+.topology-track .here .track-medal {
+  border: 2px solid var(--ice);
+  border-radius: 50%;
+  background: var(--surface);
+  animation: topology-beacon 1.6s steps(3, end) infinite alternate;
+}
+.topology-track .here small { color: var(--ice); }
+@keyframes topology-beacon { from { box-shadow: 0 0 0 var(--ice); } to { box-shadow: 0 0 0 3px var(--ice); } }
+.ex-fork.topology-panel { padding: 10px; }
+.ex-fork.topology-panel h2 { text-align: left; }
+.ex-fork .ex-paths { padding-top: 8px; }
+.ex-fork .ex-paths::before, .ex-fork .ex-paths::after, .ex-fork .ex-road::before { display: none; }
+.ex-fork .ex-road { flex-direction: row; align-items: center; }
+.ex-fork .ex-road-image { width: 54px; flex: 0 0 54px; aspect-ratio: 1; border: 0; }
+.ex-fork .ex-road-image img { object-fit: contain; }
+.ex-fork .ex-road-info { gap: 2px; padding: 4px 6px; }
+.ex-fork .ex-road-info strong { font-size: 15px; color: var(--text); }
+.ex-fork .ex-road-info > span { font-size: 11px; }
+.ex-fork .k-biome { margin-top: 6px; }
+
+.board .board-bg { fill: var(--surface); }
+.board .plate-metal-slab { stroke: var(--border-soft); stroke-width: 1.2; }
+.plate-forge-grain { opacity: .21; }
+.plate-forge-shoulder, .plate-metal-bevel, .plate-bevel-glint { fill: none; stroke-linejoin: bevel; }
+.plate-forge-shoulder { stroke: var(--surface); stroke-width: 30; stroke-opacity: .78; }
+.plate-metal-bevel { stroke-width: 21; }
+.plate-bevel-glint { stroke-width: 4; }
+.board .plate-cell-bed {
+  fill: none; stroke: var(--surface); stroke-width: 1px; stroke-opacity: .62;
+  vector-effect: non-scaling-stroke;
+}
+.plate-datum { fill: none; stroke: var(--border); stroke-width: 1.2; stroke-opacity: .39; }
+.rivet-seat { fill: var(--surface); stroke: var(--border); stroke-width: 1; }
+.rivet-pin { fill: var(--accent); fill-opacity: .8; }
+.rivet-glint { fill: none; stroke: var(--text); stroke-width: .8; stroke-opacity: .74; }
+.wax-membrane {
+  --wax-body: var(--accent);
+  --wax-rim: var(--accent-bright);
+  --wax-deep: var(--accent);
+}
+.wax-membrane.arcane {
+  --wax-body: var(--shadow);
+  --wax-rim: color-mix(in srgb, var(--shadow) 76%, var(--text));
+  --wax-deep: var(--shadow);
+}
+.wax-membrane .ms-field { fill-opacity: .32; }
+.wax-grain { opacity: .22; }
+.wax-seal, .wax-membrane .ms-contour { fill: none; stroke-linejoin: bevel; }
+.wax-seal { stroke: var(--wax-body); stroke-opacity: .44; stroke-width: 8; }
+.wax-membrane .ms-contour { stroke: var(--wax-rim); stroke-opacity: .67; stroke-width: 2.25; }
+.wax-membrane .ms-contour.focused { stroke-opacity: .88; stroke-width: 2.75; }
+.wax-vein-wall, .wax-vein-core { fill: none; stroke-linecap: square; }
+.wax-vein-wall { stroke: var(--wax-body); stroke-opacity: .38; stroke-width: 3.5; }
+.wax-vein-core { stroke: var(--surface); stroke-opacity: .45; stroke-width: 1.4; }
+.film-view .wax-membrane .ms-field { fill-opacity: .35; }
+.film-view .wax-vein-wall { stroke-opacity: .52; }
+.etch-asset, .conduit-tile image { image-rendering: pixelated; }
+.port-cut { shape-rendering: crispEdges; fill: var(--border); stroke: var(--surface); stroke-width: 1; }
+.port-cut.membrane-port { fill: var(--accent); opacity: .46; }
+.conduit-join { fill: none; stroke: var(--accent); stroke-width: 1; stroke-opacity: .76; }
+.board .conduit-hot, .board.is-hot .conduit-normal { display: none; }
+.board.is-hot .conduit-hot { display: inline; }
+.film-view .board .conduit-powered { visibility: hidden; }
+.conduit-beacon { --beacon: var(--ice); }
+.conduit-beacon.beacon-exit { --beacon: var(--accent-bright); }
+.beacon-seat { fill: var(--surface); stroke: var(--accent); stroke-width: 2.2; stroke-opacity: .68; }
+.beacon-ring {
+  fill: none; stroke: var(--beacon); stroke-width: .9;
+  animation: beacon-breath 1.65s steps(6, end) infinite;
+}
+.beacon-arrow { fill: var(--beacon); opacity: .74; }
+.beacon-entry .beacon-core { animation: beacon-orbit 6s steps(16, end) infinite; }
+@keyframes beacon-breath { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@keyframes beacon-orbit { to { transform: rotate(360deg); } }
+.drag-port-lock.lock .conduit-tile { animation: beacon-breath .6s steps(4, end) infinite; }
+.drag-port-bridge { stroke: var(--ice); stroke-width: 2; }
+.part-group:focus-visible .part-hit { stroke: var(--accent); stroke-width: 2; }
+#scar-tooltip.rune-tooltip {
+  border-color: var(--accent);
+  border-image: url("../assets/art/topology-v4/ui/panel_frame.png") 12 fill stretch;
+  color: var(--text);
+}
+.topology-review { margin-top: 12px; }
+.topology-review > summary { cursor: pointer; color: var(--accent); margin-bottom: 8px; }
+.part-lock-symbol { fill: var(--accent); }
+.board .rune-live .etch-relief { filter: none; image-rendering: pixelated; }
+.board-stack > .topology-flow {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.board-stack.film-view > .topology-flow { visibility: hidden; }
+.film-view .board .layer-fx .port-cut { opacity: .3; }
+.rune-thumb { position: relative; display: block; width: 100%; height: 100%; }
+.rune-thumb > img, .rune-thumb > svg { width: 100%; height: 100%; }
+.rune-thumb > img { object-fit: contain; }
+.rune-thumb > img:not(.art-broken) + svg { display: none; }
+.family-mark { width: 17px; height: 17px; margin-right: 4px; vertical-align: -4px; }
+
+/* 工坊两侧共用的像素阶梯边。 */
+.ws-layout :is(.ws-left, .ws-right) .ws-cut {
+  border: 2px solid var(--border-soft);
+  border-image: none;
+  border-radius: 0;
+  clip-path: polygon(4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px,
+    calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px),
+    calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%,
+    4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px),
+    0 4px, 2px 4px, 2px 2px, 4px 2px);
+}
+.ws-manuscripts { position: relative; }
+.ws-etch-heading { position: relative; display: flex; justify-content: space-between; gap: 8px; align-items: start; }
+.ws-etch-heading .panel-h { flex: 1; }
+.ws-etch-help button {
+  width: 26px; height: 26px; padding: 0; border: 2px solid var(--accent); border-radius: 50%;
+  background: var(--surface); color: var(--accent); font: 700 14px var(--font-mono); cursor: help;
+  box-shadow: 2px 2px 0 var(--ink), inset 0 0 0 1px var(--border-soft);
+}
+.ws-etch-hint {
+  position: absolute; inset: calc(100% - 4px) 0 auto; z-index: 5; padding: 10px;
+  background: var(--surface); color: var(--text); font-size: 11px; line-height: 1.55;
+  visibility: hidden; pointer-events: none;
+}
+.ws-layout .ws-left .ws-etch-hint { border-color: var(--accent); }
+.ws-etch-hint p { margin: 0; }
+.ws-etch-hint p + p { margin-top: 6px; }
+.ws-etch-help:is(:hover, :focus-within) .ws-etch-hint { visibility: visible; }
+
+.ws-left .ms-chips, .ms-vault { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ws-left .ms-chips { max-height: none; overflow: visible; }
+.ms-vault { margin-top: 6px; }
+.ms-vault[hidden] { display: none; }
+.ms-vault-copy { grid-column: 1 / -1; font-size: 11px; color: var(--text); }
+.ws-left .ms-chip, .ws-left .ms-reserve {
+  display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch;
+  justify-items: center; align-content: center; gap: 2px; min-width: 0;
+  height: 74px; padding: 4px; text-align: center; color: var(--text); background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--ink), inset 0 2px var(--border-soft);
+}
+.ms-chip-meta, .ms-reserve small { color: var(--border); font-size: 10px; }
+.ms-chip-name { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.ms-skeleton { display: block; width: 100%; height: 32px; color: var(--accent); overflow: visible; }
+.ws-left .ms-reserve { cursor: pointer; font: 12px var(--font-body); }
+.ms-vault-icon { color: var(--accent); font: 22px/22px var(--font-mono); }
+.ws-layout .ws-left :is(.ms-chip.is-active, .ms-reserve[aria-expanded=true]) {
+  border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--surface) 87%, var(--accent));
+  box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 10px var(--accent);
+}
+
+.ws-left .ms-nameplate {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 4px 7px;
+  position: relative; margin-top: 8px; padding: 8px 10px; color: var(--text);
+  background: color-mix(in srgb, var(--surface) 76%, var(--accent)); border-color: var(--accent);
+}
+.ms-nameplate::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 3px; height: 3px; background: var(--accent);
+}
+.ms-nameplate::after {
+  content: ""; position: absolute; inset: 3px; pointer-events: none;
+  background: linear-gradient(var(--accent),var(--accent)) top right / 3px 3px no-repeat,
+    linear-gradient(var(--accent),var(--accent)) bottom left / 3px 3px no-repeat,
+    linear-gradient(var(--accent),var(--accent)) bottom right / 3px 3px no-repeat;
+}
+.ms-nameplate-seal { grid-row: span 2; padding: 3px; background: var(--surface); outline: 1px solid var(--accent); }
+.ms-nameplate-seal .ms-skeleton { height: 27px; }
+.ms-nameplate strong { font-size: 15px; line-height: 1.2; color: var(--text); }
+.ms-nameplate-facts, .ws-effect-tags { display: flex; gap: 3px; flex-wrap: wrap; }
+.ms-nameplate-facts span, .ws-effect-tags span {
+  padding: 1px 4px; border: 1px solid var(--border-soft); background: var(--surface); font-size: 10px; color: var(--text);
+}
+.ws-etch-tools { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 4px; margin-top: 5px; }
+.ws-left .ws-etch-tool {
+  display: grid; justify-items: center; align-content: center; gap: 1px; min-width: 0; min-height: 35px;
+  padding: 2px 1px; font-size: 10px; line-height: 1.2; color: var(--text); background: var(--surface);
+}
+.ws-etch-tool > span { color: var(--accent); font-size: 13px; }
+.ws-etch-tool > b { font-weight: 500; }
+.ms-secondary-action, .ms-source-hint { display: block; margin-top: 6px; }
+.ms-source-hint { color: var(--text); font-size: 10px; }
+
+.ms-gauge {
+  margin-top: 8px; padding: 8px; background: var(--surface); color: var(--text);
+  box-shadow: inset 0 2px 0 var(--ink), inset 2px 0 0 var(--ink);
+}
+.ms-gauge-head { display: flex; justify-content: space-between; gap: 4px; font-size: 11px; }
+.ms-gauge-head b { font: 700 11px/1.55 var(--font-mono); }
+.ms-meter { position: relative; margin: 5px 3px 0; padding-bottom: 17px; }
+.ms-meter.no-marks { padding-bottom: 1px; }
+.ms-meter-track { height: 12px; border: 1px solid var(--border-soft); background: var(--surface); box-shadow: inset 0 0 0 2px var(--ink); }
+.ms-meter-track i { display: block; height: 100%; background: var(--ice); box-shadow: inset 0 -3px var(--border-soft); }
+.ms-milestone {
+  position: absolute; left: var(--mark); top: 14px; transform: translateX(-50%); color: var(--text);
+  font: 9px var(--font-mono); white-space: nowrap;
+}
+.ms-milestone::before { content: ""; position: absolute; left: 50%; top: -14px; height: 12px; width: 1px; background: var(--border); }
+.ms-milestone[data-at="100"] { transform: translateX(-100%); }
+.ms-milestone[data-at="100"]::before { left: auto; right: 0; }
+.ms-milestone.reached { color: var(--ice); }
+.ms-milestone.reached::before { background: var(--text); box-shadow: 0 0 3px var(--ice); }
+.ws-left .ms-live-benefit { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0,1fr); gap: 4px; align-items: stretch; }
+.ms-gain, .ws-left .ms-live-route {
+  display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 29px;
+  border: 1px solid var(--border-soft); color: var(--text); font-size: 10px; background: var(--surface);
+}
+.ms-gain { flex-wrap: wrap; padding: 2px; }
+.ms-gain b { color: var(--ice); font: 700 clamp(13px, 1.55vw, 21px) var(--font-mono); }
+.ws-left .ms-live-benefit :is(.ms-gain span, .ms-live-route) { margin-left: 0; }
+.ms-live-route i { width: 7px; height: 7px; border: 1px solid var(--border); border-radius: 50%; }
+.ws-left .ms-live-route.is-routed { color: var(--ice); }
+.ms-live-route.is-routed i { background: var(--ice); border-color: var(--ice); box-shadow: 0 0 5px var(--ice); }
+.ws-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+.ws-left .ws-skill-card { padding: 7px; margin-top: 8px; border-color: var(--accent); background: var(--surface); }
+.ws-skill + .ws-skill { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border-soft); }
+.ws-skill-head { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; color: var(--text); }
+.ws-skill-head svg { width: 18px; height: 18px; padding: 2px; border: 1px solid var(--border-soft); fill: var(--accent); }
+.ws-skill-head b { flex: 1 1 auto; font-size: 12px; }
+.ws-skill-head span { border-radius: 8px; padding: 1px 4px; font-size: 10px; }
+.ws-skill-cost { background: var(--ice); color: var(--surface); }
+.ws-skill-cd { background: var(--border-soft); color: var(--text); }
+.ws-effect-tags { margin-top: 4px; }
+.ws-effect-tags [title] { cursor: help; }
+.ws-effect-tags .ws-trigger { border-color: var(--accent); color: var(--accent); }
+.ws-skill-beat { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 7px; padding: 4px 2px 0; margin-top: 5px; border-top: 1px solid var(--border-soft); color: var(--text); font-size: 10px; }
+.ws-skill-beat b { font: 600 10px var(--font-mono); }
+
+.ws-right .ws-rune-list { gap: 5px; }
+.ws-right .ws-rune-card {
+  display: flex; align-items: center; text-align: left; gap: 6px; min-height: 56px; padding: 4px;
+  color: var(--text); background: var(--surface);
+}
+.ws-right .ws-rune-card.on, .ws-right .ws-rune-card:is(:hover, :focus-within) {
+  border-color: var(--accent); background: color-mix(in srgb, var(--surface) 88%, var(--accent));
+}
+.ws-rune-card .part-shape-box { flex: 0 0 44px; width: 44px; height: 44px; padding: 0; background: var(--surface); border: 0; outline: 1px solid var(--border-soft); }
+.ws-rune-card .rune-blueprint { display: block; width: 44px; height: 44px; }
+.ws-rune-card .rune-port-cut { pointer-events: none; stroke: var(--surface); stroke-width: .7; }
+.ws-rune-select {
+  flex: 1 1 auto; min-width: 0; padding: 0; display: flex; align-items: center; gap: 6px;
+  text-align: left; color: inherit; background: none; border: 0; font: inherit; cursor: pointer;
+}
+.ws-rune-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 5px; line-height: 1.2; }
+.ws-rune-name b { font-size: 12px; }
+.ws-rune-name [data-family] { color: var(--text); font-size: 9px; border: 1px solid var(--border-soft); padding: 0 2px; }
+.ws-rune-name [data-family=elbow] { color: var(--accent); }
+.ws-rune-name :is([data-family=straight],[data-family=capacitor]) { color: var(--ice); }
+.ws-rune-name :is([data-family=threshold],[data-family=ember]) { color: var(--accent-bright); }
+.ws-rune-card .part-meta { color: var(--text); font-size: 10px; margin-top: 3px; }
+.ws-rune-quantity { color: var(--accent); font: 700 11px var(--font-mono); padding: 1px 3px; }
+.ws-right .ws-rune-remove { padding: 4px; min-height: 27px; color: var(--text); background: var(--surface); font-size: 10px; }
+.ws-rune-locator { fill: none; stroke: var(--ice); stroke-width: 3; opacity: 0; pointer-events: none; }
+.part-group:is(.is-row-hovered, .is-row-focused) .ws-rune-locator { animation: ws-rune-locate .85s steps(6,end) infinite alternate; }
+@keyframes ws-rune-locate { from { opacity: .47; } to { opacity: 1; } }
+.reduced-motion .part-group:is(.is-row-hovered, .is-row-focused) .ws-rune-locator { animation: none; opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .part-group:is(.is-row-hovered, .is-row-focused) .ws-rune-locator { animation: none; opacity: 1; }
+}
+
+.ex-header > img[src*="/topology-v4/node/"] { width: 105px; height: 105px; inset: auto 15px 12px auto; object-fit: contain; }
+@media (min-width: 1081px) {
+  .ws-layout { grid-template-columns: minmax(0, 25fr) minmax(0, 48fr) minmax(0, 27fr); }
+}
+@media (max-width: 1080px) {
+  .topology-console { grid-template-columns: minmax(0, 34fr) minmax(0, 66fr); }
+  .topology-diagnostics { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) {
+  .topology-console { grid-template-columns: minmax(0, 1fr); }
+  .topology-console > section, .topology-console > aside { padding: 8px; }
+  .topology-crew-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topology-crew-card { grid-template-columns: 30px minmax(0, 1fr); gap: 4px; }
+  .topology-crew-card .legend-portrait { width: 30px; height: 42px; }
+  .topology-crew-card .topology-plate-medal { width: 15px; height: 15px; grid-area: 1 / 1; align-self: end; z-index: 1; background: var(--ink); }
+  .topology-crew-card .legend-portrait { grid-area: 1 / 1; }
+  .topology-crew-info { grid-area: 1 / 2; }
+  .topology-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 3px; }
+  .topology-stats span { white-space: normal; font-size: 9px; }
+  .topology-stats b { display: block; }
+  .ex-combat .ex-combat-top { gap: 3px; }
+  .ex-combat .ex-combat-top .btn { min-height: 34px; padding-inline: 4px; }
+}
+.reduced-motion .topology-track .here .track-medal { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .topology-track .here .track-medal, .beacon-ring, .beacon-entry .beacon-core, .drag-port-lock.lock .conduit-tile { animation: none; }
+}
+.reduced-motion :is(.beacon-ring, .beacon-entry .beacon-core, .drag-port-lock.lock .conduit-tile) { animation: none; }

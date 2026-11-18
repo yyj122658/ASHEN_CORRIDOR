@@ -21,17 +21,9 @@
     return cp;
   }
 
-  function formationFrom(st) {
-    const party = (st.run.party || []).slice().sort((a, b) => a.slot - b.slot);
-    const out = [null, null, null, null];
-    party.forEach((p) => { if (p.slot >= 0 && p.slot < 4) out[p.slot] = p.uid; });
-    return out;
-  }
-
-  function rulesFrom(st, formation) {
+  function rulesFrom(st) {
     const rules = {};
-    formation.forEach((uid) => {
-      if (!uid) return;
+    st.run.party.forEach(({ uid }) => {
       const u = st.roster.find((x) => x.id === uid);
       if (u) rules[uid] = u.gambits.map((r) => ({ ...r, conditions: r.conditions.map((c) => ({ ...c })) }));
     });
@@ -74,8 +66,7 @@
       combatRngStart: gen.combatRngStart,
       checkpoint: makeCheckpoint(next, nodeId),
       preparation: {
-        formation: formationFrom(next),
-        rules: rulesFrom(next, formationFrom(next)),
+        rules: rulesFrom(next),
       },
       attemptNumber: 0,
       confirmId: null,
@@ -87,30 +78,23 @@
   }
 
   /**
-   * editPreparation(st, patch)：只允许改四人的排列和合法 Gambit。
-   * patch = {formation?: (id|null)[], rules?: Record<uid, Rule[]>}
+   * editPreparation(st, patch)：只允许调整已有队员的落点和合法指令。
    */
   function editPreparation(st, patch) {
     const enc = st.run && st.run.encounter;
     if (!enc) return ST().fail(st, 'no_encounter', '没有锁定遭遇');
     if (enc.pendingResult) return ST().fail(st, 'already_resolved', '已经出结果，不能再改整备');
+    if (patch.move && st.run.stage !== 'prebattle') {
+      return ST().fail(st, 'not_preparing', '只能在整备时调整阵形');
+    }
 
     const next = ST().clone(st);
     const e = next.run.encounter;
     const errors = [];
 
-    if (patch && patch.formation) {
-      const f = patch.formation;
-      if (!Array.isArray(f) || f.length !== 4) errors.push('阵型必须是 4 个槽位');
-      else {
-        const seen = new Set();
-        f.forEach((uid, i) => {
-          if (uid == null) return;
-          if (!next.roster.some((u) => u.id === uid)) errors.push(`槽位 ${i + 1} 指向不存在的角色`);
-          if (seen.has(uid)) errors.push(`角色 ${uid} 出现在多个槽位`);
-          seen.add(uid);
-        });
-      }
+    if (patch.move) {
+      const problem = V.Positions.deploymentProblem(next.run.party, patch.move.uid, patch.move);
+      if (problem) errors.push(problem);
     }
 
     if (patch && patch.rules) {
@@ -124,16 +108,13 @@
 
     if (errors.length) return ST().fail(st, 'bad_preparation', errors.join('；'), { details: errors });
 
-    if (patch.formation) {
-      e.preparation.formation = patch.formation.slice();
-      /* 阵型应用到 party：slot 决定顺序，uid 不变 */
-      next.run.party = patch.formation
-        .map((uid, slot) => {
-          if (!uid) return null;
-          const prev = next.run.party.find((p) => p.uid === uid);
-          return prev ? { ...prev, slot } : { uid, slot, hp: null, stress: 0 };
-        })
-        .filter(Boolean);
+    if (patch.move) {
+      const { homeX, homeY } = V.Positions;
+      const { uid, x, y } = patch.move;
+      const slots = next.run.party.map(p => p.slot).sort((a, b) => a - b);
+      for (const p of next.run.party) p.deployment = p.uid === uid ? { x, y } : { x: homeX(p), y: homeY(p) };
+      next.run.party.sort((a, b) => homeX(b) - homeX(a) || homeY(b) - homeY(a) || a.slot - b.slot);
+      next.run.party.forEach((p, i) => { p.slot = slots[i]; });
     }
 
     if (patch.rules) {
@@ -189,14 +170,10 @@
     restored.run.stage = 'prebattle';
 
     /* 阵型按整备应用 */
-    const formation = keepEncounter.preparation.formation;
-    restored.run.party = formation
-      .map((uid, slot) => {
-        if (!uid) return null;
-        const prev = restored.run.party.find((p) => p.uid === uid);
-        return prev ? { ...prev, slot } : { uid, slot, hp: null, stress: 0 };
-      })
-      .filter(Boolean);
+    restored.run.party = st.run.party.map(p => ({
+      ...restored.run.party.find(previous => previous.uid === p.uid),
+      uid: p.uid, slot: p.slot, deployment: p.deployment && { ...p.deployment },
+    }));
 
     return ST().ok(restored, [{ type: 'rewind', meta: { attempt: keepEncounter.attemptNumber } }]);
   }
@@ -288,6 +265,6 @@
 
   V.Encounter = {
     open, editPreparation, startAttempt, rewind, confirm, retreat, previewRetreat,
-    makeCheckpoint, formationFrom, rulesFrom,
+    makeCheckpoint, rulesFrom,
   };
 })(globalThis.Ashen ||= {});

@@ -28,11 +28,11 @@ const ORDER = [
   'src/veteran/expedition.js',
   'src/veteran/roster.js',
   'src/veteran/storage.js',
-  'src/veteran/rune-art.js',
   'src/veteran/plate-gen.js',
   'src/veteran/manuscript.js',
+  'src/veteran/rune-art.js',
   /* 表现层资源（无 DOM 依赖，供动画测试使用） */
-  'assets/art/battle-v1/atlas-data.js',
+  'src/ui/assets.js',
   'src/ui/sprite-anim.js',
 ];
 
@@ -45,7 +45,7 @@ function loadVeteran(overrides) {
     JSON,
   };
   vm.createContext(sandbox);
-  // sprite-anim 用 window 读取 atlas、用 Image 加载图集；在 VM 里给出最小实现
+  // 在 VM 里提供最小 Image 实现，验证图集与动作契约。
   sandbox.window = sandbox;
   sandbox.Image = class FakeImage {
     constructor() { this.naturalWidth = 512; this.naturalHeight = 512; this.complete = true; }

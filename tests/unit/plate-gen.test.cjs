@@ -1,116 +1,136 @@
 'use strict';
-/* 板面生成的硬保证：确定性、格数命中、单连通、无孤立格，以及形状身份。
-   格数统一 77、形态 14 种——这两种维度必须互不干扰：换形态换轮廓，不换格数。 */
 const test = require('node:test');
-const assert = require('node:assert');
+const assert = require('node:assert/strict');
 const { loadVeteran } = require('../helpers/load-veteran.cjs');
 
-const A = loadVeteran();
-const G = A.Veteran.PlateGen;
-const TARGET = G.PLATE_TARGET;
-const ARCHES = Object.keys(G.ARCHETYPES);
+const { PlateGen: G, Data: D } = loadVeteran().Veteran;
 
-const cellsKey = (cells) => cells.map((c) => c.join(',')).join('|');
+const legends = {
+  xianghu: ['周岳', '象笏', 2], hundun: ['赵德厚', '浑沌未凿', 0],
+  suhui: ['林知微', '溯洄从之', 3], xuanzhen: ['马库斯·霍尔特', '悬针', 3],
+  jiansui: ['塞西尔·范·德·伯格', '鉴燧之齐', 3], zaohuyou: ['克拉拉·莫雷蒂', '凿户牖', 2],
+  lunya: ['卢卡斯·克劳泽', '轮牙', 8], zhibi: ['奥托·施密特', '栉比', 7],
+  xuanhuang: ['巴图尔', '玄璜', 2], jiuceng: ['叶莲娜·莫罗佐娃', '九层之台', 2],
+  dibuman: ['陈大勇', '地不满东南', 3], chuyao: ['沈明轩', '楚腰', 2],
+  bingdi: ['米丽娅姆', '并蒂', 1], sida: ['约瑟夫·卡特', '四达之衢', 1],
+};
 
-test('同一 seed 结果完全一致（可存档、可重放）', () => {
-  const a = G.generate({ seed: 12345, archetype: 'full' });
-  const b = G.generate({ seed: 12345, archetype: 'full' });
-  assert.equal(cellsKey(a.cells), cellsKey(b.cells));
-
-  const c = G.generate({ seed: 12346, archetype: 'ell' });
-  assert.notEqual(
-    cellsKey(G.generate({ seed: 12345, archetype: 'ell' }).cells),
-    cellsKey(c.cells),
-    '换 seed 应该换形状',
-  );
-
-  const other = G.generate({ seed: 12345, archetype: 'ring' });
-  assert.notEqual(cellsKey(a.cells), cellsKey(other.cells), '换形态必须换轮廓');
+test('十四位传奇各带一块固定、连通的 77 格板面，锚点和心核坐标合法', () => {
+  assert.deepEqual(Object.keys(G.ARCHETYPES).sort(), Object.keys(legends).sort());
+  assert.equal(D.SKINS.length, 14);
+  const shapes = new Set();
+  for (const skin of D.SKINS) {
+    const arch = D.body(skin.metal).archetype;
+    const [name, plateName, anchorCount] = legends[arch];
+    assert.equal(skin.name, name);
+    assert.equal(D.bodyStyle(skin.metal, skin.culture), plateName);
+    const g = G.generate({ archetype: arch, seed: 2 });
+    assert.deepEqual(g, G.generate({ archetype: arch, seed: 2009, target: 31 }), arch);
+    assert.equal(g.archetype, arch);
+    assert.equal(g.cells.length, 77, arch);
+    const geo = G.analyze(g.cells);
+    assert.equal(geo.count, 77, arch);
+    assert.equal(geo.connected, true, arch);
+    assert.ok(g.cells.every(([x, y]) => Number.isInteger(x) && Number.isInteger(y)
+      && x >= 0 && x < G.SIZE && y >= 0 && y < G.SIZE), arch);
+    const cells = new Set(g.cells.map((c) => c.join(',')));
+    assert.equal(g.clockCore.length, arch === 'bingdi' ? 2 : 1, arch);
+    assert.equal(g.innateNodes.length, anchorCount, arch);
+    const marks = [...g.clockCore, ...g.innateNodes].map((c) => c.join(','));
+    assert.equal(new Set(marks).size, marks.length, arch);
+    assert.ok(marks.every((mark) => cells.has(mark)), arch);
+    shapes.add(g.cells.map((cell) => cell.join(',')).sort().join('|'));
+  }
+  assert.equal(shapes.size, 14);
 });
 
-test('14 种形态 × 40 个种子都命中 77 格', () => {
-  assert.equal(ARCHES.length, 14, '形态应该是 14 种');
-  assert.equal(TARGET, 77, '目标格数统一 77，不再按形态分档');
-  ARCHES.forEach((arch) => {
-    assert.equal(G.ARCHETYPES[arch].target, TARGET, `${arch} 的 target 应统一`);
-    for (let seed = 1; seed <= 40; seed++) {
-      const r = G.generate({ seed: seed * 7919, archetype: arch });
-      assert.equal(r.cells.length, TARGET, `${arch} seed=${seed * 7919} 得到 ${r.cells.length}/${TARGET}`);
-      assert.ok(G.isConnected(new Set(r.cells.map((c) => c.join(',')))), `${arch} seed=${seed * 7919} 不连通`);
-    }
-  });
+test('实板、镜环与窗格的空格保持原设计', () => {
+  const solid = G.analyze(G.generate({ archetype: 'hundun' }).cells);
+  assert.equal(solid.width, 11);
+  assert.equal(solid.height, 7);
+  assert.equal(solid.holes, 0);
+
+  const ring = G.generate({ archetype: 'jiansui' });
+  assert.equal(G.analyze(ring.cells).holes, 16);
+  assert.ok(ring.cells.every(([x, y]) => x < 4 || x > 7 || y < 4 || y > 7));
+
+  const frame = G.generate({ archetype: 'zaohuyou' });
+  assert.equal(G.analyze(frame.cells).holes, 16);
+  const cut = [2, 3, 7, 8];
+  assert.ok(frame.cells.every(([x, y]) => !cut.includes(x) || !cut.includes(y)));
 });
 
-test('永远单连通、无孤立格（否则 2 格纹路放不进去）', () => {
-  ARCHES.forEach((arch) => {
-    for (let seed = 1; seed <= 12; seed++) {
-      const { cells } = G.generate({ seed: seed * 31337, archetype: arch });
-      const info = G.analyze(cells);
-      assert.equal(info.connected, true, `${arch} 应该连通`);
-      const set = new Set(cells.map((c) => c.join(',')));
-      cells.forEach(([x, y]) => {
-        const n = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-          .filter(([dx, dy]) => set.has((x + dx) + ',' + (y + dy))).length;
-        assert.ok(n >= 1, `${arch} 的 (${x},${y}) 是孤立格`);
-      });
-    }
-  });
+test('象笏纵贯，楚腰仅两格宽，并蒂两瓣只在底部接合', () => {
+  const bar = G.generate({ archetype: 'xianghu' });
+  assert.equal(G.analyze(bar.cells).height, 11);
+  assert.ok([...Array(11).keys()].every((y) => [4, 5, 6].every((x) =>
+    bar.cells.some(([cx, cy]) => x === cx && y === cy))));
+  assert.equal(G.generate({ archetype: 'chuyao' }).cells.filter(([, y]) => y === 5).length, 2);
+
+  const twin = G.generate({ archetype: 'bingdi' });
+  const mid = twin.cells.filter(([x]) => x === 5);
+  assert.equal(mid.length, 1);
+  assert.equal(mid[0][1], Math.max(...twin.cells.map(([, y]) => y)));
+  const mirror = new Set(twin.cells.map(([x, y]) => `${10 - x},${y}`));
+  assert.ok(twin.cells.every((cell) => mirror.has(cell.join(','))));
 });
 
-test('形状身份保住了：象笏仍是窄长条，鉴燧之齐一定留孔，浑沌未凿是一块实心板', () => {
-  for (let seed = 1; seed <= 15; seed++) {
-    /* 狭长：77 格堆在 12×12 里，最宽仍要明显窄于包围盒 */
-    const bar = G.analyze(G.generate({ seed: seed * 104729, archetype: 'bar' }).cells);
-    assert.ok(bar.width <= 8, `狭长最宽不该超过 8，实际 ${bar.width}`);
-    assert.ok(bar.height >= 10, `狭长应该纵向拉开，实际高 ${bar.height}`);
+test('河弯、盾刺、齿尖、梳齿、弧口和台阶的方向固定', () => {
+  const plate = (archetype) => G.generate({ archetype });
+  const row = (g, y) => g.cells.filter(([, cy]) => cy === y).map(([x]) => x);
+  const middle = (g, y) => (Math.min(...row(g, y)) + Math.max(...row(g, y))) / 2;
+  const river = plate('suhui');
+  assert.ok(middle(river, 0) > middle(river, 4));
+  assert.ok(middle(river, 4) < middle(river, 8));
+  assert.ok(middle(river, 8) > middle(river, 10));
 
-    /* 环：必须围出真正的孔，且孔要成片而不是零星漏格 */
-    const ring = G.analyze(G.generate({ seed: seed * 104729, archetype: 'ring' }).cells);
-    assert.ok(ring.holes >= 6, `环应该留出成片孔洞，实际 ${ring.holes}`);
+  const shield = plate('xuanzhen');
+  assert.equal(shield.cells.filter(([x]) => x === 11).length, 1);
+  assert.equal(shield.cells.filter(([x]) => x === 3).length, 11);
 
-    /* 浑沌未凿：77 格必须是一块没有缺口的实心板（11×7 正好铺满），
-       所以它也是唯一不随 seed 变形的原型——它的身份就是「没有形状」。 */
-    const full = G.analyze(G.generate({ seed: seed * 104729, archetype: 'full' }).cells);
-    assert.equal(full.holes, 0, `浑沌未凿不该有孔洞，实际 ${full.holes}`);
-    assert.ok(full.width * full.height === full.count, `浑沌未凿应铺满包围盒（${full.width}×${full.height} / ${full.count} 格）`);
-    assert.ok(full.width >= 10, `浑沌未凿应横着铺开，实际宽 ${full.width}`);
+  const wheel = plate('lunya');
+  const tips = wheel.cells.filter(([x, y]) => (x - 5) ** 2 + (y - 5) ** 2 === 25);
+  assert.deepEqual(wheel.innateNodes, tips);
+
+  const comb = plate('zhibi');
+  const mirror = new Set(comb.cells.map(([x, y]) => `${10 - x},${y}`));
+  assert.ok(comb.cells.every((cell) => mirror.has(cell.join(','))));
+  assert.ok(comb.innateNodes.every(([x]) => x === 5));
+
+  const crescent = plate('xuanhuang');
+  assert.ok(Math.max(...row(crescent, 5)) < Math.max(...row(crescent, 0)));
+  assert.ok(crescent.innateNodes.every(([x, y]) => x === Math.max(...row(crescent, y))));
+  assert.equal(crescent.holes, 0);
+
+  const steps = plate('jiuceng');
+  assert.deepEqual([...new Set([0, 3, 8].map((y) => row(steps, y).length))], [3, 7, 11]);
+  const notch = plate('dibuman');
+  assert.ok([5, 7, 9].every((y) => row(notch, y).length < row(notch, y - 1).length));
+
+  const hub = plate('sida');
+  assert.equal(row(hub, 5).length, 11);
+  assert.equal(hub.cells.filter(([x]) => x === 5).length, 11);
+});
+
+test('固定板面的坐标可安全供不同实例使用', () => {
+  const plate = G.generate({ archetype: 'xianghu' });
+  plate.cells[0][0] = -1;
+  plate.clockCore[0][0] = -1;
+  plate.innateNodes[0][0] = -1;
+  const fresh = G.generate({ archetype: 'xianghu' });
+  for (const grid of [fresh.cells, fresh.clockCore, fresh.innateNodes]) {
+    assert.ok(grid.every(([x, y]) => x >= 0 && y >= 0));
   }
 });
 
-test('14 种形态的轮廓两两可区分（同一 seed 下没有两块长得一样）', () => {
-  const seen = new Map();
-  ARCHES.forEach((arch) => {
-    const cells = G.generate({ seed: 4242, archetype: arch }).cells;
-    const sig = cellsKey([...cells].sort((a, b) => (a[1] - b[1]) || (a[0] - b[0])));
-    assert.ok(!seen.has(sig), `${arch} 与 ${seen.get(sig)} 生成了完全相同的轮廓`);
-    seen.set(sig, arch);
-  });
-});
-
-test('analyze 的孔洞与最长直线段算得对', () => {
-  /* 3x3 的空心环：8 格 + 1 个孔 */
-  const ringCells = [];
-  for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) {
-    if (x === 1 && y === 1) continue;
-    ringCells.push([x, y]);
-  }
-  const info = G.analyze(ringCells);
-  assert.equal(info.count, 8);
-  assert.equal(info.holes, 1, '中间那格应算孔洞');
-  assert.equal(info.longestRun, 3, '顶行是 3 连');
-
-  /* 一条 1x5 的直线 */
-  const line = [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]];
-  const li = G.analyze(line);
-  assert.equal(li.longestRun, 5);
-  assert.equal(li.holes, 0);
-  assert.equal(li.width, 5);
-  assert.equal(li.height, 1);
-});
-
-test('目标格数可以显式覆盖（给小板留的应急口）', () => {
-  const big = G.generate({ seed: 99, archetype: 'full' });
-  const small = G.generate({ seed: 99, archetype: 'full', target: 40 });
-  assert.equal(big.cells.length, TARGET);
-  assert.equal(small.cells.length, 40);
+test('analyze 记出环的孔洞与直线最长段', () => {
+  const ring = G.analyze([[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]]);
+  assert.equal(ring.count, 8);
+  assert.equal(ring.holes, 1);
+  assert.equal(ring.longestRun, 3);
+  const line = G.analyze([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]);
+  assert.equal(line.longestRun, 5);
+  assert.equal(line.holes, 0);
+  assert.equal(line.width, 5);
+  assert.equal(line.height, 1);
 });

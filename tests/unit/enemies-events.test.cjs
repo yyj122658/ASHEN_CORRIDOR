@@ -2,7 +2,7 @@
 /* 敌人种类与事件的深度设计：每条机制都要能在真实战斗/真实状态机里复现。 */
 const test = require('node:test');
 const assert = require('node:assert');
-const { boot, startRun, setNodes } = require('../helpers/veteran-run.cjs');
+const { boot, startRun, setNodes, placeForStrike } = require('../helpers/veteran-run.cjs');
 
 /** 直接按指定物种造一场战斗，方便逐条验证敌人机制。 */
 function battleWith(V, st, types, opts) {
@@ -36,6 +36,26 @@ function actOnly(V, st, unitId) {
   u.atkTimer = 100;
   return V.Combat.step(st).state;
 }
+
+test('扰位石傀先改变队列，再接近新的前排目标出手', () => {
+  const { A, V, st } = boot(88);
+  const { st: state, b } = battleWith(V, startRun(A, st, 88), ['shuffler']);
+  const enemy = b.enemies[0];
+  const front = b.allies.find(u => u.slot === 0);
+  const rear = b.allies.reduce((a, c) => a.slot > c.slot ? a : c);
+  enemy.actionCount = enemy.disrupt.everyActions - 1;
+  b.field[front.id] = 188;
+  b.field[enemy.id] = 218;
+  let next = actOnly(V, state, enemy.id);
+  const target = next.run.battle.allies.find(u => u.slot === 0);
+  assert.equal(target.id, rear.id);
+  const strike = battle => battle.logs.find(l => l.actorId === enemy.id && l.strike);
+  assert.equal(strike(next.run.battle), undefined, '换位后要走进新的攻击距离');
+  for (let beat = 0; beat < 8 && !strike(next.run.battle); beat++) next = V.Combat.step(next).state;
+  const fought = next.run.battle;
+  assert.equal(strike(fought)?.targetId, rear.id);
+  assert.ok(V.Positions.inReach(fought, fought.enemies[0], target));
+});
 
 test('层域编成：招牌物种、精英本体在前、精英标记真实生效', () => {
   const { A, V, st } = boot(88);
@@ -79,6 +99,7 @@ test('三个首领轮流出现，第二阶段追加自己的招式', () => {
   b.allies[0].atkTimer = 100;
   b.allies[0].hits = 1;
   b.allies[0].crit = 0;
+  placeForStrike(b, b.allies[0], boss);
   const next = V.Combat.step(s).state;
   const after = next.run.battle.enemies[0];
   assert.equal(after.bossPhase, 2);
@@ -130,6 +151,7 @@ test('瘦犬越过前排咬后排，拖骸者抽余裕并剥盾，唱喑替同�
   /* v4.0：先摘掉闪避与电容缓冲，确保这一下真的落到血上（否则会被截留吃掉） */
   lean.b.allies.forEach((u) => { u.dodge = 0; u.shield = 0; u.shieldCap = 0; u.circuit = null; });
   front.hp = front.maxHp; back.hp = back.maxHp;
+  placeForStrike(lean.b, lean.b.enemies[0], back);
   const next1 = actOnly(V, lean.st, lean.b.enemies[0].id);
   assert.equal(next1.run.battle.allies[0].hp, front.maxHp, '前排不该被扑到');
   assert.ok(next1.run.battle.allies[next1.run.battle.allies.length - 1].hp < back.maxHp, '后排应被咬');
@@ -139,6 +161,7 @@ test('瘦犬越过前排咬后排，拖骸者抽余裕并剥盾，唱喑替同�
   const targetId = target.id;
   target.energy = 10;
   target.shield = 40;
+  placeForStrike(drag.b, drag.b.enemies[0], target);
   const next2 = actOnly(V, drag.st, drag.b.enemies[0].id);
   /* 拖链会先把人拖到最前，所以按 id 取人，不按槽位 */
   const hit = next2.run.battle.allies.find((u) => u.id === targetId);
@@ -165,6 +188,7 @@ test('炉渣傀倒下时崩壳灼伤全队', () => {
   const actor = b.allies[0];
   actor.atkTimer = 100;
   actor.hits = 1; actor.crit = 0;
+  placeForStrike(b, actor, b.enemies[0]);
   let next = V.Combat.step(s).state;
   assert.equal(next.run.battle.enemies[0].alive, false);
   const after = next.run.battle.allies.map((u) => u.hp);
@@ -187,6 +211,7 @@ test('祝福数值真正生效：锐利增伤、厚重减伤、缝补在层间�
   const damageOnce = (fixture) => {
     const actor = fixture.b.allies[0];
     actor.atkTimer = 100;
+    placeForStrike(fixture.b, actor, fixture.b.enemies[0]);
     const next = V.Combat.step(fixture.s).state;
     return fixture.b.enemies[0].maxHp - next.run.battle.enemies[0].hp;
   };
@@ -210,6 +235,7 @@ test('祝福数值真正生效：锐利增伤、厚重减伤、缝补在层间�
       /* 拉高血池：400 点一击如果直接打死人，两边都只剩 0，比值就没有意义了 */
       u.maxHp = 5000; u.hp = 5000;
     });
+    placeForStrike(fixture.b, enemy, fixture.b.allies[0]);
     const cut = actOnly(V, fixture.st, enemy.id);
     return 5000 - cut.run.battle.allies[0].hp;
   };

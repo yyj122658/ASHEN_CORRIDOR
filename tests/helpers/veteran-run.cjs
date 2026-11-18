@@ -592,36 +592,30 @@ function autoRouteBoard(A, st, unit, opts) {
   const plate = V.Circuit.plateOf(unit);
   const cap = V.Circuit.loadCap(unit);
 
-  const mss = V.State.manuscriptsOf(unit);
+  const mss = V.State.manuscriptsOf(unit).filter(ms => !opts?.msId || ms.id === opts.msId);
   if (!mss.length) return { ok: false, reason: '没有装配蚀刻法' };
-  const ms = ((opts && opts.msId) && mss.find((m) => m.id === opts.msId)) || mss[0];
-  /* 用**装配时浇铸出来的那副形状**，不是 data 里的标准形状：
-     窄底盘上大卷会被裁短，拿标准形状算出来的通路坐标在真实布局里根本不存在。 */
-  const norm = V.Manuscript.normalize(ms);
-  if (!norm) return { ok: false, reason: '蚀刻法定义异常：' + ms.id };
 
   /* ---- 第一步/第二步：枚举姿态 × 落点 × 端口通路 ---- */
   const candidates = [];
-  const seenShape = new Set();
-  for (let rot = 0; rot < 4; rot++) {
+  for (const ms of mss) {
+    const norm = V.Manuscript.normalize(D.manuscript(ms.id) || ms);
+    if (!norm) continue;
+    const free = V.State.freeManuscriptCells(unit, ms.id);
     for (const mir of [false, true]) {
-      const shape = V.Manuscript.orient(norm, rot, mir);
-      /* 长方形在 rot 0/2、1/3 下形状相同，去重能省一大半枚举 */
-      const sig = rot + ':' + mir + ':' + shape.cells.map((c) => c.join(',')).sort().join('|');
-      if (seenShape.has(sig)) continue;
-      seenShape.add(sig);
-      /* 落点只试前 8 个：板面是规则的，前十来个落点已经覆盖了所有「靠边/靠中」的处境，
-         全量扫 50 个位置只会把同样的通路再算五十遍。 */
-      V.Manuscript.placements(shape, plate.cellsList).slice(0, 4).forEach(([ox, oy]) => {
-        enumeratePaths(V, shape, ox, oy, style, limit).forEach((nodes) => {
-          candidates.push({ rot, mir, ox, oy, shape, nodes });
+      for (let rot = 0; rot < 4; rot++) {
+        const shape = V.Manuscript.orient(norm, rot, mir);
+        V.Manuscript.placements(shape, free).slice(0, 4).forEach(([ox, oy]) => {
+          enumeratePaths(V, shape, ox, oy, style, limit).forEach((nodes) => {
+            candidates.push({ ms, rot, mir, ox, oy, shape, nodes });
+          });
         });
-      });
-      /* 攒够就不再换姿态：姿态之间只差「同一块骨架转了个身」，边际收益很低 */
+        if (candidates.length >= 40) break;
+      }
       if (candidates.length >= 40) break;
     }
+    if (candidates.length) break;
   }
-  if (!candidates.length) return { ok: false, reason: '板面上放不出可连通的通路' };
+  if (!candidates.length) return { ok: false, reason: '轮廓不兼容或没有完整的可布线路径' };
 
   /* ---- 用真实 route() 复核每条候选（BFS 可能走出一条更短的支路） ----
      注意：这里把候选件拼成一份「和 layout 同构」的 built，再交给 pieceIndex 求 dirs，
@@ -650,6 +644,7 @@ function autoRouteBoard(A, st, unit, opts) {
 
   /* ---- 第三步：落地 + 余格填充 ---- */
   const best = scored[0];
+  const ms = best.ms;
   const placements = best.nodes.map((p) => {
     const item = V.State.makePart(st, { kind: 'circuit', templateId: p.piece.id });
     st.itemsById[item.id] = item;
@@ -673,8 +668,7 @@ function autoRouteBoard(A, st, unit, opts) {
   /* ---- 真实编译复核：这是最终裁判 ---- */
   const lay = V.Circuit.layout(st, placements);
   const idx = V.Manuscript.pieceIndex(lay);
-  const or = V.Manuscript.orient(norm, ms.rotation || 0, !!ms.mirrorY);
-  const rt = V.Manuscript.route(or, ms.x || 0, ms.y || 0, idx);
+  const rt = V.Manuscript.route(best.shape, ms.x, ms.y, idx);
   const pulse = V.Circuit.pulseOf(lay, rt);
   const cc = V.Circuit.compile(st, unit.id, placements);
   return {
@@ -689,4 +683,9 @@ function autoRouteBoard(A, st, unit, opts) {
   };
 }
 
-module.exports = { fullTeam, boot, startRun, setNodes, fight, stepUntilOver, makePart, buildBoard, autoRouteBoard };
+function placeForStrike(b, attacker, target) {
+  b.field[attacker.id] = b.field[target.id] + (attacker.side === 'ally' ? -18 : 18);
+  b.fieldY[attacker.id] = b.fieldY[target.id];
+}
+
+module.exports = { fullTeam, boot, startRun, setNodes, fight, stepUntilOver, makePart, buildBoard, autoRouteBoard, placeForStrike };

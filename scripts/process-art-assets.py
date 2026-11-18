@@ -348,8 +348,8 @@ def battle_crop(rgba: np.ndarray, size=(960, 300)) -> np.ndarray:
     return resized[top:top + th, :, :]
 
 
-def snap_palette(rgba: np.ndarray, min_alpha: int = 128) -> np.ndarray:
-    """把不透明像素吸到十色。alpha < 128 的留着不动（反正看不见）。"""
+def snap_palette(rgba: np.ndarray, min_alpha: int = 128, palette=PALETTE) -> np.ndarray:
+    """把达到 alpha 阈值的像素吸到指定色板。"""
     out = rgba.copy()
     mask = out[..., 3] >= min_alpha
     if not mask.any():
@@ -359,9 +359,9 @@ def snap_palette(rgba: np.ndarray, min_alpha: int = 128) -> np.ndarray:
     idx = np.empty(len(px), dtype=np.int32)
     for start in range(0, len(px), 200_000):
         chunk = px[start:start + 200_000]
-        d = ((chunk[:, None, :] - PALETTE[None, :, :]) ** 2).sum(axis=-1)
+        d = ((chunk[:, None, :] - palette[None, :, :]) ** 2).sum(axis=-1)
         idx[start:start + 200_000] = d.argmin(axis=1)
-    out[..., :3][mask] = PALETTE[idx].astype(np.uint8)
+    out[..., :3][mask] = palette[idx].astype(np.uint8)
     return out
 
 

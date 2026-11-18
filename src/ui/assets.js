@@ -2,12 +2,11 @@
 /* 固定资产映射与失败降级。路径相对 index.html。
    不通过 fetch(manifest.json)，保证 file:// 直接打开可用。
 
-   2026-11-16：整体切到 assets/art/curated/ —— 96 张清洗产物的唯一入口。
-   旧目录（v1 / veteran-v1 / battle-v1 / battle-v3）原样保留，只作为 battle-v3 条带的来源。 */
+   所有运行时图像来自 v4 九色资源目录。 */
 (function (A) {
   'use strict';
 
-  const BASE = 'assets/art/curated/';
+  const BASE = 'assets/art/topology-v4/';
 
   const ART = {
     /* ---- 功能场景（640×360，横幅用；野外事件与摊位都挂在这里） ---- */
@@ -29,56 +28,41 @@
     'scene.battle.water':   { path: 'backgrounds/biome_water_battle.png',   objectPosition: '50% 50%', ratio: '16/5', groundY: 0.84 },
     'scene.battle.spring':  { path: 'backgrounds/biome_spring_battle.png',  objectPosition: '50% 50%', ratio: '16/5', groundY: 0.84 },
     'scene.battle.furnace': { path: 'backgrounds/biome_furnace_battle.png', objectPosition: '50% 50%', ratio: '16/5', groundY: 0.84 },
+    'scene.battle.angled': { path: 'backgrounds/angled_sanctum.png', objectPosition: '50% 50%', ratio: '80/43' },
 
-    /* ---- 十四位传奇（96×96 清洗头像） ---- */
-    'portrait.blade':   { path: 'portraits/blade.png',    objectPosition: '50% 40%', ratio: '1/1' },
-    'portrait.warden':  { path: 'portraits/warden.png',   objectPosition: '50% 40%', ratio: '1/1' },
-    'portrait.ranger':  { path: 'portraits/ranger.png',   objectPosition: '50% 40%', ratio: '1/1' },
-    'portrait.warlock': { path: 'portraits/warlock.png',  objectPosition: '50% 40%', ratio: '1/1' },
-    'portrait.cleric':  { path: 'portraits/cleric.png',   objectPosition: '50% 40%', ratio: '1/1' },
-    'portrait.rogue':   { path: 'portraits/rogue.png',    objectPosition: '50% 40%', ratio: '1/1' },
-
-    /* ---- 七种节点插画（48×48） ---- */
-    'node.battle':      { path: 'nodes/node_battle.png',   objectPosition: '50% 50%', ratio: '1/1', fallbackId: 'scene.corridor' },
-    'node.elite':       { path: 'nodes/node_elite.png',    objectPosition: '50% 50%', ratio: '1/1', fallbackId: 'scene.corridor' },
-    'node.chest':       { path: 'nodes/node_chest.png',    objectPosition: '50% 50%', ratio: '1/1', fallbackId: 'scene.corridor' },
-    'node.event':       { path: 'nodes/node_event.png',    objectPosition: '50% 50%', ratio: '1/1', fallbackId: 'scene.corridor' },
-    'node.camp':        { path: 'nodes/node_camp.png',     objectPosition: '50% 50%', ratio: '1/1', fallbackId: 'scene.corridor' },
-    'node.merchant':    { path: 'nodes/node_merchant.png', objectPosition: '50% 50%', ratio: '1/1', fallbackId: 'scene.corridor' },
-    'node.boss':        { path: 'nodes/node_boss.png',     objectPosition: '50% 50%', ratio: '1/1', fallbackId: 'scene.corridor' },
+    'surface.board': { path: 'ui/living-metal.png', objectPosition: '50% 50%', ratio: '1/1' },
+    'surface.forge': { path: 'ui/forged-steel.png' },
+    'surface.wax': { path: 'ui/wax-grain.png' },
+    'icon.scar': { path: 'ui/scar_mark.png', objectPosition: '50% 50%', ratio: '1/1' },
+    'icon.rust': { path: 'ui/rust_mark.png', objectPosition: '50% 50%', ratio: '1/1' },
   };
 
-  /* 十四位传奇的立绘 id 由 SKINS 推导：portrait.<skinId>。
-     六位老传奇手写在上面的表里（保持原字段顺序），剩下八位在这里补，
-     免得「新加一个人忘了加图」变成静默缺失。 */
-  const WANDERERS = ['wanderer0', 'wanderer1', 'wanderer2', 'wanderer3',
-    'wanderer4', 'wanderer5', 'wanderer6', 'wanderer7'];
-  WANDERERS.forEach((id) => {
-    ART['portrait.' + id] = { path: 'portraits/' + id + '.png', objectPosition: '50% 40%', ratio: '1/1' };
-  });
-
-  /* 十四种敌人（含亚种与首领）：全部走 curated/enemies/<enemyType>.png。
-     亚种与本体是两张图，不再靠色调区分 —— 文件名就是 enemyType，不需要映射表。 */
-  const ENEMY_IDS = ['bone', 'hound', 'hulk', 'shuffler', 'wraith',
-    'boneBell', 'houndLean', 'hulkSlag', 'wraithChoir',
-    'shufflerDragger', 'stoker', 'gatekeeper', 'memoryEater', 'furnaceHeart'];
-  ENEMY_IDS.forEach((id) => {
-    ART['enemy.' + id] = { path: 'enemies/' + id + '.png', objectPosition: '50% 45%', ratio: '1/1' };
-  });
-
-  /* 首领：只有这三个有专属大图（112×112） */
-  const BOSS_IDS = ['gatekeeper', 'memoryEater', 'furnaceHeart'];
-
-  /* 战斗小人的静态帧（64×64 清洗版）：SpriteAnim 图集缺失时用它兜底，
-     不再退回「7px 白字名字」。敌方复用 enemy.<id>，我方单独一套 sprite.<skinId>。 */
-  WANDERERS.concat(['blade', 'warden', 'ranger', 'warlock', 'cleric', 'rogue']).forEach((id) => {
-    ART['sprite.' + id] = { path: 'allies/' + id + '.png', objectPosition: '50% 50%', ratio: '1/1' };
-  });
-
-  /* 战斗特效的静态贴图：粒子层优先画它，缺图再退回矢量线。 */
-  ['slash', 'burn', 'poison', 'bleed', 'corrode', 'shield'].forEach((kind) => {
-    ART['vfx.' + kind] = { path: 'vfx/vfx_' + kind + '.png', objectPosition: '50% 50%', ratio: '1/1' };
-  });
+  const D = A.Veteran.Data;
+  const register = (kind, ids, ext = 'png') => {
+    for (const id of ids) ART[kind + '.' + id] = {
+      path: kind + '/' + id + '.' + ext,
+      objectPosition: '50% 50%', ratio: '1/1',
+    };
+  };
+  const skins = D.SKINS.map(skin => skin.id);
+  register('portrait', skins);
+  register('sprite', skins);
+  register('enemy', Object.keys(D.ENEMIES));
+  register('node', ['battle', 'elite', 'chest', 'event', 'camp', 'merchant', 'boss']);
+  register('plate', Object.values(D.BODIES).map(body => body.archetype));
+  register('family', ['straight', 'elbow', 'splitter', 'capacitor', 'threshold', 'ember']);
+  register('rune', Object.keys(D.TEMPLATES), 'webp');
+  register('etch-relief', [...Object.keys(D.MANUSCRIPTS), 'entry', 'exit'], 'webp');
+  for (const pose of ['idle', 'powered', 'hot']) {
+    for (const [id, spec] of Object.entries(D.TEMPLATES)) {
+      const cols = Math.max(...spec.cells.map(([x]) => x)) + 1;
+      const rows = Math.max(...spec.cells.map(([, y]) => y)) + 1;
+      ART[`conduit.${pose}.${id}`] = { path: `conduit/${pose}/${id}.png`, ratio: cols + '/' + rows };
+    }
+  }
+  ART['conduit.blueprint'] = { path: 'conduit/blueprint.png' };
+  ART['conduit.overlays'] = { path: 'conduit/overlays.png' };
+  ART['vfx.topology'] = { path: 'effects.png' };
 
   // 运行时状态：'unknown' | 'ready' | 'failed'
   const status = {};
@@ -155,5 +139,5 @@
       .replace(/'/g, '&#39;');
   }
 
-  A.Art = { ART, getArt, preloadArt, getImage, isReady, statusOf, imgTag, safeText, BASE, BOSS_IDS };
+  A.Art = { ART, getArt, preloadArt, getImage, isReady, statusOf, imgTag, safeText, BASE };
 })(globalThis.Ashen ||= {});

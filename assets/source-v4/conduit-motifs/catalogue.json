@@ -1,0 +1,13 @@
+{
+  "etching": {
+    "etch-core": "spark corridor5 ember12 wide14 flurry twinflow inverse needle ward ripple cinder pursuit bulwark torrent razor tide",
+    "etch-forge": "pulse sunder bloodrush sentinel echo rivet wick suture shrapnel bellows quench awl crucible tinThread fileTooth leadSeal",
+    "etch-foundry": "tinderMesh anneal silverTap slagHook ironJaw coreDrill bronzeGong splitAnvil furnaceEye chalkLine sump oarlock brineWrap pikeHead capstan dryDock",
+    "etch-works": "rushMat furnaceTong millStone soundingLine copperWick glassBell quarrySaw coalSeam lodestone turbine boneFlute awlPoint shutter marrowPin tinChime beltBuckle",
+    "etch-reliquary": "coilSpring fieldLamp waxTablet splitNeedle surveyLens houndClamp shellScale jointHammer veilStitch saltCradle ribRake jawSpring slagLance kilnMantle mawValve blackBloom"
+  },
+  "rune": {
+    "rune-junctions": "straight elbow splitter capacitor threshold ember rivet long tee cross jack rail dogleg hairpin kneejoint crook",
+    "rune-sigils": "clevis spillway wishbone bellowsCell coil cistern ampoule pinValve sluice reed flint fuse brazier wickbend"
+  }
+}

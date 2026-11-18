@@ -7,7 +7,7 @@
   const ST = () => V.State;
 
   const KEY = ST().SAVE_KEY;
-  const SCHEMA = 1;
+  const SCHEMA = 5;
 
   function encode(st, now) {
     return JSON.stringify({
@@ -33,7 +33,7 @@
     if (env.ruleset !== 'veteran') {
       return { ok: false, errors: [`ruleset 不是 veteran（${env.ruleset}），拒绝载入`], state: null };
     }
-    if (env.schemaVersion !== SCHEMA) {
+    if (![1, 2, 3, 4, SCHEMA].includes(env.schemaVersion)) {
       return { ok: false, errors: [`schemaVersion 不是 ${SCHEMA}（${env.schemaVersion}）`], state: null };
     }
     const st = env.state;
@@ -43,8 +43,39 @@
     }
 
     try {
+      const run = st.run;
+      const battle = run?.battle;
+      const P = V.Positions;
+      if (env.schemaVersion < 4 && run) {
+        const prep = run.encounter?.preparation;
+        if (prep) delete prep.formation;
+        for (const u of [...run.party, ...(run.encounter?.checkpoint?.run?.party || []), ...(battle?.allies || [])]) {
+          if (u.cell !== undefined) {
+            if (!Number.isInteger(u.cell) || u.cell < 0 || u.cell > 7) throw new Error('invalid legacy cell');
+            u.deployment = { x: 118 - (u.cell % 4) * 29, y: u.cell < 4 ? 0 : -22 };
+            delete u.cell;
+          }
+        }
+        if (battle) battle.fieldY ||= P.initialField(battle, P.homeY);
+      }
+      if (env.schemaVersion < 5) {
+        ST().migrateMetalGeometry(st);
+        if (run?.encounter?.checkpoint) ST().migrateMetalGeometry(run.encounter.checkpoint);
+      }
       const v = ST().validate(st);
       if (!v.ok) return { ok: false, errors: v.errors, state: null };
+      if (battle) {
+        if (env.schemaVersion === 1) battle.field ||= P.initialField(battle);
+        const units = [...battle.allies, ...battle.enemies];
+        if (!battle.field || !battle.fieldY || units.some(u => !Number.isFinite(battle.field[u.id])
+          || battle.field[u.id] < 0 || battle.field[u.id] > P.ARENA.width
+          || !Number.isFinite(battle.fieldY[u.id]) || battle.fieldY[u.id] < P.ARENA.minY || battle.fieldY[u.id] > P.ARENA.maxY)) {
+          return { ok: false, errors: ['战场坐标损坏'], state: null };
+        }
+        if (battle.allies.some(u => u.deployment != null && !P.validDeployment(u.deployment))) {
+          return { ok: false, errors: ['战场出战落点损坏'], state: null };
+        }
+      }
       V.Expedition.migrateChest(st);
     } catch {
       return { ok: false, errors: ['存档中的角色、板面或远征记录损坏'], state: null };

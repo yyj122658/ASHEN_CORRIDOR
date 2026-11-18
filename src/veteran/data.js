@@ -154,15 +154,15 @@
      保留 sturdy / agile / conduit 三个旧 id，老存档按同名回落到新形态。 */
   const BODIES = {
     sturdy: {
-      id: 'sturdy', name: '厚铸躯壳', archetype: 'full',
+      id: 'sturdy', name: '厚铸躯壳', archetype: 'hundun',
       profile: { hp: 0.44, atk: 0.20, def: 0.26, spd: 0.10 },
       blocked: [[2, 3], [3, 3]],
       desc: '最大的一块铁。皮层厚、重心低，出手慢半拍。',
       /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
-      innate: { id: 'sturdy', name: '无相包容', desc: '板面负荷上限 +35%：母板更厚，压得住更多纹路。' },
+      innate: { id: 'sturdy', name: '无相包容', desc: '板面负荷上限 +12：母板更厚，压得住更多纹路。' },
     },
     agile: {
-      id: 'agile', name: '轻量骨架', archetype: 'bar',
+      id: 'agile', name: '轻量骨架', archetype: 'xianghu',
       profile: { hp: 0.30, atk: 0.24, def: 0.12, spd: 0.34 },
       blocked: [[0, 0], [2, 3]],
       desc: '窄长的梁。护不住，但每一下都比别人来得早。',
@@ -170,7 +170,7 @@
       innate: { id: 'agile', name: '一往无前', desc: '板面每空出 10% 的格，输出脉冲幅值 +8%（最多 +40%）。' },
     },
     conduit: {
-      id: 'conduit', name: '导流腔体', archetype: 'square',
+      id: 'conduit', name: '导流腔体', archetype: 'zaohuyou',
       profile: { hp: 0.40, atk: 0.24, def: 0.18, spd: 0.18 },
       blocked: [[0, 0], [3, 3]],
       desc: '方整的坯。四项都不吃亏，也都不出挑。',
@@ -178,7 +178,7 @@
       innate: { id: 'conduit', name: '虚室生白', desc: '每装配 1 门 1–2 阶浅层蚀刻法，全招式余裕消耗 −1（最低 1）；但所有蚀刻法最高只按共鸣二阶结算。' },
     },
     throat: {
-      id: 'throat', name: '空腔喉管', archetype: 'ring',
+      id: 'throat', name: '空腔喉管', archetype: 'jiansui',
       profile: { hp: 0.38, atk: 0.22, def: 0.16, spd: 0.24 },
       blocked: [[0, 0], [3, 3]],
       desc: '中间是空的。纹路只能绕着腔壁走，越绕越顺。',
@@ -186,7 +186,7 @@
       innate: { id: 'throat', name: '周流回环', desc: '每形成一个闭合环路，脉冲幅值 +10%（上限 +60%）。' },
     },
     corner: {
-      id: 'corner', name: '折角板', archetype: 'ell',
+      id: 'corner', name: '折角板', archetype: 'dibuman',
       profile: { hp: 0.42, atk: 0.22, def: 0.22, spd: 0.14 },
       blocked: [[0, 0], [3, 3]],
       desc: '缺一角。直角那一侧特别吃得住，缺的那边要拿纹路补。',
@@ -194,31 +194,31 @@
       innate: { id: 'corner', name: '三隅稳固', desc: '每次 90° 转折的脉冲增益翻倍（每次 +24%），且每次转向补充电容缓冲。' },
     },
     aegis: {
-      id: 'aegis', name: '覆盾', archetype: 'shield',
+      id: 'aegis', name: '覆盾', archetype: 'xuanzhen',
       profile: { hp: 0.46, atk: 0.18, def: 0.26, spd: 0.10 },
       blocked: [[0, 0], [3, 3]],
-      desc: '上宽下收。正面最厚，两侧薄得能看见光。',
+      desc: '左侧是厚重的拱盾，向右收成一根尖刺。',
       /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
       innate: { id: 'aegis', name: '正面如壁', desc: '位于队伍 1 号位时，自身获得护盾量 +25%，且防御减伤时反弹 35% 减免伤害。' },
     },
     waist: {
-      id: 'waist', name: '两截', archetype: 'hourglass',
+      id: 'waist', name: '两截', archetype: 'chuyao',
       profile: { hp: 0.32, atk: 0.26, def: 0.16, spd: 0.26 },
       blocked: [[0, 0], [3, 3]],
-      desc: '中间掐断。两端各有一片开阔地，连接处只有两三格。',
+      desc: '两端各有一片开阔地，中间的细腰只有两格宽。',
       /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
       innate: { id: 'waist', name: '两极共振', desc: '压力 ≥50 时脉冲幅值 ×1.45；单次受到超过生命上限 15% 的伤害额外 +5 压力。' },
     },
     twin: {
-      id: 'twin', name: '孪生', archetype: 'bilobe',
+      id: 'twin', name: '孪生', archetype: 'bingdi',
       profile: { hp: 0.38, atk: 0.26, def: 0.18, spd: 0.18 },
       blocked: [[0, 0], [3, 3]],
-      desc: '两团金属长在一起。纹路可以从一边铺到另一边。',
+      desc: '两瓣金属各有一枚时钟心核，只在底部接合。',
       /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
       innate: { id: 'twin', name: '双生主修', desc: '第 2 门蚀刻法（第一辅修）按 100% 主修乘算结算，且不同标签的招式之间可直接触发连携。' },
     },
     ratchet: {
-      id: 'ratchet', name: '棘轮', archetype: 'gear',
+      id: 'ratchet', name: '棘轮', archetype: 'lunya',
       profile: { hp: 0.34, atk: 0.24, def: 0.24, spd: 0.18 },
       blocked: [[0, 0], [3, 3]],
       desc: '边缘一圈齿。齿尖放不下大纹路，却能把细纹咬得很死。',
@@ -226,7 +226,7 @@
       innate: { id: 'ratchet', name: '齿咬碎纹', desc: '板上每铺设 1 件占格不超过 2 格的纹路，基础回裕 +0.08/s（上限 +0.48/s）。' },
     },
     arc: {
-      id: 'arc', name: '弧月', archetype: 'crescent',
+      id: 'arc', name: '弧月', archetype: 'xuanhuang',
       profile: { hp: 0.36, atk: 0.22, def: 0.14, spd: 0.28 },
       blocked: [[0, 0], [3, 3]],
       desc: '弯的一条。中间薄、两头厚，长纹路只能顺着弯铺。',
@@ -234,7 +234,7 @@
       innate: { id: 'arc', name: '孤弧锋锐', desc: '主修蚀刻法达到 100% 覆盖且贯通时，所有攻击与招式无视目标 25% 防御，且引爆异常伤害 +20%。' },
     },
     terrace: {
-      id: 'terrace', name: '阶台', archetype: 'stair',
+      id: 'terrace', name: '阶台', archetype: 'jiuceng',
       profile: { hp: 0.40, atk: 0.24, def: 0.22, spd: 0.14 },
       blocked: [[0, 0], [3, 3]],
       desc: '一级一级错下去。三个高度各有各的落点。',
@@ -242,7 +242,7 @@
       innate: { id: 'terrace', name: '累土递进', desc: '战斗每经过 1 个完整回合（6 步），全招式伤害与治疗叠加 +4%（上限 +32%）。' },
     },
     ripple: {
-      id: 'ripple', name: '波纹带', archetype: 'zigzag',
+      id: 'ripple', name: '波纹带', archetype: 'suhui',
       profile: { hp: 0.34, atk: 0.26, def: 0.14, spd: 0.26 },
       blocked: [[0, 0], [3, 3]],
       desc: '起伏的一条。顺着波峰能连成长线，横着切却处处错开。',
@@ -250,15 +250,15 @@
       innate: { id: 'ripple', name: '曲径通幽', desc: '板上每铺设 1 件曲折纹路，闪避率 +3%（上限 +18%）、招式引导时间 −15%（最多 −60%）。' },
     },
     spine: {
-      id: 'spine', name: '脊梁', archetype: 'spine',
+      id: 'spine', name: '脊梁', archetype: 'zhibi',
       profile: { hp: 0.38, atk: 0.26, def: 0.20, spd: 0.16 },
       blocked: [[0, 0], [3, 3]],
-      desc: '一条中轴加四对横肋。中轴最好用，横肋只够挂一件。',
+      desc: '一条中轴加五对横齿。中轴上有七个先天锚点。',
       /* 相性：形状决定「怎么用」，不改面板（derive.js 一个字没动） */
       innate: { id: 'spine', name: '中脊挂刺', desc: '主修蚀刻法每搭配 1 门 1 阶辅修蚀刻法，主修招式伤害 +14%（上限 +42%）。' },
     },
     crucible: {
-      id: 'crucible', name: '十字枢', archetype: 'cross',
+      id: 'crucible', name: '十字枢', archetype: 'sida',
       profile: { hp: 0.34, atk: 0.26, def: 0.18, spd: 0.22 },
       blocked: [[0, 0], [3, 3]],
       desc: '四臂张开。四个方向都够得着，四角都是空的。',
@@ -1366,221 +1366,154 @@
   });
   MANUSCRIPTS.twinflow.skills.reverse();
 
-  /* ========================== 蚀刻法骨架重塑（v4.0 六标） ==========================
-     77 格的母板上，2~14 格的蚀刻法只占 3%~18% 面积 —— 板面大片空着，
-     「压满大半块板才吃到高阶共鸣」这条设计根本没机会出现。
-     这里按稀有度把 80 门重排成**镂空电路矩阵**：
-       ① 一条 4~6 格的**主干走廊**：入口在头、出口在尾，折数决定这门的脉冲形状；
-       ② 主干之外长一片**枝体**：整体只挂在出口格上（不许贴主干其它格），
-          所以它不会替通路造出捷径 —— 入口到出口的距离由走廊决定；
-       ③ 枝体生长时禁止「补满 2×2」，于是天然留下 1×2 / 2×2 的镶嵌槽。
-     面积阶梯：R1 6~9 · R2 10~14 · R3 16~21 · R4 23~29 · R5 32~39 · R6/R7 44~54。 */
-  const SKELETON_LADDER = {
-    1: { sizes: [6, 9], load: 2 },
-    2: { sizes: [10, 14], load: 3 },
-    3: { sizes: [16, 21], load: [4, 5] },
-    4: { sizes: [23, 29], load: [6, 7] },
-    5: { sizes: [32, 39], load: [8, 9] },
-    6: { sizes: [44, 54], load: [11, 12] },
-    7: { sizes: [44, 54], load: [11, 12] },
+  /* 固定刻图：# 为覆纹格，. 为留白，A / Z 为起止端。除大阵端口朝北，其余朝西 / 东。 */
+  const ETCHING_BLUEPRINTS = {
+    '象笏窄锋型': {
+      spark: '.##./A##Z/.##.',
+      needle: '.#../A##Z/.##.',
+      ward: '..##./A###Z/.##..',
+      ripple: '..#../A###Z/.##..',
+      rivet: '.#.../A###Z/..##.',
+      corridor5: '..###./A####Z/.##...',
+      cinder: '.##.../A####Z/...##.',
+      pursuit: '..#.#....../A#########Z',
+      pulse: '......#...#/A#########Z/.....#.....',
+      ember12: '...##../.######/A#####Z/.##....',
+      torrent: '...###../.######./A######Z/.####...',
+      razor: '..###../.######/A#####Z/...###.',
+      anneal: '..#..../A#####Z/.####../..####.',
+      wide14: '....##../.######./A######Z/.######./...####.',
+      sunder: '...##.../.######./A######Z/.#######/....###.',
+    },
+    '鉴燧空环型': {
+      wick: 'A##./#.#./###Z',
+      tinThread: 'A##/#.#/##Z',
+      tinChime: 'A##./#.##/##Z.',
+      suture: 'A###/#..#/#..#/###Z/.##.',
+      leadSeal: 'A###/#..#/#..#/###Z',
+      fieldLamp: 'A####/#...#/#...#/####Z',
+      veilStitch: 'A###/##.#/#..#/###Z/..#.',
+      tide: 'A###/####/#..#/#..#/####/###Z',
+      bloodrush: 'A###/#..#/#..#/####/.##Z/.##.',
+      bellows: 'A###/#..#/#..#/####/###Z/.#..',
+      quench: 'A###/#..#/#..#/#..#/####/###Z',
+      sentinel: '..A###../.######./..Z....#/..#....#/..#....#/..#....#/..######',
+      crucible: '..A###../..#####./..#....#/..Z....#/..#....#/..#....#/..######',
+      silverTap: '..A###../.######./.##....#/.##....#/..#....#/.##....#/..#####Z',
+      furnaceEye: '..A#####.../.#########./..#Z....##./..##....##./..##....##./..##....##./...######..',
+    },
+    '凿户窗棂型': {
+      sump: 'A##.#/..###/..Z..',
+      brineWrap: 'A#../.###/..Z.',
+      boneFlute: 'A.#./###Z',
+      beltBuckle: '.#../A##Z/..#.',
+      shellScale: 'A#..#/.####/...#Z',
+      bulwark: 'A...#...#/#########/....#...Z',
+      shrapnel: 'A.#.#/#####/#.#.#/.##.Z',
+      fileTooth: '...#....../...#....../A########Z/......#.../......#...',
+      slagHook: '....#....../....#....../A#########Z/.....#.....',
+      capstan: 'A.#.#/#####/#.#.Z',
+      awl: 'A..#../####../#..#../#..###/####.Z',
+      tinderMesh: 'A..#..#/#######/#..Z..#/#..#..#/####..#',
+      ironJaw: 'A..#.../#######/#..#..#/#..#..#/##....Z',
+      coreDrill: 'A.#.#./######/#.#.#./..#.#./..###Z',
+      bronzeGong: 'A..#.#..#/#..#.#..#/#########/#..#....#/#.##....#/...#....Z',
+      splitAnvil: 'A..#.#..#/#..#.#..#/#########/#..#....#/#..#..###/#..#....Z',
+      quarrySaw: 'A..#....#/#..#....#/#########/#..#.#..#/#..###..#/#..#....Z',
+      turbine: 'A#..###..##/.#########./##..Z.#..##/.#..###..#./.#..#.#..#./.#..#....#./.###....##.',
+    },
+    '溯洄曲折型': {
+      chalkLine: 'A##../..#../..##Z',
+      marrowPin: 'A###./..##Z',
+      awlPoint: 'A##./..#./..#Z',
+      jointHammer: 'A##./..##/..#Z',
+      pikeHead: 'A###../.###../...#../...##Z',
+      rushMat: 'A#####..../.....#..../.....#..../.....#..../.....####Z',
+      dryDock: 'A###...../...#...../...#...../...#...../...#...../...#####Z',
+      furnaceTong: 'A####..../....#..../....#..../....#..../....#..../....####Z',
+      millStone: 'A####.../#####.../...###../....###Z/.....##.',
+      soundingLine: 'A####.../#####.../...###../....###Z/.....###',
+      copperWick: 'A####.../.####.../...###../....###Z/.....#..',
+      glassBell: 'A####.../#####.../...###../....###Z/.....#..',
+      coalSeam: 'A#####.../.#####.../...###.../....#####/.....###Z',
+      splitNeedle: 'A#####.../######.../...####../....#####/....####Z',
+      lodestone: '....######./..A######../.#####...../#####Z...../...####..../....#####../.....######',
+    },
+    '抱瓮 U 钳型': {
+      oarlock: '#..#/#..#/A##Z',
+      houndClamp: '#..#/#..#/###Z/A...',
+      shutter: '#...#/#...#/A###Z',
+      coilSpring: '#..#...../#..#...../A#######Z/#........',
+      saltCradle: '#..#.../#..#.../#..#..#/A#####Z',
+      ribRake: '#...#..../#...#..../A#######Z/#........',
+      waxTablet: '##..##/##..##/##..##/######/A#Z...',
+      jawSpring: '##..##/##..##/#...##/A####Z',
+      slagLance: '##..##/##..##/#...##/######/A##Z..',
+      kilnMantle: '##..##/##..##/##..##/A####Z',
+      mawValve: '##..###/##..###/##..###/#######/A###Z..',
+      blackBloom: '###..##/###..##/#######/A#####Z/.###...',
+      surveyLens: '.##..##.../.##..###../.##..####./A######Z../.#########/..######..',
+    },
+    '传世大阵型': {
+      flurry: '##......##/.#......#./##########/#..#..#..#/#..#..#..#/#A##Z#####/...#..#...',
+      echo: '##......##/#........#/##########/#..#..#..#/#..#..#..#/####A##Z##/.#......#.',
+      twinflow: '.#A###Z#./#..###..#/#..###..#/#########/#..###..#/#..###..#/####.####',
+      inverse: '##A###Z###/#..####..#/#..####..#/##########/#..####..#/#..####..#/##########',
+    },
   };
+  const ETCH_DIRS = { E: [1, 0], S: [0, 1], N: [0, -1], W: [-1, 0] };
 
-  /* 主干走廊：前三份直/一折，后面几份带回钩 —— 折数就是这门的「脉冲形状」 */
-  const SKELETON_CORRIDORS = [
-    [[0, 0], [1, 0], [2, 0], [3, 0]],
-    [[0, 0], [1, 0], [2, 0], [2, 1]],
-    [[0, 0], [0, 1], [1, 1], [2, 1], [2, 2]],
-    [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2]],
-    [[0, 0], [0, 1], [1, 1], [1, 2], [2, 2]],
-    [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2], [3, 2]],
-  ];
-  const SK_ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  const SK_NEAR = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-
-  function skHash(str) {
-    let h = 2166136261;
-    for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-    return h >>> 0;
-  }
-  function skRng(seed) {
-    let a = seed >>> 0;
-    return () => {
-      a = (a + 0x6D2B79F5) >>> 0;
-      let t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-  const skKey = (c) => c.x + ',' + c.y;
-  const skDirOf = (a, b) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    if (dx === 1) return 'E';
-    if (dx === -1) return 'W';
-    if (dy === 1) return 'S';
-    if (dy === -1) return 'N';
-    return null;
-  };
-  const SK_OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
-
-  /**
-   * 生成一块骨架：走廊 + 枝体。
-   * @param {number} target 目标格数
-   * @param {number} seed   同 id 恒定
-   * @param {number} variant 走廊款式
-   */
-  function skeletalMatrix(target, seed, variant) {
-    const rnd = skRng(seed);
-    const corridor = SKELETON_CORRIDORS[variant % SKELETON_CORRIDORS.length]
-      .map(([x, y]) => ({ x, y }));
-    const cw = Math.max.apply(null, corridor.map((c) => c.x)) + 1;
-    const ch = Math.max.apply(null, corridor.map((c) => c.y)) + 1;
-
-    const connected = (set) => {
-      const first = set.values().next().value;
-      if (first == null) return false;
-      const seen = new Set([first]);
-      const q = [first];
-      while (q.length) {
-        const cur = q.shift();
-        const [x, y] = cur.split(',').map(Number);
-        for (const [dx, dy] of SK_ORTH) {
-          const nk = (x + dx) + ',' + (y + dy);
-          if (!set.has(nk) || seen.has(nk)) continue;
-          seen.add(nk);
-          q.push(nk);
-        }
-      }
-      return seen.size === set.size;
-    };
-
-    /**
-     * 在 w×h 的盒子里「长」出 target 格：从走廊出发 BFS 扩张。
-     * 扩张天然连通，所以不需要事后修补；遇到「补满 2×2」的格子按 50% 概率跳过，
-     * 于是骨架里自然散着 1×2 / 2×2 的镶嵌槽，而不是一块实心砖。
-     * 盒子装不下就返回 null，交给外层换大一号的盒子。
-     */
-    const growIn = (w, h) => {
-      const offY = Math.max(0, Math.floor((h - ch) / 2));
-      const placed = corridor.map((c) => ({ x: c.x, y: c.y + offY }));
-      if (placed.some((c) => c.x >= w || c.y >= h)) return null;
-      const set = new Set(placed.map(skKey));
-      const cells = placed.slice();
-      const q = placed.slice();
-      const r = skRng(seed ^ (w * 131 + h));
-      let guard = 0;
-      while (cells.length < target && q.length && guard++ < 20000) {
-        const cur = q.shift();
-        for (const [dx, dy] of SK_ORTH) {
-          if (cells.length >= target) break;
-          const nx = cur.x + dx;
-          const ny = cur.y + dy;
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const k = nx + ',' + ny;
-          if (set.has(k)) continue;
-          let square = false;
-          for (const [ax, ay] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-            const c1 = (nx + ax) + ',' + ny;
-            const c2 = nx + ',' + (ny + ay);
-            const c3 = (nx + ax) + ',' + (ny + ay);
-            if (set.has(c1) && set.has(c2) && set.has(c3)) { square = true; break; }
-          }
-          if (square && r() < 0.5) continue;
-          set.add(k);
-          cells.push({ x: nx, y: ny });
-          q.push({ x: nx, y: ny });
-        }
-      }
-      if (cells.length < target) return null;
-      return { alive: set, placed, w, h };
-    };
-
-    const boxes = [];
-    for (let w = 3; w <= 11; w += 1) {
-      for (let h = 2; h <= 7; h += 1) {
-        if (w < cw || h < ch) continue;
-        const area = w * h;
-        if (area < target) continue;
-        boxes.push({ w, h, slack: area - target });
-      }
-    }
-    boxes.sort((a, b) => a.slack - b.slack || a.w * a.h - b.w * b.h);
-
-    let carved = null;
-    for (const b of boxes) {
-      carved = growIn(b.w, b.h);
-      if (carved) break;
-    }
-    if (!carved) return null;
-
-    const list = [...carved.alive].map((k) => {
-      const [x, y] = k.split(',').map(Number);
-      return { x, y };
-    });
-    const minX = Math.min(...list.map((c) => c.x));
-    const minY = Math.min(...list.map((c) => c.y));
-    list.forEach((c) => { c.x -= minX; c.y -= minY; });
-    const set = new Set(list.map(skKey));
-
-    const corridorRel = carved.placed.map((c) => ({ x: c.x - minX, y: c.y - minY }));
-    const entry = corridorRel[0];
-    const exit = corridorRel[corridorRel.length - 1];
-
+  function skeletalMatrix(mask, clockDir, mainDir) {
+    const cells = [];
     const veins = {};
-    list.forEach((c) => { veins[skKey(c)] = ['E']; });
-    for (let i = 0; i < corridorRel.length; i += 1) {
-      const from = corridorRel[i];
-      const to = corridorRel[i + 1];
-      const d = to ? skDirOf(from, to) : null;
-      veins[skKey(from)] = [d || skDirOf(corridorRel[corridorRel.length - 2], from) || 'E'];
-    }
-    /* 入口刻线朝外：走廊从入口出发的方向反过来就是「外面」。
-       写错这一步（朝了走廊内部）会让布线器在入口格只能往死路走，整块膜永远不通。 */
-    veins[skKey(entry)] = [SK_OPP[skDirOf(corridorRel[0], corridorRel[1]) || 'E']];
-    veins[skKey(exit)] = [skDirOf(corridorRel[corridorRel.length - 2], corridorRel[corridorRel.length - 1]) || 'E'];
+    let entry;
+    let exit;
+    mask.split('/').forEach((row, y) => [...row].forEach((mark, x) => {
+      if (mark === '.') return;
+      const cell = [x, y];
+      cells.push(cell);
+      veins[cell] = ['E'];
+      if (mark === 'A') entry = cell;
+      if (mark === 'Z') exit = cell;
+    }));
 
-    return {
-      cells: list.map((c) => [c.x, c.y]),
-      veins,
-      entry: [entry.x, entry.y],
-      exits: [[exit.x, exit.y]],
-      io: {
-        clock: { cell: [entry.x, entry.y], dir: veins[skKey(entry)][0] },
-        main: { cell: [exit.x, exit.y], dir: veins[skKey(exit)][0] },
-      },
-      box: { w: carved.w, h: carved.h },
-    };
+    /* 从出口反推最短刻线，留白处不参与连线。 */
+    const next = new Map([[String(exit), null]]);
+    for (const key of next.keys()) {
+      const [x, y] = key.split(',').map(Number);
+      for (const [dir, [dx, dy]] of Object.entries(ETCH_DIRS)) {
+        const from = [x - dx, y - dy];
+        if (Object.hasOwn(veins, from) && !next.has(String(from))) next.set(String(from), dir);
+      }
+    }
+    let cell = entry;
+    while (String(cell) !== String(exit)) {
+      const dir = next.get(String(cell));
+      const [dx, dy] = ETCH_DIRS[dir];
+      veins[cell] = [dir];
+      cell = [cell[0] + dx, cell[1] + dy];
+    }
+    veins[entry] = [clockDir];
+    veins[exit] = [mainDir];
+    return { cells, veins, entry, exits: [exit], io: { clock: { cell: entry, dir: clockDir }, main: { cell: exit, dir: mainDir } } };
   }
 
-  /* 按稀有度重排 80 门：几何与负荷一起换，文字/招式/等级一概不动 */
   (function reshapeSkeletons() {
-    const byRarity = {};
-    Object.values(MANUSCRIPTS).forEach((m) => {
-      const r = Math.min(7, Math.max(1, m.rarity || 1));
-      (byRarity[r] ||= []).push(m);
-    });
-    Object.keys(byRarity).forEach((key) => {
-      const r = Number(key);
-      const ladder = SKELETON_LADDER[r];
-      if (!ladder) return;
-      const list = byRarity[key].sort((a, b) => (a.id < b.id ? -1 : 1));
-      const [lo, hi] = ladder.sizes;
-      list.forEach((m, i) => {
-        /* 一档只有一门时（R6/R7），用稀有度自己在 6~7 之间的位置当进度：44 / 54 */
-        const t = list.length > 1 ? i / (list.length - 1) : Math.min(1, Math.max(0, r - 6));
-        const target = Math.round(lo + (hi - lo) * t);
-        const loadRange = Array.isArray(ladder.load) ? ladder.load : [ladder.load, ladder.load];
-        const load = Math.round(loadRange[0] + (loadRange[1] - loadRange[0]) * t);
-        const seed = skHash(m.id);
-        const shape = skeletalMatrix(target, seed, seed % SKELETON_CORRIDORS.length);
-        m.cells = shape.cells;
-        m.veins = shape.veins;
-        m.entry = shape.entry;
-        m.exits = shape.exits;
-        m.io = shape.io;
-        m.load = load;
-        m.targetCells = target;
+    const loadByRarity = [[2, 2], [3, 3], [4, 5], [6, 7], [8, 9], [11, 12], [11, 12]];
+    for (const [geometryFamily, blueprints] of Object.entries(ETCHING_BLUEPRINTS)) {
+      for (const [id, mask] of Object.entries(blueprints)) {
+        const m = MANUSCRIPTS[id];
+        const array = geometryFamily === '传世大阵型';
+        Object.assign(m, skeletalMatrix(mask, array ? 'N' : 'W', array ? 'N' : 'E'), { geometryFamily });
+        m.targetCells = m.cells.length;
+      }
+    }
+    loadByRarity.forEach(([lo, hi], i) => {
+      const rarity = i + 1;
+      const list = Object.keys(MANUSCRIPTS).sort().map((id) => MANUSCRIPTS[id]).filter((m) => m.rarity === rarity);
+      list.forEach((m, index) => {
+        const t = list.length > 1 ? index / (list.length - 1) : rarity - 6;
+        m.load = Math.round(lo + (hi - lo) * t);
       });
     });
   })();
@@ -2157,15 +2090,13 @@
   }
 
   /* ------------------------------ 招募外观 ------------------------------ */
-  /* 每位来客自带一块专属生命金属（形态 + 独立 seed）。
-     形态只有 14 种，但 seed 逐人不同，所以全营 21 块金属互不重复。 */
   /* 十四位传奇，一人一型：金属形态缩到 14 之后，传奇数量同步缩到 14。
      一型只有一个人，所以「每个人的生命金属都不同」是事实，不需要靠 seed 去撞。
      后八位沿用 wanderer0..7 的 id 与图集格序——立绘资源按这个顺序切的，别动。
 
      出身按《世界观总纲》三、七节落：两块大陆，各三个国家。
      **苍梧（东洲）三国都走功法，属东；奥伦（西洲）三国都走炼金术，属西。**
-     所以「族属」不是玩家能选的阵营，是地理——他生在哪块大陆，就用那边的词叫同一块铁。
+     族属由出生地决定，登记册的别名随出身显示在相名释义里。
      六国各有各的做派，营地不是「东方人／西方人」两堆，是六堆混在一起：
 
        钧天   功法产业链制度化到极致（修行者=特殊公务员，宗门=教育部+研究院+企业）
@@ -2199,19 +2130,20 @@
   const SKIN_LIST = [
     /* 象笏（竖贯）：竖贯是他天生的形状，不是谁发的。总局发的是腰牌上的登记号，
        以及他练的那一门制式功法——他押的谱箱里装的就是全国统一的那一版。 */
-    { id: 'blade', name: '铁鸦', portrait: 'portrait.blade', metal: 'agile', home: '钧天', origin: '修行管理总局 · 铁路押运组' },
+    { id: 'blade', name: '周岳', alias: '铁鸦', portrait: 'portrait.blade', metal: 'agile', home: '钧天', origin: '修行管理总局 · 铁路押运组' },
     /* 悬针（盾）：北塔的守卫，帝国衰落了还在按旧规值夜。 */
-    { id: 'warden', name: '磐石', portrait: 'portrait.warden', metal: 'aegis', home: '格雷沙姆', origin: '圣髑院 · 北塔' },
+    { id: 'warden', name: '马库斯·霍尔特', alias: '磐石', portrait: 'portrait.warden', metal: 'aegis', home: '格雷沙姆', origin: '圣髑院 · 北塔' },
     /* 玄璜（半璧礼北方）：朔方的萨满学徒，血脉唤不醒，只唤出一把灰。 */
-    { id: 'ranger', name: '灰烬', portrait: 'portrait.ranger', metal: 'arc', home: '朔方', origin: '萨满帐 · 唤血不成' },
+    { id: 'ranger', name: '巴图尔', alias: '灰烬', portrait: 'portrait.ranger', metal: 'arc', home: '朔方', origin: '萨满帐 · 唤血不成' },
     /* 鉴燧之齐（金锡各半）：给器物做频率检定的人，一辈子在照别人的纹。 */
-    { id: 'warlock', name: '低语', portrait: 'portrait.warlock', metal: 'throat', home: '格雷沙姆', origin: '圣髑院 · 下厅检定台' },
+    { id: 'warlock', name: '塞西尔·范·德·伯格', alias: '低语', portrait: 'portrait.warlock', metal: 'throat', home: '格雷沙姆', origin: '圣髑院 · 下厅检定台' },
     /* 并蒂（一茎两花）：碎片地带的作品，两套体系长在一块金属上。 */
-    { id: 'cleric', name: '烛火', portrait: 'portrait.cleric', metal: 'twin', home: '碎片地带', origin: '双烛堂 · 东式器物接西式符文' },
+    { id: 'cleric', name: '米丽娅姆', alias: '烛火', portrait: 'portrait.cleric', metal: 'twin', home: '碎片地带', origin: '双烛堂 · 东式器物接西式符文' },
     /* 轮牙（齿轮的牙）：被大厂专利卡死的小厂技师。 */
-    { id: 'rogue', name: '暗巷', portrait: 'portrait.rogue', metal: 'ratchet', home: '沃尔芬', origin: '军工企业 · 外包车间' },
-    ...['断齿', '冷炉', '旧钉', '褪色', '长夜', '哑钟', '霜线', '赤砾'].map((name, portraitCell) => ({
+    { id: 'rogue', name: '卢卡斯·克劳泽', alias: '暗巷', portrait: 'portrait.rogue', metal: 'ratchet', home: '沃尔芬', origin: '军工企业 · 外包车间' },
+    ...['陈大勇', '赵德厚', '奥托·施密特', '林知微', '克拉拉·莫雷蒂', '约瑟夫·卡特', '叶莲娜·莫罗佐娃', '沈明轩'].map((name, portraitCell) => ({
       id: 'wanderer' + portraitCell, name, portraitCell,
+      alias: ['断齿', '冷炉', '旧钉', '褪色', '长夜', '哑钟', '霜线', '赤砾'][portraitCell],
       /* 依次是：地不满东南 / 浑沌未凿 / 栉比 / 溯洄从之 / 凿户牖 / 四达之衢 / 九层之台 / 楚腰 */
       metal: ['corner', 'sturdy', 'spine', 'ripple', 'conduit', 'crucible', 'terrace', 'waist'][portraitCell],
       /* 依次是：琉光 钧天 沃尔芬 钧天 格雷沙姆 碎片地带 朔方 琉光
@@ -2227,19 +2159,15 @@
   /* culture 只在这里算一次：写在 home 上就够，写两遍迟早对不上 */
   const SKINS = SKIN_LIST.map((s) => ({ ...s, culture: HOME_SIDE[s.home] || 'east' }));
 
-  const NAMES = ['铁鸦', '磐石', '灰烬', '低语', '烛火', '暗巷', '断齿', '冷炉', '旧钉', '褪色', '长夜', '哑钟'];
+  const NAMES = SKINS.map((skin) => skin.name);
 
   /* ------------------------------ 查表工具 ------------------------------ */
   function body(id) { return BODIES[id] || BODIES.sturdy; }
 
-  /** 底盘长成哪一相。这一相有两套正名，默认给东土《铁相录》那套。
-      culture='west' 时返回圣髑院登记册上的形制名（塔盾、圣物匣），因为那人信那一套。
-      同一块铁在营地里被两边的人用两种叫法喊，不是翻译问题，是学派问题。 */
-  function bodyStyle(id, culture) {
+  /** 底盘统一显示《铁相录》的正名。 */
+  function bodyStyle(id) {
     const arch = V.PlateGen && V.PlateGen.ARCHETYPES[body(id).archetype];
-    if (!arch) return '';
-    if (culture === 'west' && arch.west) return arch.west.zh;
-    return arch.name;
+    return arch ? arch.name : '';
   }
 
   /** 某位传奇用哪一套叫法。查不到就当东土，别让界面空着。 */

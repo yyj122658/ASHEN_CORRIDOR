@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { boot, startRun, setNodes, fight, stepUntilOver, autoRouteBoard } = require('../helpers/veteran-run.cjs');
+const { boot, startRun, setNodes, fight, stepUntilOver, autoRouteBoard, placeForStrike } = require('../helpers/veteran-run.cjs');
 
 test('实战敌群随层域变化，每个物种都有出场与采收途径', () => {
   const { A, V, st } = boot(712);
@@ -151,7 +151,7 @@ test('星火副修在前后位均缩短同一比例的平攻间隔', () => {
 });
 
 test('当前与旧档的主修在四个身位均能出招，原位标记不再改变基础攻击', () => {
-  const { A, V, st } = boot(715);
+  const { A, V, st } = boot(715, { generated: true });
   const unit = st.roster[0];
   equipTwo(A, V, st, unit, 'corridor5', null);
   unit.manuscript.positions = [0];
@@ -166,6 +166,7 @@ test('当前与旧档的主修在四个身位均能出招，原位标记不再�
     [...b.allies, ...b.enemies].forEach(u => { u.atkTimer = -1000; });
     b.enemies.forEach(u => { u.dodge = 0; });
     actor.hits = 1; actor.crit = 0; actor.atkTimer = 100; actor.energy = actor.energyMax;
+    placeForStrike(b, actor, b.enemies[0]);
     const cast = V.Combat.step(state).state.run.battle.allies[0];
     assert.equal(cast.pendingSkill?.id, 'pierce');
     actor.energy = 0; actor.regen = 0; actor.attackMult = 2; actor.emberAttack = true;
@@ -184,6 +185,7 @@ test('起始队伍的蚀刻法触发实战换位，敌人随后攻击新前锋�
   assert.equal(lead.ms.spec.id, 'spark');
   [...b.allies, ...b.enemies].forEach(u => { u.atkTimer = -1000; u.dodge = 0; });
   lead.atkTimer = 10; lead.hits = 1;
+  placeForStrike(b, lead, b.enemies[0]);
   const moved = V.Combat.step(state);
   const changed = moved.state.run.battle;
   assert.equal(changed.allies[0].slot, 1);
@@ -191,6 +193,7 @@ test('起始队伍的蚀刻法触发实战换位，敌人随后攻击新前锋�
   assert.equal(changed.allies[0].refract, 1);
   const afterimage = V.State.clone(moved.state);
   afterimage.run.battle.allies[0].atkTimer = 10;
+  placeForStrike(afterimage.run.battle, afterimage.run.battle.allies[0], afterimage.run.battle.enemies[0]);
   assert.equal(V.Combat.step(afterimage).state.run.battle.allies[0].refract, 0, '再次出手时，未消耗的残影到期');
   assert.ok(changed.logs.some(e => e.type === 'move' && e.actorId === lead.id && e.targetId === nextFront.id && e.meta.to === 1));
   const saved = V.Storage.decode(V.Storage.encode(moved.state));
@@ -199,6 +202,7 @@ test('起始队伍的蚀刻法触发实战换位，敌人随后攻击新前锋�
   battle.allies.forEach(u => { u.atkTimer = -1000; });
   const enemy = battle.enemies[0];
   enemy.atkTimer = 10; enemy.skills = [];
+  placeForStrike(battle, enemy, battle.allies[1]);
   const response = V.Combat.step(saved.state).state.run.battle;
   assert.ok(response.logs.some(e => e.type === 'hit' && e.actorId === enemy.id && e.targetId === nextFront.id));
   assert.equal(V.Positions.slotProblem(response.allies), null);

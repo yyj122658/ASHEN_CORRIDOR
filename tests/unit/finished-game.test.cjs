@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadVeteran } = require('../helpers/load-veteran.cjs');
+const { placeForStrike } = require('../helpers/veteran-run.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -16,9 +17,12 @@ test('蚀刻法与纹路分层：单件压不满骨架，起手通路才接通',
   const u = st.roster[0];
   const part = st.itemsById[u.board.placements[0].itemId];
   part.templateId = 'straight';
-  const single = [{ itemId: part.id, x: u.manuscript.x, y: u.manuscript.y, rotation: 0, mirrorY: false }];
+  const [x, y] = V.State.manuscriptCells(u.manuscript)[0];
+  const single = [{ itemId: part.id, x, y, rotation: 0, mirrorY: false }];
   assert.equal(V.Circuit.preview(st, u.id, single).ok, true);
-  assert.ok(V.Circuit.manuscriptState(st, u.id, single).pct < 100, '单件不该压满整块骨架');
+  const partial = V.Circuit.manuscriptState(st, u.id, single);
+  assert.ok(partial.pct > 0 && partial.pct < 100, '单件应覆盖部分骨架');
+  assert.equal(partial.routed, false, '单件不应接通整门蚀刻法');
 
   const loadout = V.Circuit.autoLoadout(st, u);
   assert.ok(loadout && loadout.length >= 2, '起手通路应铺得出来');
@@ -27,11 +31,12 @@ test('蚀刻法与纹路分层：单件压不满骨架，起手通路才接通',
   assert.ok(ms.pulse.path.length >= 2);
 });
 
-test('新队伍有铁鸦与灰烬两人，开局已形成共鸣', () => {
+test('新队伍有周岳与巴图尔两人，开局已形成共鸣', () => {
   const V = loadVeteran().Veteran;
   for (const seed of [1, 42, 20261112]) {
     const st = V.State.create(seed);
     assert.deepEqual(Array.from(st.roster,u=>u.skinId),['blade','ranger']);
+    assert.deepEqual(Array.from(st.roster,u=>u.name),['周岳','巴图尔']);
     assert.deepEqual(Array.from(st.team),[...st.roster.map(u=>u.id),null,null]);
     assert.equal(new Set(st.roster.map(u=>u.manuscript.id)).size,2);
     for (const u of st.roster) {
@@ -61,6 +66,7 @@ test('贯穿招式真实命中前两位，未命中的后位不受伤', () => {
   const { V, st, b, actor } = battleFixture();
   actor.casting = 'pierce'; actor.castTimer = 0;
   actor.pendingSkill = V.Data.MANUSCRIPTS.corridor5.skills[0];
+  placeForStrike(b, actor, b.enemies[0]);
   const before = b.enemies.map((u) => u.hp);
   const after = V.Combat.step(st).state.run.battle.enemies;
   assert.ok(after[0].hp < before[0]);
@@ -101,6 +107,7 @@ test('起手余裕、共享冷却和临时强化兑现实际效果', () => {
   assert.ok(actor.energy > 0, '共鸣起手余裕不能被重复字段清零');
   actor.skillList = V.Data.MANUSCRIPTS.twinflow.skills;
   actor.energy = 20; actor.atkTimer = 100;
+  placeForStrike(b, actor, b.enemies[0]);
   const after = V.Combat.step(st).state.run.battle.allies[0];
   assert.ok(after.cds.flowA > 0 && after.cds.flowB > 0, '两招共享冷却');
   actor.casting = 'flurry'; actor.castTimer = 0;
@@ -143,13 +150,20 @@ test('治疗贡献属于施法者，战场1号位确实最靠近敌人', () => {
 
 test('旧档携带双流旧招式顺序，仍使用当前规则择机护持', () => {
   const V = loadVeteran().Veteran;
-  /* 77 格异形板 + 真实装配：双流是 44 格的骨卷，14 格经典夹具塞不下 */
+  /* 双流的 44 格骨卷在浑沌未凿上完整展开。 */
   let st = V.State.create(42);
+  const u = st.roster[0];
+  const skin = V.Data.SKINS.find(s => s.id === 'wanderer1');
+  Object.assign(u, { bodyPreset: skin.metal, name: skin.name, skinId: skin.id });
+  st.stash.push(...u.board.placements.map(p => p.itemId));
+  u.board.placements = [];
   const ms = V.Data.MANUSCRIPTS.twinflow;
-  V.State.equipManuscript(st, st.roster[0], 'twinflow');
-  V.Circuit.autoLoadout(st, st.roster[0]);
-  st.roster[0].manuscript = {
-    ...st.roster[0].manuscript,
+  V.State.equipManuscript(st, u, ms.id);
+  assert.equal(u.manuscript.id, ms.id);
+  u.board.placements = V.Circuit.autoLoadout(st, u);
+  assert.ok(V.Circuit.manuscriptState(st, u.id).routed);
+  u.manuscript = {
+    ...u.manuscript,
     skills: [ms.skills.find((s) => s.id === 'flowA'), { ...ms.skills.find((s) => s.id === 'flowB'), cond: { energyAbove: 14 } }],
   };
   const decoded = V.Storage.decode(V.Storage.encode(st));

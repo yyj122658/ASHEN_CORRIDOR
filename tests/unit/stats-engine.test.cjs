@@ -64,6 +64,16 @@ test('招式条件译成玩家能判断的时机', () => {
   assert.equal(S.conditionText({ stressAbove: 50, selfHasShield: true }), '[高压 ≥50] [自身有盾]');
 });
 
+test('工坊招式保留短标签，悬停说明交代数值基准和作用对象', () => {
+  const lock = S.skillTooltip(D.manuscript('rivet').skills[0]);
+  assert.match(lock.condition, /累计普攻至少 3 次/);
+  assert.match(lock.effects.find(e => e.label === '伤害 75%').hint, /施术者自身幅值的 75%/);
+  assert.match(lock.effects.find(e => e.label === '护盾 12%').hint, /给自己.*自身生命上限的 12%.*缓冲上限/);
+  const pierce = S.skillTooltip(D.manuscript('corridor5').skills[0]);
+  assert.match(pierce.effects.find(e => e.label === '伤害 180%').hint, /施术者自身幅值的 180%/);
+  assert.match(pierce.effects.find(e => e.label === '贯穿 2').hint, /敌方最前面的 2 名存活敌人/);
+});
+
 test('共鸣增幅与结算同顺序：共鸣阶 × 贯通（负荷不返利）', () => {
   const ms = {
     cov: { tier: { name: '共鸣三阶 · 圆满', effect: { mainMult: 1.24 } } },

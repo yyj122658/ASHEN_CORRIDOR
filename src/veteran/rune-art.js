@@ -5,103 +5,186 @@
   const V = (A.Veteran ||= {});
 
   const metal = {
-    straight: '#b2c8b8', elbow: '#aec2cb', splitter: '#c5b8cf',
-    capacitor: '#cdbc92', threshold: '#c4aaa1', ember: '#d8aa77',
+    straight: '#57A6A7', elbow: '#57A6A7', splitter: '#57A6A7',
+    capacitor: '#57A6A7', threshold: '#BC9C50', ember: '#EC963F',
   };
   const sides = { W: [-1,0], E: [1,0], N: [0,-1], S: [0,1] };
+  let waxUid = 0;
+  let footprintUid = 0;
 
-  /* 每条支路按出口顺序给出刀纹的中轴；第三个数是此处纹束的展宽倍率。
-     两端与贴边的一小段从实际端口导出，所有模板共用接缝的间距和切向。 */
-  const spines = {
-    straight: [[[.7,.55,1.4],[1.35,.45,.8]]],
-    elbow: [[[.85,.48],[1.34,.68,1.4],[1.49,1.27]]],
-    splitter: [[[.67,1.5,.72],[.98,1.5,0],[1.18,1.32],[1.40,.83,1.4],[1.58,.53]],
-               [[.67,1.5,.72],[.98,1.5,0],[1.18,1.68],[1.40,2.17,1.4],[1.58,2.47]]],
-    capacitor: [[[.48,.62],[.39,1.19],[.65,1.64,1.6],[1.23,1.67,1.6],[1.57,1.27],[1.51,.79],[1.64,.52]]],
-    threshold: [[[.55,.48,.5],[.83,.33,1.4],[1.14,.62,.55],[1.46,.5,1.4]]],
-    ember: [[[.55,.58,.65],[.85,.36,1.5],[1.22,.62,.6],[1.52,.47,1.2]]],
-    rivet: [[[.51,.50,1.75]]],
-    long: [[[.75,.55,1.25],[1.55,.39,1.45],[2.34,.53,.7]]],
-    tee: [[[.76,.49,.72],[1.08,.49,0],[1.45,.51],[2.25,.47]],[[.76,.49,.72],[1.08,.49,0],[1.41,.68],[1.5,1.38]]],
-    cross: [[[.78,1.5,.72],[1.09,1.5,0],[1.40,1.35],[1.5,.66]],[[.78,1.5,.72],[1.09,1.5,0],[1.5,1.50,1.45],[2.25,1.5]],
-            [[.78,1.5,.72],[1.09,1.5,0],[1.40,1.65],[1.5,2.34]]],
-    jack: [[[.43,.45],[.49,.31]]],
-    rail: [[[1,.53],[2,.41,1.65],[3,.53]]],
-    dogleg: [[[.8,.42],[1.26,.60],[1.47,1.22,1.3],[1.84,1.54],[2.47,1.45]]],
-    hairpin: [[[.8,.45],[1.65,.38],[2.44,.56],[2.64,1.03],[2.41,1.48,1.5],[1.77,1.53]]],
-    kneejoint: [[[.82,.46],[1.28,.50,1.4],[1.49,.72]]],
-    crook: [[[.48,.79],[.34,1.57,1.45],[.58,2.30],[1.24,2.52]]],
-    clevis: [[[.68,.5,.72],[.98,.5,0],[1.27,.44],[1.49,.25]],[[.68,.5,.72],[.98,.5,0],[1.27,.56],[1.49,.75]]],
-    spillway: [[[.82,.5],[1.58,.5,0],[2.37,.5]],[[.82,.5],[1.58,.5,0],[2.23,.68],[2.48,1.31]]],
-    wishbone: [[[1.5,1.72,.75],[1.5,1.55,0],[1.14,1.43],[.63,1.29],[.47,.64]],
-               [[1.5,1.72,.75],[1.5,1.55,0],[1.86,1.43],[2.37,1.29],[2.53,.64]]],
-    bellowsCell: [[[.72,.60,.7],[1.23,.37,1.7],[1.75,.64,.8],[2.30,.43,1.45]]],
-    coil: [[[.52,.62],[.90,.76],[1.49,.61],[1.70,.40],[1.40,.31],[1.22,.62],[1.33,1.13,1.35],[1.51,1.56]]],
-    cistern: [[[.66,.51],[1.24,.37],[1.81,.46],[1.88,.87],[1.31,1.06],[.66,1.22],[.53,1.56],[1.14,1.70,1.45],[2.25,1.50]]],
-    ampoule: [[[1.51,.70],[1.68,1.09],[2.23,1.27],[2.55,1.54],[2.23,1.73],[1.33,1.62,1.55],[.64,1.48]]],
-    pinValve: [[[.5,.51,.4]]],
-    sluice: [[[.61,.58],[1.08,.38,1.6],[1.53,.55],[1.40,.96,.65],[1.5,1.56]]],
-    reed: [[[.83,.62],[1.56,.46,1.75],[2.21,.49],[2.48,.29]]],
-    flint: [[[.41,.45,.55],[.54,.66,1.25]]],
-    fuse: [[[.6,.54,.7],[1.03,.30,1.55],[1.47,.64,.75],[1.91,.37,1.6],[2.43,.53]]],
-    brazier: [[[1.48,2.36],[1.43,1.90],[.86,1.74],[.48,1.48],[.80,1.28],[1.45,1.49],[2.18,1.70],[2.52,1.48],[2.20,1.26],[1.63,1.11],[1.48,.61]]],
-    wickbend: [[[.55,.54],[.39,.96],[.67,1.45],[1.29,1.62,.65],[1.85,1.35,1.55],[2.30,1.48],[2.48,1.26]]],
+  function edgeLoops(cells) {
+    const occupied = new Set(cells.map(cell => cell.join(',')));
+    const edges = [];
+    const add = (x0, y0, x1, y1, dir, nx, ny, ex, ey) => {
+      if (!occupied.has(ex + ',' + ey)) edges.push({x0, y0, x1, y1, dir, nx, ny, ex, ey});
+    };
+    for (const key of occupied) {
+      const [x, y] = key.split(',').map(Number);
+      add(x, y, x+1, y, 0, 0, -1, x, y-1);
+      add(x+1, y, x+1, y+1, 1, 1, 0, x+1, y);
+      add(x+1, y+1, x, y+1, 2, 0, 1, x, y+1);
+      add(x, y+1, x, y, 3, -1, 0, x-1, y);
+    }
+    const byStart = new Map();
+    for (const edge of edges) {
+      const key = edge.x0 + ',' + edge.y0;
+      if (!byStart.has(key)) byStart.set(key, []);
+      byStart.get(key).push(edge);
+    }
+    const visited = new Set();
+    const loops = [];
+    for (const start of edges) {
+      if (visited.has(start)) continue;
+      const loop = [];
+      let edge = start;
+      while (edge && !visited.has(edge)) {
+        visited.add(edge);
+        loop.push(edge);
+        if (edge.x1 === start.x0 && edge.y1 === start.y0) break;
+        const next = byStart.get(edge.x1 + ',' + edge.y1) || [];
+        // Follow the right wall to keep diagonally touching regions separate.
+        edge = [1, 0, 3].map(turn => (edge.dir + turn) % 4)
+          .map(dir => next.find(e => e.dir === dir && !visited.has(e))).find(Boolean);
+      }
+      loops.push(loop);
+    }
+    return loops;
+  }
+
+  function contourPath(cells, cell, ox = 0, oy = 0) {
+    return edgeLoops(cells).map(loop => 'M' + loop
+      .filter((edge, i) => edge.dir !== loop[(i + loop.length - 1) % loop.length].dir)
+      .map(({x0, y0}) => (ox + x0*cell) + ' ' + (oy + y0*cell)).join('L') + 'Z').join('');
+  }
+
+  const blueprintTints = {
+    straight: '#57A6A7', elbow: '#BC9C50', splitter: '#D4CABB',
+    capacitor: '#57A6A7', threshold: '#EC963F', ember: '#EC963F',
   };
 
-  function direction(a,b) {
-    const dx=b[0]-a[0], dy=b[1]-a[1], length=Math.hypot(dx,dy);
-    return [dx/length, dy/length];
-  }
-  function portPoint(port, inset) {
-    const [dx,dy]=sides[port.dir];
-    return [port.cell[0]+.5+dx*(.5-inset), port.cell[1]+.5+dy*(.5-inset)];
-  }
-  function strand(points, lane, lip) {
-    const last=points.length-1;
-    const tangents = points.map((p, i) => {
-      if (i <= 1) return direction(points[0], points[1]);
-      if (i >= last - 1) return direction(points[last-1], points[last]);
-      if (p[2] === 0) return direction(points[i-1], p);
-      return direction(points[i-1], points[i+1]);
-    });
-    const knots=points.map(([x,y,width=1],i)=>{
-      const [dx,dy]=tangents[i];
-      const offset = lane * width + (i === 0 || i === last ? 0 : lip);
-      return [x - dy * offset, y + dx * offset];
-    });
-    const xy=(x,y)=>round(x)+' '+round(y);
-    let d='M'+xy(...knots[0]);
-    for(let i=1;i<=last;i++){
-      const [ax,ay]=knots[i-1], [bx,by]=knots[i];
-      const h=Math.hypot(bx-ax,by-ay)/3;
-      const [ux,uy]=tangents[i-1], [vx,vy]=tangents[i];
-      d+=' C'+xy(ax+ux*h,ay+uy*h)+' '+xy(bx-vx*h,by-vy*h)+' '+xy(bx,by);
-    }
-    return d;
+  function blueprint(templateId, rotation = 0, mirrorY = false) {
+    const tpl = V.Data.template(templateId);
+    if (!tpl) return '';
+    const shape = V.Circuit.transformTemplate(tpl, rotation, mirrorY);
+    const cells = shape.cells.map(({x, y}) => [x, y]);
+    const width = Math.max(...cells.map(([x]) => x)) + 1;
+    const height = Math.max(...cells.map(([, y]) => y)) + 1;
+    const span = Math.max(width, height) >= 4 ? Math.max(5, width, height) : 4;
+    const step = 36 / span;
+    const ox = 4 + Math.floor((span - width)/2) * step;
+    const oy = 4 + Math.floor((span - height)/2) * step;
+    const grid = Array.from({length: span + 1}, (_, n) => {
+      const pos = 4 + n * step;
+      return `M4 ${pos}H40M${pos} 4V40`;
+    }).join('');
+    const family = V.Circuit.familyOf(tpl);
+    const tint = blueprintTints[family] || blueprintTints.straight;
+    const rim = family === 'capacitor' ? '#7A838F' : tint;
+    const footprint = contourPath(cells, step, ox, oy);
+    const ports = shape.ports.map(port => {
+      const [dx, dy] = sides[port.dir];
+      const x = ox + (port.cell[0] + .5 + dx/2) * step;
+      const y = oy + (port.cell[1] + .5 + dy/2) * step;
+      const fill = port.role === 'in' ? '#57A6A7' : '#BC9C50';
+      const mark = port.role === 'in'
+        ? 'M2 -2.5H0L-2 0L0 2.5H2Z' : 'M-1.3 -2.5H1.3V2.5H-1.3Z';
+      const angle = {E:0,S:90,W:180,N:270}[port.dir];
+      return `<path class="rune-port-cut" data-role="${port.role}" data-dir="${port.dir}"
+        transform="translate(${x} ${y}) rotate(${angle})" d="${mark}" fill="${fill}" stroke="#1E2230" stroke-width=".7"/>`;
+    }).join('');
+    return `<svg class="mini-shape rune-blueprint" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+      <rect width="44" height="44" fill="#1E2230"/><path d="${grid}" fill="none" stroke="#7A838F" stroke-opacity=".46" stroke-width="1"/>
+      <path class="rune-blueprint-cells" d="${footprint}" fill="${tint}" fill-opacity=".33" fill-rule="evenodd" stroke="${rim}" stroke-width="1"/>
+      ${cells.map(([x,y]) => `<rect class="rune-blueprint-cell" x="${ox+x*step+.8}" y="${oy+y*step+.8}" width="${step-1.6}" height="${step-1.6}" fill="${tint}" fill-opacity=".17"/>`).join('')}
+      ${ports}</svg>`;
   }
 
-  function engraved(tpl) {
-    const shadows = [], lips = [];
-    tpl.links.forEach(([input,output],i)=>{
-      const inlet=tpl.ports.find(p=>p.id===input), outlet=tpl.ports.find(p=>p.id===output);
-      const points=[portPoint(inlet,0),portPoint(inlet,.16),...spines[tpl.id][i],portPoint(outlet,.16),portPoint(outlet,0)];
-      for (const lane of [-.085, 0, .085]) {
-        shadows.push(strand(points, lane, 0));
-        lips.push(strand(points, lane, .014));
-      }
-    });
-    const strokes=(paths,color,width)=>paths.map(d=>`<path d="${d}" stroke="${color}" stroke-width="${width}"/>`).join('');
-    return `<g class="etched-grain" fill="none">
-      ${strokes(shadows,'#15191b',.047)}
-      <g class="cut-lips">${strokes(lips,metal[tpl.family || tpl.id],.021)}</g>
+  function membraneBadge(shape) {
+    const w = Math.max(...shape.cells.map(([x]) => x)) + 1;
+    const h = Math.max(...shape.cells.map(([, y]) => y)) + 1;
+    const outline = contourPath(shape.cells, 10, 1, 1);
+    const cuts = shape.cells.flatMap(([x,y]) => (shape.veins[x + ',' + y] || []).map(dir => {
+      const [dx, dy] = sides[dir];
+      return `M${10*x+6} ${10*y+6}l${dx*5} ${dy*5}`;
+    })).join('');
+    return `<svg class="ms-skeleton" viewBox="0 0 ${10*w+2} ${10*h+2}" aria-hidden="true">
+      <path d="${outline}" fill="currentColor" fill-opacity=".21" fill-rule="evenodd" stroke="currentColor" stroke-width="1.2"/>
+      <path d="${cuts}" fill="none" stroke="currentColor" stroke-opacity=".74" stroke-width=".8"/>
+    </svg>`;
+  }
+
+  function waxFilm(oriented, size, selected) {
+    if (!oriented.cells.length) return '';
+    const id = 'wax_' + (++waxUid);
+    const w = 60 * (1 + Math.max(...oriented.cells.map(c => c[0])));
+    const h = 60 * (1 + Math.max(...oriented.cells.map(c => c[1])));
+    const outline = contourPath(oriented.cells, 60);
+    const veins = [];
+    const cells = oriented.cells.map(([x, y]) => {
+      const key = x + ',' + y;
+      const cx = x * 60 + 30, cy = y * 60 + 30;
+      const cuts = (oriented.veins[key] || []).filter(dir => sides[dir]).map(dir => {
+        const [dx, dy] = sides[dir];
+        const cut = `M${cx} ${cy}l${dx*30} ${dy*30}`;
+        veins.push(cut);
+        return `<path class="wax-vein-core" data-vein="${dir}" d="${cut}"/>`;
+      }).join('');
+      return `<g data-etch-cell="${key}">${cuts}</g>`;
+    }).join('');
+    const groove = veins.join('');
+    const texture = A.Art.getArt('surface.wax').src;
+    const arcane = V.Data.manuscript(oriented.id)?.rarity >= 5;
+    return `<g class="wax-membrane${arcane ? ' arcane' : ''}" transform="scale(${size/60})" pointer-events="none">
+      <defs>
+        <linearGradient id="${id}_tone" x1="0" x2=".85" y1="0" y2="1">
+          <stop stop-color="var(--wax-rim)"/><stop offset=".43" stop-color="var(--wax-body)"/>
+          <stop offset="1" stop-color="var(--wax-deep)"/>
+        </linearGradient>
+        <linearGradient id="${id}_sheen" x1="0" x2=".65" y1="0" y2="1">
+          <stop stop-color="#D4CABB" stop-opacity="0"/>
+          <stop offset=".28" stop-color="#D4CABB" stop-opacity=".14"/>
+          <stop offset=".58" stop-color="#D4CABB" stop-opacity="0"/>
+        </linearGradient>
+        <mask id="${id}_cut" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}">
+          <path d="${outline}" fill="white" fill-rule="evenodd"/>
+          <path d="${groove}" fill="none" stroke="black" stroke-width="5" stroke-linecap="square"/>
+        </mask>
+      </defs>
+      <g mask="url(#${id}_cut)">
+        <path class="ms-field" d="${outline}" fill="url(#${id}_tone)" fill-rule="evenodd"/>
+        <image class="wax-grain" href="${texture}" width="${w}" height="${h}" preserveAspectRatio="none"/>
+        <path d="${outline}" fill="url(#${id}_sheen)" fill-rule="evenodd"/>
+        <path class="wax-seal" d="${outline}"/>
+        <path class="ms-contour${selected ? ' focused' : ''}" d="${outline}"${selected ? ' data-ms-outline="' + A.Art.safeText(oriented.id) + '"' : ''}/>
+      </g>
+      <path class="wax-vein-wall" d="${groove}"/>
+      ${cells}
     </g>`;
   }
 
-  const RUNES = Object.fromEntries(Object.values(V.Data.TEMPLATES).map(tpl => [tpl.id, {
-    cols: 1 + Math.max(...tpl.cells.map(([x]) => x)),
-    rows: 1 + Math.max(...tpl.cells.map(([, y]) => y)),
-    engraving: engraved(tpl),
-  }]));
+  function engravingFor(tpl) {
+    const shape = V.Circuit.transformTemplate(tpl, 0, false);
+    const tap = (cell, dir) => {
+      const [dx, dy] = sides[dir];
+      return [cell.x + .5 + dx / 2, cell.y + .5 + dy / 2];
+    };
+    const traces = V.Manuscript.internalChains(shape.cells, shape.ports).map(chain => [
+      tap(chain.cells[0], chain.inDir),
+      ...chain.cells.map(c => [c.x + .5, c.y + .5]),
+      tap(chain.cells.at(-1), chain.outDir),
+    ]);
+    const paths = traces.map(trace => '<path d="M' + trace.map(p => p.join(' ')).join('L') + '"/>').join('');
+    const bed = `<path d="${contourPath(shape.cells.map(c => [c.x, c.y]), 1)}" fill="#1E2230" fill-rule="evenodd" stroke="#4F5968" stroke-width=".02"/>`;
+    return {
+      cols: 1 + Math.max(...shape.cells.map(c => c.x)),
+      rows: 1 + Math.max(...shape.cells.map(c => c.y)),
+      cells: shape.cells, ports: shape.ports, traces, accent: metal[tpl.family || tpl.id] || metal.straight,
+      engraving: `<g class="etched-grain">${bed}<g fill="none"><g stroke="#BC9C50" stroke-opacity=".55" stroke-width=".15">${paths}</g><g class="cut-lips" stroke="#4F5968" stroke-width=".08">${paths}</g></g></g>`,
+    };
+  }
+
+  const RUNES = Object.fromEntries(Object.values(V.Data.TEMPLATES).map(tpl => [tpl.id, engravingFor(tpl)]));
+  const ETCHINGS = Object.fromEntries(Object.values(V.Data.MANUSCRIPTS).map(spec => [spec.id, V.Manuscript.normalize(spec)]));
   function rune(id) { return Object.hasOwn(RUNES, id) ? RUNES[id] : null; }
 
   /* ---- 2x3 仿射矩阵：p' = T · R · M · p ---- */
@@ -124,8 +207,10 @@
   function matrixFor(id, rotation, mirrorY) {
     const r = rune(id);
     if (!r) return null;
-    const W0 = r.cols;
-    const H0 = r.rows;
+    return poseMatrix(r.cols, r.rows, rotation, mirrorY);
+  }
+
+  function poseMatrix(W0, H0, rotation, mirrorY) {
     const rot = (((rotation | 0) % 4) + 4) % 4;
     const mir = mirrorY === true || Number(mirrorY) === 1;
 
@@ -147,10 +232,47 @@
 
   function round(n) { return Math.round(n * 1000) / 1000; }
 
-  function relief(id, r, rotation, mirrorY) {
-    const rot = (((rotation | 0) % 4) + 4) % 4;
-    const row = mirrorY === true || Number(mirrorY) === 1 ? 1 : 0;
-    return `<svg class="etch-relief" width="${r.cols}" height="${r.rows}" viewBox="${rot*r.cols} ${row*r.rows} ${r.cols} ${r.rows}" overflow="hidden"><image href="assets/art/etch-depth/${id}.webp" width="${4*r.cols}" height="${2*r.rows}" preserveAspectRatio="none"/></svg>`;
+  function relief(id, r) {
+    const art = A.Art.getArt('conduit.idle.' + id);
+    return `<svg class="etch-relief" width="${r.cols}" height="${r.rows}" overflow="hidden"><image href="${art.src}" width="${r.cols}" height="${r.rows}" preserveAspectRatio="none"/></svg>`;
+  }
+
+  function spriteTile(id, index, cols, rows, x, y, size, cls) {
+    const art = A.Art.getArt(id);
+    const view = `${index % cols * 64} ${Math.floor(index / cols) * 64} 64 64`;
+    return `<svg class="conduit-tile ${cls}" x="${x-size/2}" y="${y-size/2}" width="${size}" height="${size}"
+      viewBox="${view}" overflow="hidden" aria-hidden="true"><image href="${art.src}" width="${64*cols}" height="${64*rows}"/></svg>`;
+  }
+
+  function conduitTile(index, x, y, size, cls = '') {
+    return spriteTile('conduit.blueprint', index, 4, 9, x, y, size, cls);
+  }
+
+  function conduitOverlay(kind, x, y, size, cls = '') {
+    return spriteTile('conduit.overlays', { lock: 0, fuse: 1, blocked: 2 }[kind], 3, 1, x, y, size, cls);
+  }
+
+  function plateNode(core, x, y) {
+    const rim = core ? 'M6 1H14V4H17V7H20V13H17V16H14V19H6V16H3V13H0V7H3V4H6Z'
+      : 'M0 0H20V6H17V14H20V20H0V14H3V6H0Z';
+    const mark = core ? 'M8 5H12V8H15V12H12V15H8V12H5V8H8Z' : 'M8 5H12V8H15V12H12V15H8V12H5V8H8Z M9 9H11V11H9Z';
+    return `<g transform="translate(${round(x)} ${round(y)})" aria-hidden="true">
+      <path class="plate-node-rim" d="${rim}"/><path class="plate-node-mark" d="${mark}" fill-rule="evenodd"/>
+    </g>`;
+  }
+
+  function etchImage(oriented, cell) {
+    const base = Object.hasOwn(ETCHINGS, oriented.id) && ETCHINGS[oriented.id];
+    if (!base) return '';
+    const expected = V.Manuscript.orient(base, oriented.rotation, oriented.mirrorY);
+    const signature = shape => JSON.stringify([shape.cells, shape.veins, shape.entry, shape.exits, shape.io]);
+    // 裁切过的旧谱、异形底盘谱使用同一套精确的矢量降级。
+    if (signature(oriented) !== signature(expected)) return '';
+    const cols = 1 + Math.max(...base.cells.map(p => p[0]));
+    const rows = 1 + Math.max(...base.cells.map(p => p[1]));
+    const m = poseMatrix(cols, rows, oriented.rotation, oriented.mirrorY);
+    return `<image class="etch-asset" href="assets/art/topology-v4/etch-relief/${base.id}.webp" width="${cols}" height="${rows}"
+      transform="scale(${round(cell)}) matrix(${m.join(',')})" pointer-events="none"/>`;
   }
 
   /**
@@ -172,19 +294,43 @@
     const y = o.y || 0;
     const cls = o.cls ? ' ' + o.cls : '';
     const op = o.opacity == null ? '' : ` opacity="${o.opacity}"`;
-    return `<g class="rune${cls}" pointer-events="none" transform="translate(${round(x)},${round(y)}) scale(${round(cell)}) matrix(${m.join(',')})"${op}>${r.engraving}${relief(id,r,o.rotation,o.mirrorY)}</g>`;
+    return `<g class="rune${cls}" pointer-events="none" transform="translate(${round(x)},${round(y)}) scale(${round(cell)}) matrix(${m.join(',')})"${op}>${r.engraving}${relief(id,r)}</g>`;
   }
 
-  /** HTML 缩略图（纹路库、仓库、板面纹路列表用） */
-  function thumb(id, cls, turn = 0) {
+  function powered(id, x, y, cell, rotation, mirror) {
+    const {cols, rows} = rune(id);
+    const m = matrixFor(id, rotation, mirror);
+    const art = pose => A.Art.getArt(`conduit.${pose}.${id}`).src;
+    return `<g transform="translate(${round(x)},${round(y)}) scale(${round(cell)}) matrix(${m.join(',')})"
+      ><image class="conduit-normal" href="${art('powered')}" width="${cols}" height="${rows}"/>
+      <image class="conduit-hot" href="${art('hot')}" width="${cols}" height="${rows}"/></g>`;
+  }
+
+  /** 宝箱、背包、仓库和拖影用实际格距的酸蚀贴图。 */
+  function footprint(id, turn = 0) {
+    const size = sizeFor(id, turn);
+    if (!size) return '';
+    const shape = V.Circuit.transformTemplate(V.Data.TEMPLATES[id], turn, false);
+    const rim = contourPath(shape.cells.map(({x, y}) => [x, y]), 1);
+    const clip = 'rune-footprint-' + (++footprintUid);
+    return `<svg class="rune-footprint" viewBox="0 0 ${size.cols} ${size.rows}" preserveAspectRatio="none" aria-hidden="true">
+      <defs><clipPath id="${clip}"><path d="${rim}" clip-rule="evenodd"/></clipPath></defs>
+      <g clip-path="url(#${clip})">${image(id, {cell:1, rotation:turn})}
+        <path class="rune-footprint-rim" d="${rim}" fill="none" vector-effect="non-scaling-stroke"/>
+      </g></svg>`;
+  }
+
+  /** 用于名称旁的紧凑图鉴徽章。 */
+  function thumb(id, cls) {
     const r = rune(id);
     if (!r) return '';
-    if (turn) {
-      const {cols,rows} = sizeFor(id,turn);
-      return `<svg class="rune-thumb ${cls || ''}" viewBox="0 0 ${cols} ${rows}" aria-hidden="true">${image(id,{cell:1,rotation:turn})}</svg>`;
+    if (A.Art?.statusOf('rune.' + id) !== 'failed') {
+      const icon = A.Art?.imgTag('rune.' + id, 'rune-catalogue-mark');
+      if (icon) return `<span class="rune-thumb ${cls || ''}">${icon}<svg viewBox="0 0 ${r.cols} ${r.rows}" aria-hidden="true">${r.engraving}${relief(id,r)}</svg></span>`;
     }
-    return `<svg class="rune-thumb ${cls || ''}" viewBox="0 0 ${r.cols} ${r.rows}" aria-hidden="true">${r.engraving}${relief(id,r,0,false)}</svg>`;
+    return `<svg class="rune-thumb ${cls || ''}" viewBox="0 0 ${r.cols} ${r.rows}" aria-hidden="true">${r.engraving}${relief(id,r)}</svg>`;
   }
 
-  V.RuneArt = { RUNES, rune, matrixFor, sizeFor, image, thumb };
+  V.RuneArt = { RUNES, ETCHINGS, rune, matrixFor, sizeFor, image, powered, footprint, thumb, etchImage, conduitTile, conduitOverlay,
+    edgeLoops, contourPath, waxFilm, blueprint, membraneBadge, plateNode };
 })(globalThis.Ashen ||= {});

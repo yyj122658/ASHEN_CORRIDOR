@@ -31,6 +31,7 @@ function withBuild(seed, msId, runeIds, action) {
   unit.board.placements.forEach((p) => st.stash.push(p.itemId));
   unit.board.placements = [];
   unit.manuscript = null;
+  if (V.Data.manuscript(msId).rarity >= 5) unit.bodyPreset = 'sturdy';
   V.State.equipManuscript(st, unit, msId);
   autoRouteBoard(A, st, unit, { style: 'ember', fill: runeIds.length ? runeIds : undefined });
   if (action) unit.gambits = [{ id: 'g', enabled: true, conditions: [{ type: 'always' }], target: 'frontFoe', action }];
@@ -88,8 +89,15 @@ test('治疗流：healMult 纹路真的抬高治疗量', () => {
 });
 
 test('灼烧流：dotMult 纹路抬高每跳灼烧，余烬纹负责点火', () => {
-  const plain = withBuild(13, 'flurry', ['ember']);
-  const boosted = withBuild(13, 'flurry', ['ember', 'fuse']);
+  const plain = withBuild(13, 'flurry', []);
+  const { A, V, st, unit } = plain;
+  assert.ok(autoRouteBoard(A, st, unit, {style:'ember', fill:[]}).ok);
+  const boosted = { A, V, st:V.State.clone(st) };
+  boosted.unit = V.State.unitById(boosted.st, unit.id);
+  const fuse = V.State.makePart(boosted.st, {kind:'circuit', templateId:'fuse'});
+  boosted.st.itemsById[fuse.id] = fuse;
+  boosted.unit.board.placements.push({itemId:fuse.id, x:9, y:6, rotation:3, mirrorY:true});
+  assert.ok(V.Circuit.preview(boosted.st, unit.id).ok);
   const burnOf = (fixture) => {
     const V = fixture.V;
     let s = V.Expedition.start(fixture.st, { seed: 13 }).state;
@@ -107,8 +115,8 @@ test('灼烧流：dotMult 纹路抬高每跳灼烧，余烬纹负责点火', () 
     actor.atk = 100;
     b.enemies.forEach((e) => { e.hp = e.maxHp = 999999; e.dodge = 0; e.atk = 0; });
     for (let i = 0; i < 60; i++) s = V.Combat.step(s).state;
-    const enemy = s.run.battle.enemies[0];
-    const burn = (enemy.buffs || []).filter((x) => x.k === 'burn').map((x) => x.v);
+    const burn = s.run.battle.enemies.flatMap(enemy => (enemy.buffs || [])
+      .filter(x => x.k === 'burn').map(x => x.v));
     return { burn, dotMult: fixture.unit.board.placements.length ? V.Circuit.manuscriptState(fixture.st, fixture.unit.id).effects.boost.dotMult : 0 };
   };
   const a = burnOf(plain);

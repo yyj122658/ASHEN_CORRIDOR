@@ -41,7 +41,7 @@ test('一门金属最多同时维持 4 门功法，超了拒绝并说明原因',
   assert.equal(V.State.manuscriptsOf(u).length, 1, '开局自带一阶功法');
 
   /* 往仓库里补满可用的功法，保证失败一定来自门数而不是「没这门」 */
-  for (const id of ['rivet', 'ward', 'needle', 'spark', 'flurry']) {
+  for (const id of ['rivet', 'ward', 'needle', 'cinder']) {
     st.manuscriptVault.push({ ...V.Data.manuscript(id) });
   }
   for (const id of ['rivet', 'ward', 'needle']) {
@@ -50,11 +50,11 @@ test('一门金属最多同时维持 4 门功法，超了拒绝并说明原因',
   }
   assert.equal(V.State.manuscriptsOf(u).length, SLOTS);
 
-  const back = V.State.placeManuscript(st, u, 'flurry');
+  const back = V.State.placeManuscript(st, u, 'cinder');
   assert.equal(back.ok, false, '第五门必须被拒绝');
   assert.ok(/4 门蚀刻法/.test(back.reason), `原因要讲清门数：${back.reason}`);
   assert.equal(V.State.manuscriptsOf(u).length, SLOTS, '拒绝后不该有副作用');
-  assert.ok(st.manuscriptVault.some((m) => m.id === 'flurry'), '被拒的功法要留在仓库');
+  assert.ok(st.manuscriptVault.some((m) => m.id === 'cinder'), '被拒的功法要留在仓库');
 
   /* 换朝向 / 挪位置不算新增，不该被门数拦 */
   const first = V.State.manuscriptsOf(u)[1];
@@ -64,7 +64,7 @@ test('一门金属最多同时维持 4 门功法，超了拒绝并说明原因',
 
   /* 卸下一门就能再装一门 */
   assert.equal(V.State.removeManuscript(st, u, 'needle').ok, true);
-  const again = V.State.placeManuscript(st, u, 'flurry');
+  const again = V.State.placeManuscript(st, u, 'cinder');
   assert.equal(again.ok, true, `腾出位置后应能装：${again.reason || ''}`);
 });
 
@@ -127,8 +127,6 @@ test('80 套蚀刻法有可落下的连通蚀刻法和可执行招式', () => {
     assert.equal(reached.size, cells.size, spec.id);
     assert.ok([norm.entry, ...norm.exits, ...Object.values(norm.io).map((p) => p.cell)].every((c) => cells.has(String(c))), spec.id);
     assert.ok(Object.keys(norm.veins).every((k) => cells.has(k)), spec.id);
-    const fitSeed = Array.from({ length: 200 }, (_, i) => i + 1).find((plateSeed) => V.Manuscript.placements(norm, V.Circuit.plateOf({ ...base.roster[0], plateSeed }).cellsList).length);
-    assert.ok(fitSeed, spec.id);
     assert.ok(spec.skills.every((sk) => sk.cost > 0 && sk.cooldown > 0), spec.id);
     assert.ok(spec.skills.every((sk) => !sk.effect.shield || sk.effect.shield <= V.Data.DESIGN.supportShieldCapPct), `${spec.id} 护盾描述超过实际可获得上限`);
     assert.ok(spec.unlockDepth >= 3 && spec.unlockDepth <= 7, spec.id);
@@ -137,10 +135,13 @@ test('80 套蚀刻法有可落下的连通蚀刻法和可执行招式', () => {
       u.board.placements.forEach((p) => st.stash.push(p.itemId));
       u.board.placements = [];
       u.bodyPreset = 'sturdy';
-      u.plateSeed = fitSeed;
-      V.State.equipPreset(st, u, 'basic');
       V.State.equipManuscript(st, u, spec.id);
       assert.equal(u.manuscript.id, spec.id);
+      assert.deepEqual(u.manuscript.cells, spec.cells, spec.id);
+      const placements = V.Circuit.autoLoadout(st, u);
+      assert.ok(placements, `${spec.id} 应有可布线路径`);
+      u.board.placements = placements;
+      assert.ok(V.Circuit.manuscriptState(st, u.id).routed, `${spec.id} 应在实板贯通`);
     });
     st = V.Expedition.start(st, { seed: 42 }).state;
     const generated = V.Combat.generateEncounter(st, 'normal');
@@ -149,7 +150,6 @@ test('80 套蚀刻法有可落下的连通蚀刻法和可执行招式', () => {
       u.energy = u.energyMax;
       u.atkSinceSkill = 10;
       u.hp = Math.round(u.maxHp * 0.4);
-      if (u.ms) u.ms.routed = true;
     });
     /* 八标：这两个敌人是「不会死的靶子」，只用来撑出足够的回合让人放招。
        难度抬上来之后它们的攻击会把 0.4 血的靶子打死在放招之前，

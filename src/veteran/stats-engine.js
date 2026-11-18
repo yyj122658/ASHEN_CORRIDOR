@@ -110,23 +110,75 @@
   const DOT_TEXT = { burn: '灼烧', poison: '中毒', bleed: '流血', corrode: '腐蚀', all: '异常', any: '任意异常' };
   function TierText(n) { return ['一', '二', '三', '四'][n - 1] ? `${['一', '二', '三', '四'][n - 1]}阶` : `${n} 阶`; }
 
-  /** 招式效果一行的数值部分。 */
-  function skillEffectText(effect = {}) {
+  /** 标签与悬停解释使用相同数值，长文案只在需要时展示。 */
+  function skillEffectFacts(effect, target) {
     const parts = [];
-    if (effect.heal) parts.push(`治疗 ${plainPct(effect.heal)}`);
-    else parts.push(`伤害 ${plainPct(effect.mult || 1.4)}`);
-    if (effect.hits) parts.push(`×${effect.hits} 段`);
-    if (effect.pierce) parts.push(`贯穿 ${effect.pierce}`);
-    if (effect.splash) parts.push(`溅射 ${plainPct(effect.splash)}`);
-    if (effect.shield) parts.push(`护盾 ${plainPct(effect.shield)}`);
-    if (effect.shieldScale) parts.push(`盾击 ×${num(effect.shieldScale)}`);
-    if (effect.buffAttack) parts.push(`强攻 ${effect.buffAttack.hits || 4} 次 ${signed(effect.buffAttack.mult || 1.5)}`);
-    if (effect.dot) parts.push(`${DOT_TEXT[effect.dot.k] || '持续伤害'} ${plainPct(effect.dot.dmgMult || 0)}×${effect.dot.hits || 2}`);
-    if (effect.detonateDot) parts.push(`引爆${effect.detonateDot === 'all' ? '全异常' : (DOT_TEXT[effect.detonateDot] || '异常')}`);
-    if (effect.bonusIfDot) parts.push(`对${DOT_TEXT[effect.bonusIfDot.k] || '异常'}再 ×${num(effect.bonusIfDot.mult)}`);
-    if (effect.cdrOther) parts.push(`降冷 ${effect.cdrOther}s`);
-    if (effect.stressDelta) parts.push(effect.stressDelta < 0 ? `回压 ${-effect.stressDelta}` : `增压 ${effect.stressDelta}`);
-    return parts.join(' · ');
+    const add = (label, hint) => parts.push({label, hint});
+    const recipient = target === 'self' ? '自己' : target === 'ally' ? '己方生命比例最低的角色'
+      : target === 'lowestHpFoe' ? '生命比例最低的敌人' : '敌方最前排目标';
+    if (effect.heal) {
+      const value = plainPct(effect.heal);
+      add(`治疗 ${value}`, `为${recipient}回复生命，基础治疗量按施术者自身幅值的 ${value} 计算。`);
+    } else {
+      const value = plainPct(effect.mult || 1.4);
+      const foes = effect.pierce ? `敌方最前面的 ${effect.pierce} 名存活敌人` : recipient;
+      add(`伤害 ${value}`, `攻击${foes}。每段基础伤害按施术者自身幅值的 ${value} 计算，再结算增益、暴击和防御。`);
+    }
+    if (effect.hits) add(`×${effect.hits} 段`, `对每个目标最多连续攻击 ${effect.hits} 次，每段单独结算。`);
+    if (effect.pierce) add(`贯穿 ${effect.pierce}`, `依次打向敌方最前面的 ${effect.pierce} 名存活敌人。`);
+    if (effect.splash) add(`溅射 ${plainPct(effect.splash)}`, `其余敌人也会受到余波攻击，基础伤害取本招式的 ${plainPct(effect.splash)}。`);
+    if (effect.shield) add(`护盾 ${plainPct(effect.shield)}`, `给自己增加护盾，基础护盾值是自身生命上限的 ${plainPct(effect.shield)}，实际获得量受护盾增益和缓冲上限影响。`);
+    if (effect.shieldScale) add(`盾击 ×${num(effect.shieldScale)}`, `用自己当前护盾值的 ${plainPct(effect.shieldScale)} 计算一段额外伤害。`);
+    if (effect.buffAttack) {
+      const hits = effect.buffAttack.hits || 4;
+      const mult = effect.buffAttack.mult || 1.5;
+      add(`强攻 ${hits} 次 ${signed(mult)}`, `强化自身输出，最多持续 ${hits} 次普通攻击，独立生效时伤害乘以 ${num(mult)}。`);
+    }
+    if (effect.dot) {
+      const status = DOT_TEXT[effect.dot.k] || '持续伤害';
+      const hits = effect.dot.hits || 2;
+      const value = plainPct(effect.dot.dmgMult || 0.2);
+      add(`${status} ${value}×${hits}`, `使目标受到${status}，最多结算 ${hits} 次，每次基础伤害按施术者自身幅值的 ${value} 计算。`);
+    }
+    if (effect.detonateDot) {
+      const status = effect.detonateDot === 'all' ? '全异常' : DOT_TEXT[effect.detonateDot] || '异常';
+      add(`引爆${status}`, `立即结算目标身上${status === '全异常' ? '全部可引爆异常' : status}的剩余伤害。`);
+    }
+    if (effect.bonusIfDot) {
+      const status = DOT_TEXT[effect.bonusIfDot.k] || '异常';
+      const mult = num(effect.bonusIfDot.mult);
+      add(`对${status}再 ×${mult}`, `目标处于${status}状态时，这招的伤害倍率再乘以 ${mult}。`);
+    }
+    if (effect.cdrOther) add(`降冷 ${effect.cdrOther}s`, `自己的其他招式的剩余冷却缩短 ${effect.cdrOther} 秒。`);
+    if (effect.stressDelta) {
+      const value = Math.abs(effect.stressDelta);
+      const cooling = effect.stressDelta < 0;
+      add(`${cooling ? '回压' : '增压'} ${value}`, `自己的压力${cooling ? '降低' : '增加'} ${value} 点。`);
+    }
+    return parts;
+  }
+
+  function skillEffectText(effect = {}) {
+    return skillEffectFacts(effect).map(e => e.label).join(' · ');
+  }
+
+  function skillTooltip(skill) {
+    const conditions = {
+      routed: v => v ? '这门蚀刻法已经贯通' : '这门蚀刻法尚未贯通',
+      minTier: v => `这门蚀刻法达到共鸣${TierText(v)}`,
+      afterTag: v => `自己在 ${D().DESIGN.comboWindow ?? 5} 秒内，或存活队友在 ${D().DESIGN.comboWindowAlly ?? 3.5} 秒内，施放过带「${v}」标签的招式`,
+      targetHasDot: v => `招式目标处于${DOT_TEXT[v] || '异常'}状态`,
+      stressAbove: v => `自己的压力至少为 ${v}`,
+      attackCount: v => `累计普攻至少 ${v} 次，每次出手记一次`,
+      alliesHurt: v => `己方至少有 ${Number(v)} 名存活角色的生命低于各自上限的 60%`,
+      energyAbove: v => `当前余裕至少为 ${v}`,
+      selfHasShield: () => '自己当前有护盾',
+      foeHpBelow: v => `敌方最前排的生命低于自身上限的 ${plainPct(v)}`,
+    };
+    const cond = skill.cond || {};
+    const notes = COND_ORDER.filter(k => cond[k] != null && (k === 'routed' || cond[k] !== false)).map(k => conditions[k](cond[k]));
+    notes.push('余裕足够且冷却结束时，招式可自动施放。');
+    return { condition: notes.join('\n'), effects: skillEffectFacts(skill.effect || {}, skill.target) };
   }
 
   /** 一门蚀刻法的全部数值事实。
@@ -209,5 +261,5 @@
     return { pct: Math.round((total - 1) * 100), parts, total };
   }
 
-  V.Stats = { num, signed, pct, plainPct, shorten, runeFacts, manuscriptFacts, conditionText, skillEffectText, tierEffectText, resonance };
+  V.Stats = { num, signed, pct, plainPct, shorten, runeFacts, manuscriptFacts, conditionText, skillEffectText, skillTooltip, tierEffectText, resonance };
 })(globalThis.Ashen ||= {});
