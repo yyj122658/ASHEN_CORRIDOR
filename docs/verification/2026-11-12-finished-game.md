@@ -52,7 +52,7 @@
 - [战后复盘](finished-review.png)
 - [390px 移动端复盘](finished-mobile.png)
 
-骨犬主体透明度与裁切边界已检查，资源来源及处理见 [INTEGRATION.md](../../assets/art/battle-v2/INTEGRATION.md)。
+骨犬主体透明度与裁切边界已检查。资源来源和处理记录随当时的美术提交保存。
 
 ## 仍需真人验证
 

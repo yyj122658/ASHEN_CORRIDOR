@@ -97,11 +97,11 @@ src/
   veteran/expedition.js        节点状态机、三选一、营火烙印、结算与撤退
   veteran/roster.js            统一属性、瘢痕收益、编队、招募与战史
   veteran/storage.js           存档编解码、坏档保护、导入导出
-  veteran/art.js               美术映射（veteran-v1 + v1 双源）
+  veteran/art.js               v4 场景、立绘和界面资源映射
   veteran/ui.js                全部页面模板 + 真实几何板面 SVG
   veteran/view.js              Canvas 战场、HUD、日志
   veteran/app.js               唯一 dispatch、渲染、循环、存档
-  ui/assets.js                 v1 固定资源映射与失败降级
+  ui/assets.js                 v4 资源注册与失败降级
   ui/sprite-anim.js            逐帧动画（atlas 驱动）
 tests/
   unit/*.test.cjs              逻辑测试
@@ -109,11 +109,8 @@ tests/
 scripts/
   serve.cjs                    只读预览服务器
   simulate-veteran.cjs         固定种子模拟
-assets/art/v1/                 场景 / 立绘 / 节点插画 / 首领肖像
-assets/art/veteran-v1/         工坊 / 营火 / 静养场景及板面底材
-assets/art/battle-v1/          逐帧动画图集
-assets/art/battle-v2/          透明骨犬图与接入记录
-assets/art/portraits-v2/       十五位新来客立绘图集与生成提示词
+assets/art/topology-v4/        v4 运行时图集
+assets/source-v4/             v4 烘焙用原画和素材
 ```
 
 ---
@@ -135,13 +132,8 @@ assets/art/portraits-v2/       十五位新来客立绘图集与生成提示词
 
 | 组 | 内容 | 用在哪 |
 |---|---|---|
-| `assets/art/v1/` 场景（3 张） | camp / corridor / boss-chamber | 标题页背景、营地横幅、战场背景、结算横幅 |
-| `assets/art/v1/` 立绘（6 张） | 历史皮肤资产 | 当前传奇卡展示人物立绘 |
-| `assets/art/v1/` 节点插画（7 张） | 战斗 / 精英 / 宝箱 / 事件 / 营火 / 商队 / 首领 | 地图节点卡片 |
-| `assets/art/v1/` 首领肖像（2 张） | gatekeeper / memory-eater | 战前敌方面板 |
-| `assets/art/veteran-v1/`（8 张） | 工坊 / 营火 / 静养、板面底材 | 工坊、营火、战史 |
-| `assets/art/portraits-v2/` | 4×4 图集，十五幅半身立绘 | 新来客与角色展示；加已有六幅，共二十一位 |
-| `assets/art/battle-v2/` | 透明骨犬 | 骨犬敌人的静态身体，配合移动、受击和倒地反馈 |
+| `assets/art/topology-v4/` | 场景、立绘、动作、节点、界面、板面与图集 | 游戏运行与 GitHub Pages |
+| `assets/source-v4/` | 角色姿态、场景原画、酸蚀纹样 | 用 `python scripts/render-v4-art.py` 重烘焙运行资源 |
 
 加载策略：
 - 启动只预加载 `scene.camp`（标题页与营地共用）。
@@ -157,12 +149,12 @@ assets/art/portraits-v2/       十五位新来客立绘图集与生成提示词
 
 ## 战斗逐帧动画
 
-21 位传奇按招募外观选择各自的动作。铁鸦与骸骨兵使用原版四组逐帧动画。其余 20 位传奇以及骨犬、石傀、扰位石傀、幽魂、守门人、噬忆者各有六幅独立姿态。弓手拉弓、缄书伸手施术、哑钟甩出链香炉；骨犬的第一幅待机沿用原骨犬图。鸣钟骨、瘦犬、炉渣傀、唱喑、拖骸者、火工与炉心俑没有专属图集，读同族立绘并叠一层色调，战场上仍能分辨。可查看[战场实拍](docs/verification/legend-battle.gif)和[21 位传奇动作对照](docs/verification/legend-actions.webp)。
+14 位来客按角色外观选择动作，战斗动作随武器、招式和角色朝向切换。
 
 | 项 | 实现 |
 |---|---|
 | 识别 | 传奇读取 `skinId`，敌人读取 `enemyType`，换位保留角色造型 |
-| 图集 | `assets/art/battle-v1/` 保存铁鸦与骸骨兵的 PNG，`assets/art/battle-v3/` 为每个新增角色保存一条透明 WebP |
+| 图集 | `assets/art/topology-v4/actors/` 保存角色和敌人的透明动作图集 |
 | 动作 | 待机循环，攻击与受击完成后回待机，死亡保持倒地；多段命中共用一次出手 |
 | 播放 | 每帧按脚底锚点对齐，暂停与打开弹窗冻结动作，战斗倍率同步至 3 倍 |
 | 恢复 | 备战时预载本场阵容与背景，直接进入战场会补载，读档时存活者待机、阵亡者留在倒地末帧 |
@@ -217,7 +209,6 @@ assets/art/portraits-v2/       十五位新来客立绘图集与生成提示词
 
 - [蚀刻法与角色清单](docs/superpowers/specs/2026-11-12-etching-catalog.md)
 - [本轮验证记录](docs/verification/2026-11-12-etching-and-characters.md)
-- [立绘来源与提示词](assets/art/portraits-v2/INTEGRATION.md)
 - [基础体验设计](docs/superpowers/specs/2026-11-12-finished-game-design.md)
 
 ## 敌人与事件
@@ -248,4 +239,4 @@ assets/art/portraits-v2/       十五位新来客立绘图集与生成提示词
 
 三个层域共有120种食材、77道料理。七种敌人和三个采集地点各有十二种产物，每次获得基础食材及一份同源伴生料。食材与纹路共用六列行囊。前哨厨房和野外营火做出的料理先进背包。把料理拖给队员，或点选料理后点队员，即可定向用餐。前哨仓库分别陈列食材、料理、纹路和蚀刻法，料理可以存入仓库或取出带走。缺少指定材料时可使用同类替料，料理手册显示这次实际消耗的食材。可以按菜名、食材名、材料齐备情况和烹饪记录筛选。[生态与野炊规则](docs/develop/corridor-kitchen.md)
 
-四类物品的图集覆盖120种食材、77道料理、30种纹路和80门蚀刻法。纹路装配继续显示真实占格和端口。[图集说明与提示词](assets/art/catalogue-v1/GENERATION.md)
+四类物品的图集覆盖120种食材、77道料理、30种纹路和80门蚀刻法。纹路装配继续显示真实占格和端口。[v4 图集说明](docs/develop/catalogue-art.md)

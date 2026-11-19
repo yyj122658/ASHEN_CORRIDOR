@@ -4,8 +4,8 @@
 
 食材、料理、纹路和蚀刻法各自维护按物品 ID 定位的图集。界面使用图集表现物品外观；装配板继续使用游戏规则中的占格、朝向与端口。新增存档内容保留原有物品 ID 和菜谱记录。
 
-纹路图鉴取用 engraved-0、engraved-1 两张凹刻纹样图集。板面纹痕以实际金属格为单位绘制，刀口阴面与单侧浅色刻缘共同表现深度；旋转、翻转及拖拽复用同一套图形变换。
+图鉴图集位于 `assets/art/topology-v4/catalogue/`。板面纹痕以实际金属格为单位绘制，旋转、翻转及拖拽复用同一套图形变换。
 
 装配纹束沿每种模板的定制曲线生长。三道刻线在出入口保持相同间距并垂直穿过接缝，分叉处先收拢再展开。宽面纹允许中轴在内部回旋，转折纹沿异形占格绕行。每条主线和浅色刻缘都从真实入口连续延伸至对应出口。
 
-板面的近景刻痕使用透明材质图。生成脚本从实际刻线计算凹槽深度，在边缘加入细小蚀坑，按板面左上方的光源烘焙四种旋转和两种翻面。底板原有纹理从沟槽之间透出。修改曲线后，在项目目录运行 `python scripts/render-etched-runes.py` 重建 `assets/art/etch-depth` 下的图集，脚本使用 NumPy、SciPy 与 Pillow。
+板面刻痕保存在 `assets/art/topology-v4/conduit/` 与 `assets/art/topology-v4/etch-relief/`。修改几何或刻线后，在项目目录运行 `python scripts/render-etched-runes.py` 重新烘焙，脚本使用 NumPy 与 Pillow。

@@ -7,7 +7,7 @@
 1. [设计基线](superpowers/specs/2026-11-11-veteran-circuit-design.md)
 2. [12步实施计划](superpowers/plans/2026-11-11-veteran-circuit-implementation.md)
 3. [美术与并行协议](art/2026-11-11-veteran-art-contract.md)
-4. [已交付八图接入说明](../assets/art/veteran-v1/INTEGRATION.md)
+4. 旧版八图接入说明随当时的美术提交保存。
 
 按上述计划直接实现，不再沿用旧B计划作为新机制需求。新入口veteran.html、新命名空间Ashen.Veteran、新存档key，保留旧index和v2存档。先做状态、回路、战斗与确认/回转事务，再接探索/养成/UI与美术。所有步骤都要实际执行测试并报告未完成项。
 
